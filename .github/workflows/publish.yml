@@ -22,9 +22,11 @@ jobs:
           MAJMIN=$(jq -r '.version | split(".")[0:2] | join(".")' deno.json)
           jq --arg v "$MAJMIN.$GITHUB_RUN_NUMBER" '.version = $v' deno.json > d && mv d deno.json
           echo "Publishing $MAJMIN.$GITHUB_RUN_NUMBER"
-          # --no-provenance: JSR's provenance attestation stalls the publish task
-          # ~2h on GitHub runners (confirmed by strace on the real runner: deno
-          # polls the pending task for hours). Skipping it publishes in ~7s.
-          # Granting id-token: write does NOT help — provenance hangs even with
-          # OIDC available. We authenticate with the JSR token instead.
-          deno publish --token "$JSR_TOKEN" --allow-slow-types --allow-dirty --no-provenance
+          # No --allow-slow-types: this package has no public API exports, so the
+          #   slow-types check passes trivially. Passing the flag made JSR take a
+          #   slow server-side path (it skips .d.ts gen); dropping it lets JSR
+          #   process the publish on the normal/fast path.
+          # --no-provenance: provenance attestation separately stalls the JSR
+          #   publish task ~2h on GitHub runners; id-token:write does not help.
+          #   We authenticate with the JSR token instead.
+          deno publish --token "$JSR_TOKEN" --allow-dirty --no-provenance
