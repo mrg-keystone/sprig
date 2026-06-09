@@ -1,0 +1,27 @@
+name: Publish to JSR
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: jsr-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC — authenticate to JSR without a token
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      # `deno publish` type-checks the package, then uploads. It will no-op/fail
+      # if deno.json's version already exists on JSR — bump it for each release.
+      - name: Publish to JSR
+        run: deno publish --allow-slow-types
