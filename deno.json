@@ -1,7 +1,14 @@
 {
+  "name": "@keystone/isolate",
+  "version": "0.1.0",
+  "license": "MIT",
+  "exports": "./main.ts",
   "tasks": {
     "isolate": "deno run -A main.ts",
-    "dev": "deno run -A main.ts dev",
-    "list": "deno run -A main.ts list"
+    "dev": "deno run -A main.ts dev --root fixture",
+    "list": "deno run -A main.ts list --root fixture"
+  },
+  "publish": {
+    "exclude": ["fixture", ".playwright-mcp", "isolate-*.png"]
   }
 }

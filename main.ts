@@ -1,21 +1,20 @@
 // isolate — spin up a standalone preview for any component that has an
-// `isolate/` folder. Usage:
+// `isolate/` folder. Run it from inside a Fresh project:
 //
-//   deno task isolate list             # list discovered components + their cases
-//   deno task isolate dev              # build/serve ~/isolate/<app> with symlinks
-//   deno task isolate dev --no-open    # …without auto-opening the browser
-//   deno task isolate dev --root PATH  # …against another Fresh app (default: ./fixture)
+//   isolate list              # list discovered components + their cases
+//   isolate dev               # build/serve ~/isolate/<app> with symlinks
+//   isolate dev --no-open     # …without auto-opening the browser
+//   isolate dev --root PATH   # …against a Fresh app elsewhere (default: cwd)
 //
 import { type ComponentEntry, discover } from "./discover.ts";
 import { setupApp } from "./scaffold.ts";
 import { resolve } from "jsr:@std/path@^1";
 
-/** The Fresh project to isolate: `--root <path>` if given, else the bundled ./fixture. */
+/** The Fresh project to isolate: `--root <path>` if given, else the current directory. */
 function projectRoot(): string {
   const i = Deno.args.indexOf("--root");
   if (i >= 0 && Deno.args[i + 1]) return resolve(Deno.args[i + 1]);
-  const toolDir = decodeURIComponent(new URL("./", import.meta.url).pathname).replace(/\/+$/, "");
-  return `${toolDir}/fixture`;
+  return Deno.cwd();
 }
 
 function describe(e: ComponentEntry): string {
@@ -175,9 +174,11 @@ async function main() {
       await cmdDev({ open: !Deno.args.includes("--no-open") });
       break;
     default:
-      console.error(`Unknown command: ${cmd}\nTry: deno task isolate [list|dev]`);
+      console.error(`Unknown command: ${cmd}\nTry: isolate [list|dev]`);
       Deno.exit(1);
   }
 }
 
-await main();
+if (import.meta.main) {
+  await main();
+}
