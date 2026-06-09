@@ -7,7 +7,10 @@ on:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # arm64 runner: `deno publish` hangs for ~2h on amd64 GitHub runners (an
+    # arch-specific stall after the upload completes — reproduced in amd64 Docker,
+    # never on arm64). arm64 publishes in seconds.
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
@@ -22,9 +25,4 @@ jobs:
           MAJMIN=$(jq -r '.version | split(".")[0:2] | join(".")' deno.json)
           jq --arg v "$MAJMIN.$GITHUB_RUN_NUMBER" '.version = $v' deno.json > d && mv d deno.json
           echo "Publishing $MAJMIN.$GITHUB_RUN_NUMBER"
-          # When deno publish sees GITHUB_ACTIONS=true it enters the GitHub-OIDC
-          # publish flow and blocks ~2h on an id-token verification that never comes
-          # (we use token auth, not OIDC; no `id-token: write` is granted). Setting
-          # GITHUB_ACTIONS=false for just this command makes deno take the plain token
-          # path, which publishes in seconds. Verified in a container with `act`.
-          GITHUB_ACTIONS=false deno publish --token "$JSR_TOKEN" --allow-slow-types --allow-dirty
+          deno publish --token "$JSR_TOKEN" --allow-slow-types --allow-dirty
