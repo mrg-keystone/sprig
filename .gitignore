@@ -1,0 +1,14 @@
+# Dependencies & build output (any depth — covers fixture/)
+node_modules/
+_fresh/
+
+# Test / verification artifacts
+.playwright-mcp/
+isolate-*.png
+
+# Env
+.env
+.env.*
+
+# macOS
+.DS_Store

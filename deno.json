@@ -1,0 +1,7 @@
+{
+  "tasks": {
+    "isolate": "deno run -A main.ts",
+    "dev": "deno run -A main.ts dev",
+    "list": "deno run -A main.ts list"
+  }
+}
