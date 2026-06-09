@@ -4,12 +4,30 @@
 //   isolate list              # list discovered components + their cases
 //   isolate dev               # build/serve ~/isolate/<app> with symlinks
 //   isolate dev --no-open     # …without auto-opening the browser
+//   isolate dev --force       # …even if some isolate/ configs are malformed
 //   isolate dev --root PATH   # …against a Fresh app elsewhere (default: cwd)
 //   isolate test [filter]     # run cases' Playwright tests headlessly (--json for agents)
 //
-import { type ComponentEntry, discover } from "./discover.ts";
+// Malformed fixture.json / case JSON and unresolved component files are
+// collected during discovery and reported up front: `dev` and `test` refuse to
+// start until they're fixed (use `dev --force` to preview the valid ones anyway).
+import { type ComponentEntry, discover, type Problem } from "./discover.ts";
 import { setupApp } from "./scaffold.ts";
 import { resolve } from "jsr:@std/path@^1";
+
+/** Format discovery problems as a human-readable batch; paths shown relative to root. */
+function formatProblems(problems: Problem[], root: string): string {
+  const rel = (p: string) =>
+    p.startsWith(root + "/") ? p.slice(root.length + 1) : p;
+  const head: Record<Problem["kind"], string> = {
+    "fixture-json": "malformed fixture.json",
+    "case-json": "malformed case JSON",
+    "component-file": "unresolved component file",
+  };
+  return problems
+    .map((p) => `  ⚠ ${head[p.kind]}\n      ${rel(p.path)}\n      ${p.detail}`)
+    .join("\n\n");
+}
 
 /** The Fresh project to isolate: `--root <path>` if given, else the current directory. */
 function projectRoot(): string {
@@ -38,19 +56,26 @@ function describe(e: ComponentEntry): string {
 
 async function cmdList() {
   const root = projectRoot();
-  const entries = await discover(root);
+  const { entries, problems } = await discover(root);
   if (entries.length === 0) {
     console.log(
       "No isolatable components found.\n" +
         "Add an isolate/ folder to a component, e.g. components/button/isolate/.",
     );
-    return;
+  } else {
+    const total = entries.reduce((n, e) => n + e.cases.length, 0);
+    console.log(
+      `Found ${entries.length} component(s), ${total} case(s) under ${root}:\n`,
+    );
+    console.log(entries.map(describe).join("\n\n"));
   }
-  const total = entries.reduce((n, e) => n + e.cases.length, 0);
-  console.log(
-    `Found ${entries.length} component(s), ${total} case(s) under ${root}:\n`,
-  );
-  console.log(entries.map(describe).join("\n\n"));
+  if (problems.length) {
+    console.error(
+      `\n⚠ ${problems.length} config problem(s):\n\n${
+        formatProblems(problems, root)
+      }`,
+    );
+  }
 }
 
 /** Stream a child pipe to our stdout, invoking onLine for each complete line. */
@@ -110,6 +135,86 @@ export async function capture(page) {
     },
   };
 }
+
+/**
+ * Wait until the isolate preview has hydrated and its stage is interactive, so a
+ * click actually does something — clicking an island BEFORE hydration is a silent
+ * no-op against the SSR markup. Call after page.goto, before interacting.
+ *
+ *   await page.goto(url);
+ *   await waitHydrated(page);
+ *   await page.locator("#increment").click();
+ */
+export async function waitHydrated(page, opts = {}) {
+  await page.waitForFunction(
+    () => globalThis.__isolateReady === true,
+    undefined,
+    { timeout: opts.timeout ?? 5000 },
+  );
+}
+`;
+
+// Types for the helper, so specs that `import { capture } from "isolate-events"`
+// get autocomplete on the bridge, the predicate, and the IsolateEvent shape.
+const EVENTS_DTS =
+  `import type { Page } from "@playwright/test";
+import type { Observable } from "rxjs";
+
+/** A single event a previewed component emitted, as recorded by isolate's stream. */
+export interface IsolateEvent {
+  /** Local time string when the event fired (e.g. "10:30:01 AM"). */
+  time: string;
+  /** The element that emitted it: \`tag\` or \`tag#id\` (e.g. "button#submit"). */
+  source: string;
+  /** The DOM event type (e.g. "click", "input", "keydown"). */
+  type: string;
+  /** What it carried: an input/checkbox value, the pressed key, or a label. */
+  detail: string;
+}
+
+export interface ExpectOptions {
+  /** Reject if no matching event arrives within this many ms (default 2000). */
+  timeout?: number;
+}
+
+/** A live view of the events a previewed component emits, bridged into the test. */
+export interface EventBridge {
+  /** The raw RxJS stream of every event (buffered + replayable). */
+  events$: Observable<IsolateEvent>;
+  /**
+   * Resolve with the first event matching \`predicate\` — whether it already fired
+   * or fires next; rejects after \`opts.timeout\` ms (default 2000).
+   */
+  expect(
+    predicate: (e: IsolateEvent) => boolean,
+    opts?: ExpectOptions,
+  ): Promise<IsolateEvent>;
+}
+
+/**
+ * Bridge the page's event stream into the test. Call BEFORE \`page.goto\` so the
+ * binding is installed first.
+ *
+ * \`\`\`ts
+ * const ev = await capture(page);
+ * await page.goto(url);
+ * await page.locator("#submit").click();
+ * await ev.expect((e) => e.source === "button#submit" && e.type === "click");
+ * \`\`\`
+ */
+export function capture(page: Page): Promise<EventBridge>;
+
+export interface WaitOptions {
+  /** Max ms to wait for hydration (default 5000). */
+  timeout?: number;
+}
+
+/**
+ * Wait until the isolate preview has hydrated and its stage is interactive, so a
+ * click is not a silent no-op against SSR markup. Call after \`page.goto\`, before
+ * interacting with an island.
+ */
+export function waitHydrated(page: Page, opts?: WaitOptions): Promise<void>;
 `;
 
 /** Ensure ~/.isolate-runner has @playwright/test, rxjs, and the isolate-events helper. */
@@ -177,22 +282,38 @@ async function ensureRunner() {
         version: "0.0.0",
         type: "module",
         main: "index.js",
+        types: "index.d.ts",
       },
       null,
       2,
     ) + "\n",
   );
   await Deno.writeTextFile(`${pkgDir}/index.js`, EVENTS_HELPER);
+  await Deno.writeTextFile(`${pkgDir}/index.d.ts`, EVENTS_DTS);
 }
 
-async function cmdDev(opts: { open: boolean }) {
+async function cmdDev(opts: { open: boolean; force: boolean }) {
   const root = projectRoot();
-  const entries = await discover(root);
+  const { entries, problems } = await discover(root);
   if (entries.length === 0) {
     console.log(
       "Nothing to isolate — no component has an isolate/ folder yet.",
     );
     return;
+  }
+  if (problems.length) {
+    console.error(
+      `✗ isolate found ${problems.length} config problem(s):\n\n${
+        formatProblems(problems, root)
+      }\n`,
+    );
+    if (!opts.force) {
+      console.error(
+        "Fix these and re-run, or `isolate dev --force` to preview the valid components anyway.",
+      );
+      Deno.exit(1);
+    }
+    console.error("Continuing anyway (--force).\n");
   }
 
   await ensureRunner();
@@ -375,7 +496,26 @@ async function cmdTest(
   opts: { json: boolean; filter?: string; baseUrl?: string },
 ) {
   const root = projectRoot();
-  const entries = await discover(root);
+  const { entries, problems } = await discover(root);
+  // Fail fast: a misconfigured suite must never report green. No --force here.
+  if (problems.length) {
+    if (opts.json) {
+      console.log(
+        JSON.stringify(
+          { ok: false, ran: false, total: 0, tests: [], problems },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.error(
+        `✗ isolate found ${problems.length} config problem(s):\n\n${
+          formatProblems(problems, root)
+        }\n`,
+      );
+    }
+    Deno.exit(1);
+  }
   const byFile = new Map<string, { case: string; route: string }>();
   for (const e of entries) {
     for (const c of e.cases) {
@@ -489,7 +629,10 @@ async function main() {
       await cmdList();
       break;
     case "dev":
-      await cmdDev({ open: !Deno.args.includes("--no-open") });
+      await cmdDev({
+        open: !Deno.args.includes("--no-open"),
+        force: Deno.args.includes("--force"),
+      });
       break;
     case "test":
       await cmdTest(parseTestArgs(Deno.args.slice(1)));

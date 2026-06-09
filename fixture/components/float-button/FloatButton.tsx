@@ -1,13 +1,13 @@
 import type { ComponentChildren } from "preact";
 
-export interface ButtonProps {
+export interface FloatButtonProps {
   id?: string;
   onClick?: () => void;
   children?: ComponentChildren;
   disabled?: boolean;
 }
 
-export function Button(props: ButtonProps) {
+export function FloatButton(props: FloatButtonProps) {
   return (
     <button
       {...props}

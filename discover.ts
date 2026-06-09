@@ -80,6 +80,20 @@ export interface ComponentEntry {
   cases: CaseDef[];
 }
 
+/** A config problem found during discovery — surfaced up front, not swallowed. */
+export interface Problem {
+  kind: "fixture-json" | "case-json" | "component-file";
+  /** The offending file (fixture/case JSON) or component directory. */
+  path: string;
+  /** Human-readable explanation: a JSON parse message, or what resolution did. */
+  detail: string;
+}
+
+export interface DiscoverResult {
+  entries: ComponentEntry[];
+  problems: Problem[];
+}
+
 async function exists(p: string): Promise<boolean> {
   try {
     await Deno.stat(p);
@@ -165,16 +179,29 @@ function parseCaseValues(obj: Record<string, unknown>) {
 async function findComponentFile(
   dir: string,
   exportName: string,
+  problems: Problem[],
 ): Promise<string> {
   const tsx: string[] = [];
   for await (const e of Deno.readDir(dir)) {
     if (e.isFile && /\.tsx?$/.test(e.name)) tsx.push(e.name);
   }
-  const pick = tsx.find((n) => n.replace(/\.tsx?$/, "") === exportName) ??
-    tsx.find((n) =>
-      n.replace(/\.tsx?$/, "").toLowerCase() === exportName.toLowerCase()
-    ) ??
-    tsx[0];
+  const exact = tsx.find((n) => n.replace(/\.tsx?$/, "") === exportName);
+  const ci = tsx.find((n) =>
+    n.replace(/\.tsx?$/, "").toLowerCase() === exportName.toLowerCase()
+  );
+  const pick = exact ?? ci ?? tsx[0];
+  // No exact or case-insensitive match: we either fall back to an arbitrary
+  // .tsx (Vite then imports the wrong component) or find none (empty path → a
+  // cryptic import error at preview time). Surface it now instead.
+  if (!exact && !ci) {
+    problems.push({
+      kind: "component-file",
+      path: dir,
+      detail: pick
+        ? `no file matching export "${exportName}" — falling back to ${pick}`
+        : `no .tsx file for export "${exportName}"`,
+    });
+  }
   return `${dir}/${pick ?? ""}`;
 }
 
@@ -199,6 +226,7 @@ async function collectCases(
   prefix: string,
   category: string,
   folder: string,
+  problems: Problem[],
 ): Promise<CaseDef[]> {
   const casesDir = `${isolateDir}/cases`;
   const cases: CaseDef[] = [];
@@ -212,7 +240,13 @@ async function collectCases(
     if (await exists(jsonPath)) {
       try {
         raw = JSON.parse(await Deno.readTextFile(jsonPath));
-      } catch { /* malformed — empty case */ }
+      } catch (e) {
+        problems.push({
+          kind: "case-json",
+          path: jsonPath,
+          detail: (e as Error).message,
+        });
+      }
     }
     const v = parseCaseValues(raw);
     const props = { ...v.props };
@@ -248,7 +282,7 @@ async function collectCases(
   return cases;
 }
 
-export async function discover(projectRoot: string): Promise<ComponentEntry[]> {
+export async function discover(projectRoot: string): Promise<DiscoverResult> {
   // components/ + islands/ hold single components; pages/ holds page compositions.
   const roots: { dir: Root; target: Target }[] = [
     { dir: "components", target: "component" },
@@ -256,6 +290,7 @@ export async function discover(projectRoot: string): Promise<ComponentEntry[]> {
     { dir: "pages", target: "page" },
   ];
   const entries: ComponentEntry[] = [];
+  const problems: Problem[] = [];
 
   for (const { dir: root, target } of roots) {
     const prefix = target === "page" ? "pages" : "components";
@@ -276,7 +311,13 @@ export async function discover(projectRoot: string): Promise<ComponentEntry[]> {
       if (await exists(fixturePath)) {
         try {
           fixture = JSON.parse(await Deno.readTextFile(fixturePath));
-        } catch { /* malformed fixture */ }
+        } catch (e) {
+          problems.push({
+            kind: "fixture-json",
+            path: fixturePath,
+            detail: (e as Error).message,
+          });
+        }
       }
       const category = String(fixture.category ?? label);
       const folder = String(fixture.folder ?? "");
@@ -318,7 +359,7 @@ export async function discover(projectRoot: string): Promise<ComponentEntry[]> {
         target,
         dir,
         isolateDir,
-        componentFile: await findComponentFile(dir, exportName),
+        componentFile: await findComponentFile(dir, exportName, problems),
         exportName,
         category,
         folder,
@@ -331,11 +372,13 @@ export async function discover(projectRoot: string): Promise<ComponentEntry[]> {
           prefix,
           category,
           folder,
+          problems,
         ),
       });
     }
   }
 
   entries.sort((a, b) => a.slug.localeCompare(b.slug));
-  return entries;
+  problems.sort((a, b) => a.path.localeCompare(b.path));
+  return { entries, problems };
 }

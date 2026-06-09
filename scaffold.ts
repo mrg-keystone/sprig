@@ -5,6 +5,7 @@
 // LIVE, typed controls panel grouped per component), and a /api/run endpoint that
 // runs a case's Playwright tests against the live app. Cached between runs.
 import { basename, dirname, relative } from "jsr:@std/path@^1";
+import { copy } from "jsr:@std/fs@^1";
 import type { CaseDef, ComponentEntry, ControlDef } from "./discover.ts";
 
 async function exists(p: string): Promise<boolean> {
@@ -25,6 +26,31 @@ async function rmrf(p: string): Promise<void> {
   try {
     await Deno.remove(p, { recursive: true });
   } catch { /* already gone */ }
+}
+
+/**
+ * Link `target` → `path` as a directory symlink. On Windows a dir symlink needs
+ * Developer Mode/admin, so fall back to a junction (no elevation, still a live
+ * link), then — last resort — a recursive copy. The copy is a SNAPSHOT: source
+ * edits won't live-reflect until isolate is re-run, so we warn when we use it.
+ */
+async function linkOrCopy(target: string, path: string): Promise<void> {
+  try {
+    await Deno.symlink(target, path, { type: "dir" });
+    return;
+  } catch (e) {
+    if (Deno.build.os !== "windows") throw e; // a real error on Unix — surface it
+  }
+  try {
+    await Deno.symlink(target, path, { type: "junction" });
+    return;
+  } catch { /* junction unavailable — fall through to a copy */ }
+  console.warn(
+    `⚠ couldn't symlink ${basename(target)}/ (Windows without Developer Mode?) — ` +
+      `copied it instead.\n  The preview is a snapshot: re-run isolate to pick up ` +
+      `source edits, or enable Developer Mode for live links.`,
+  );
+  await copy(target, path, { overwrite: true });
 }
 
 function relImport(fromFile: string, toFile: string): string {
@@ -89,12 +115,13 @@ export async function setupApp(
     }
   }
 
-  // 2. Symlink the host's components/ + islands/ + pages/ into place (only the
-  //    ones that exist — a host need not have all three).
+  // 2. Link the host's components/ + islands/ + pages/ into place (only the ones
+  //    that exist — a host need not have all three). A live symlink is ideal; on
+  //    Windows without Developer Mode it falls back to a junction, then a copy.
   for (const dir of ["components", "islands", "pages"] as const) {
     await rmrf(`${appDir}/${dir}`);
     if (await exists(`${hostRoot}/${dir}`)) {
-      await Deno.symlink(`${hostRoot}/${dir}`, `${appDir}/${dir}`);
+      await linkOrCopy(`${hostRoot}/${dir}`, `${appDir}/${dir}`);
     }
   }
 
@@ -653,10 +680,16 @@ export function Controls(props: { Component: any; name?: string; config: any; de
   }, []);
 
   // Capture every event the stage fires (scoped to the stage container, so the
-  // controls panel's own inputs never leak into the log).
+  // controls panel's own inputs never leak into the log). Once this effect has
+  // run, the stage is mounted AND interactive — flag it so the waitHydrated()
+  // test helper can wait for a click to actually do something (clicking before
+  // hydration is a silent no-op).
   useEffect(() => {
     const el = stageRef.current;
-    return el ? attachStageEvents(el) : undefined;
+    if (!el) return;
+    const detach = attachStageEvents(el);
+    (globalThis as any).__isolateReady = true;
+    return () => { (globalThis as any).__isolateReady = false; detach(); };
   }, []);
 
   const s = state.value;
