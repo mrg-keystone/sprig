@@ -7,10 +7,7 @@ on:
 
 jobs:
   publish:
-    # arm64 runner: `deno publish` hangs for ~2h on amd64 GitHub runners (an
-    # arch-specific stall after the upload completes — reproduced in amd64 Docker,
-    # never on arm64). arm64 publishes in seconds.
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
@@ -25,4 +22,9 @@ jobs:
           MAJMIN=$(jq -r '.version | split(".")[0:2] | join(".")' deno.json)
           jq --arg v "$MAJMIN.$GITHUB_RUN_NUMBER" '.version = $v' deno.json > d && mv d deno.json
           echo "Publishing $MAJMIN.$GITHUB_RUN_NUMBER"
-          deno publish --token "$JSR_TOKEN" --allow-slow-types --allow-dirty
+          # --no-provenance: JSR's provenance attestation stalls the publish task
+          # ~2h on GitHub runners (confirmed by strace on the real runner: deno
+          # polls the pending task for hours). Skipping it publishes in ~7s.
+          # Granting id-token: write does NOT help — provenance hangs even with
+          # OIDC available. We authenticate with the JSR token instead.
+          deno publish --token "$JSR_TOKEN" --allow-slow-types --allow-dirty --no-provenance
