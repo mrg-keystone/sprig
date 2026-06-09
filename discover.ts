@@ -1,11 +1,23 @@
-// Discovery: scan a Fresh project for components with an `isolate/` folder.
+// Discovery: scan a Fresh project for components/pages with an `isolate/` folder.
 //
-//   <component>/isolate/
-//     fixture.json                 { category, folder, background?, controls }
+// Scanned roots: components/ + islands/ are single components (routed under
+// /components/…); pages/ holds page compositions (routed under /pages/…).
+//
+//   <component-or-page>/isolate/
+//     fixture.json                 { category, folder, background?, controls, components }
 //     cases/
 //       <case>/
 //         <case>.json              bare keys -> props; _keys -> special
 //         tests/*.spec.ts          Playwright tests for this case
+//
+// A preview route is a PAGE: the top-level component plus whatever sub-components
+// it renders. `controls` declares widgets for the top-level component; `components`
+// declares widgets for the sub-components ON the page, keyed by function name:
+//   "components": { "Button": { "controls": { "disabled": { "type": "boolean" } } } }
+// Declared once per component TYPE, but each rendered INSTANCE gets its own
+// controls group — keyed by its `id` prop (e.g. Button #submit, Button #cancel),
+// or shared per type when it has no id. A case's `_mocks[name].props` seeds the
+// initial values. Edited live via the vnode hook.
 //
 // fixture.json `controls` DECLARES each control's widget (argTypes):
 //   "variant": { "type": "select", "options": ["a","b"] }
@@ -18,7 +30,9 @@
 // Case special keys: _name (label), _innerHtml (-> innerHTML), _signals (-> signals).
 
 export type Kind = "static" | "island";
-export type Root = "components" | "islands";
+export type Root = "components" | "islands" | "pages";
+/** What's being isolated: a single component (components/ + islands/) or a page (pages/). */
+export type Target = "component" | "page";
 
 export interface TestRef {
   name: string;
@@ -42,6 +56,7 @@ export interface CaseDef {
   props: Record<string, unknown>;
   innerHtml?: string;
   signals?: Record<string, unknown>;
+  mocks?: Record<string, unknown>;
   route: string;
   tests: TestRef[];
 }
@@ -51,6 +66,7 @@ export interface ComponentEntry {
   label: string;
   kind: Kind;
   root: Root;
+  target: Target;
   dir: string;
   isolateDir: string;
   componentFile: string;
@@ -59,6 +75,8 @@ export interface ComponentEntry {
   folder: string;
   background?: string;
   controlDefs: Record<string, ControlDef>;
+  /** Per-sub-component control widgets, keyed by the sub-component's function name. */
+  subControlDefs: Record<string, Record<string, ControlDef>>;
   cases: CaseDef[];
 }
 
@@ -77,13 +95,17 @@ function pascal(s: string): string {
 }
 
 async function* walkDirs(root: string): AsyncGenerator<string> {
-  let listing: AsyncIterable<Deno.DirEntry>;
+  // Deno.readDir errors lazily — a missing dir throws on first iteration, not on
+  // the call — so the loop itself must be guarded (e.g. a project with no
+  // components/ or no islands/).
+  let entries: Deno.DirEntry[];
   try {
-    listing = Deno.readDir(root);
+    entries = [];
+    for await (const e of Deno.readDir(root)) entries.push(e);
   } catch {
     return;
   }
-  for await (const e of listing) {
+  for (const e of entries) {
     if (!e.isDirectory) continue;
     const child = `${root}/${e.name}`;
     yield child;
@@ -127,24 +149,31 @@ function parseCaseValues(obj: Record<string, unknown>) {
   const props: Record<string, unknown> = {};
   let innerHtml: string | undefined;
   let signals: Record<string, unknown> | undefined;
+  let mocks: Record<string, unknown> | undefined;
   let label: string | undefined;
   for (const [k, v] of Object.entries(obj ?? {})) {
     if (k === "_name") label = String(v);
     else if (k === "_innerHtml") innerHtml = String(v);
     else if (k === "_signals") signals = v as Record<string, unknown>;
+    else if (k === "_mocks") mocks = v as Record<string, unknown>;
     else if (k.startsWith("_")) { /* unknown special — ignore */ }
     else props[k] = v;
   }
-  return { props, innerHtml, signals, label };
+  return { props, innerHtml, signals, mocks, label };
 }
 
-async function findComponentFile(dir: string, exportName: string): Promise<string> {
+async function findComponentFile(
+  dir: string,
+  exportName: string,
+): Promise<string> {
   const tsx: string[] = [];
   for await (const e of Deno.readDir(dir)) {
     if (e.isFile && /\.tsx?$/.test(e.name)) tsx.push(e.name);
   }
   const pick = tsx.find((n) => n.replace(/\.tsx?$/, "") === exportName) ??
-    tsx.find((n) => n.replace(/\.tsx?$/, "").toLowerCase() === exportName.toLowerCase()) ??
+    tsx.find((n) =>
+      n.replace(/\.tsx?$/, "").toLowerCase() === exportName.toLowerCase()
+    ) ??
     tsx[0];
   return `${dir}/${pick ?? ""}`;
 }
@@ -154,7 +183,10 @@ async function collectTests(testsDir: string): Promise<TestRef[]> {
   if (!(await exists(testsDir))) return out;
   for await (const e of Deno.readDir(testsDir)) {
     if (e.isFile && /\.spec\.tsx?$/.test(e.name)) {
-      out.push({ name: e.name.replace(/\.spec\.tsx?$/, ""), file: `${testsDir}/${e.name}` });
+      out.push({
+        name: e.name.replace(/\.spec\.tsx?$/, ""),
+        file: `${testsDir}/${e.name}`,
+      });
     }
   }
   out.sort((a, b) => a.name.localeCompare(b.name));
@@ -164,6 +196,7 @@ async function collectTests(testsDir: string): Promise<TestRef[]> {
 async function collectCases(
   isolateDir: string,
   defs: Record<string, ControlDef>,
+  prefix: string,
   category: string,
   folder: string,
 ): Promise<CaseDef[]> {
@@ -204,7 +237,10 @@ async function collectCases(
       props,
       signals,
       innerHtml,
-      route: folder ? `/${category}/${folder}/${name}` : `/${category}/${name}`,
+      mocks: v.mocks,
+      route: folder
+        ? `/${prefix}/${category}/${folder}/${name}`
+        : `/${prefix}/${category}/${name}`,
       tests: await collectTests(`${caseDir}/tests`),
     });
   }
@@ -213,10 +249,16 @@ async function collectCases(
 }
 
 export async function discover(projectRoot: string): Promise<ComponentEntry[]> {
-  const roots: Root[] = ["components", "islands"];
+  // components/ + islands/ hold single components; pages/ holds page compositions.
+  const roots: { dir: Root; target: Target }[] = [
+    { dir: "components", target: "component" },
+    { dir: "islands", target: "component" },
+    { dir: "pages", target: "page" },
+  ];
   const entries: ComponentEntry[] = [];
 
-  for (const root of roots) {
+  for (const { dir: root, target } of roots) {
+    const prefix = target === "page" ? "pages" : "components";
     const rootAbs = `${projectRoot}/${root}`;
     for await (const dir of walkDirs(rootAbs)) {
       const rel = dir.slice(rootAbs.length + 1);
@@ -240,8 +282,26 @@ export async function discover(projectRoot: string): Promise<ComponentEntry[]> {
       const folder = String(fixture.folder ?? "");
       const controlDefs = parseControlDefs(fixture.controls);
 
+      // Per-sub-component controls: fixture.components[name].controls.
+      const subControlDefs: Record<string, Record<string, ControlDef>> = {};
+      if (fixture.components && typeof fixture.components === "object") {
+        for (
+          const [name, spec] of Object.entries(
+            fixture.components as Record<string, unknown>,
+          )
+        ) {
+          const ctrls =
+            (spec && typeof spec === "object" && !Array.isArray(spec))
+              ? (spec as { controls?: unknown }).controls
+              : spec; // allow the bare-controls shorthand: "Button": { "disabled": {...} }
+          subControlDefs[name] = parseControlDefs(ctrls);
+        }
+      }
+
       // Background: top-level `background`, or legacy `controls._background`.
-      let background = typeof fixture.background === "string" ? fixture.background : undefined;
+      let background = typeof fixture.background === "string"
+        ? fixture.background
+        : undefined;
       if (!background && controlDefs._background) {
         const b = controlDefs._background as ControlDef & { value?: unknown };
         background = typeof b.value === "string" ? b.value : undefined;
@@ -249,10 +309,13 @@ export async function discover(projectRoot: string): Promise<ComponentEntry[]> {
       delete controlDefs._background;
 
       entries.push({
-        slug: rel.replaceAll("/", "__"),
+        // Root-qualified so a component and a page with the same name don't
+        // collide on the generated preview-island filename.
+        slug: `${root}__${rel.replaceAll("/", "__")}`,
         label,
         kind: root === "islands" ? "island" : "static",
         root,
+        target,
         dir,
         isolateDir,
         componentFile: await findComponentFile(dir, exportName),
@@ -261,7 +324,14 @@ export async function discover(projectRoot: string): Promise<ComponentEntry[]> {
         folder,
         background,
         controlDefs,
-        cases: await collectCases(isolateDir, controlDefs, category, folder),
+        subControlDefs,
+        cases: await collectCases(
+          isolateDir,
+          controlDefs,
+          prefix,
+          category,
+          folder,
+        ),
       });
     }
   }

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 // Tests for the `three` case — runs against its route /counter/three.
 test("increments and decrements the signal-backed count", async ({ page }) => {
-  await page.goto("/counter/default/three");
+  await page.goto("/components/counter/default/three");
   const value = page.locator("p.tabular-nums");
   await expect(value).toHaveText("3");
   await page.locator("#increment").click();
