@@ -6,9 +6,12 @@
   "tasks": {
     "isolate": "deno run -A main.ts",
     "dev": "deno run -A main.ts dev --root fixture",
-    "list": "deno run -A main.ts list --root fixture"
+    "list": "deno run -A main.ts list --root fixture",
+    "test": "deno test -A",
+    "e2e": "deno run -A main.ts test --root fixture",
+    "install": "deno run -A install.ts"
   },
   "publish": {
-    "exclude": ["fixture", ".playwright-mcp", "isolate-*.png"]
+    "exclude": ["fixture", ".playwright-mcp", "isolate-*.png", "*_test.ts", "install.ts", "to-ship.md"]
   }
 }
