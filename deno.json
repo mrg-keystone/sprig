@@ -1,6 +1,6 @@
 {
   "name": "@mrg-keystone/isolate",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "license": "MIT",
   "exports": "./main.ts",
   "tasks": {
@@ -12,6 +12,13 @@
     "install": "deno run -A install.ts"
   },
   "publish": {
-    "exclude": ["fixture", ".playwright-mcp", "isolate-*.png", "*_test.ts", "install.ts", "to-ship.md"]
+    "exclude": [
+      "fixture",
+      ".playwright-mcp",
+      "isolate-*.png",
+      "*_test.ts",
+      "install.ts",
+      "to-ship.md"
+    ]
   }
 }

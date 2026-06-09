@@ -22,10 +22,9 @@ jobs:
           MAJMIN=$(jq -r '.version | split(".")[0:2] | join(".")' deno.json)
           jq --arg v "$MAJMIN.$GITHUB_RUN_NUMBER" '.version = $v' deno.json > d && mv d deno.json
           echo "Publishing $MAJMIN.$GITHUB_RUN_NUMBER"
-          # --no-provenance: in GitHub Actions, deno publish auto-attempts provenance
-          # attestation, which needs a GitHub OIDC token (permissions: id-token: write).
-          # Without it the step stalls ~2h before falling back. We publish with an
-          # explicit JSR token and skip provenance so the publish is fast (~seconds).
-          # To re-enable provenance later: add `permissions: id-token: write` to this
-          # job and drop --no-provenance.
-          deno publish --token "$JSR_TOKEN" --allow-slow-types --allow-dirty --no-provenance
+          # When deno publish sees GITHUB_ACTIONS=true it enters the GitHub-OIDC
+          # publish flow and blocks ~2h on an id-token verification that never comes
+          # (we use token auth, not OIDC; no `id-token: write` is granted). Setting
+          # GITHUB_ACTIONS=false for just this command makes deno take the plain token
+          # path, which publishes in seconds. Verified in a container with `act`.
+          GITHUB_ACTIONS=false deno publish --token "$JSR_TOKEN" --allow-slow-types --allow-dirty
