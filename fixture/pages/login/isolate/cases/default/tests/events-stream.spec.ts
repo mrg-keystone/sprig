@@ -9,7 +9,10 @@ test("Sign in emits a click on the event stream", async ({ page }) => {
 
   await page.locator("#submit").click();
 
-  const e = await ev.expect((e) => e.source === "button#submit" && e.type === "click", { timeout: 3000 });
+  const e = await ev.expect(
+    (e) => e.source === "button#submit" && e.type === "click",
+    { timeout: 3000 },
+  );
   expect(e.type).toBe("click");
   expect(e.detail).toContain("Sign in");
 });
@@ -20,6 +23,25 @@ test("typing in the email field emits input events carrying the value", async ({
 
   await page.locator("#email").fill("hi@x.com");
 
-  const e = await ev.expect((e) => e.source === "input#email" && e.type === "input", { timeout: 3000 });
+  const e = await ev.expect(
+    (e) => e.source === "input#email" && e.type === "input",
+    { timeout: 3000 },
+  );
   expect(e.detail).toContain("hi@x.com");
+});
+
+// Negative path: the bridge must REJECT (time out) when no matching event ever
+// fires — not hang — so a wrong predicate fails a spec instead of stalling it.
+test("ev.expect times out (rejects) when no matching event fires", async ({ page }) => {
+  const ev = await capture(page);
+  await page.goto("/pages/login/auth/default");
+
+  // No interaction, and a predicate that can never match.
+  let rejected = false;
+  try {
+    await ev.expect((e) => e.type === "never-fires", { timeout: 500 });
+  } catch {
+    rejected = true; // rxjs timeout() → firstValueFrom rejects, as designed
+  }
+  expect(rejected).toBe(true);
 });

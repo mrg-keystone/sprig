@@ -30,9 +30,9 @@ function formatProblems(problems: Problem[], root: string): string {
 }
 
 /** The Fresh project to isolate: `--root <path>` if given, else the current directory. */
-function projectRoot(): string {
-  const i = Deno.args.indexOf("--root");
-  if (i >= 0 && Deno.args[i + 1]) return resolve(Deno.args[i + 1]);
+export function projectRoot(args: string[] = Deno.args): string {
+  const i = args.indexOf("--root");
+  if (i >= 0 && args[i + 1]) return resolve(args[i + 1]);
   return Deno.cwd();
 }
 
@@ -113,18 +113,12 @@ async function pathExists(p: string): Promise<boolean> {
 const EVENTS_HELPER =
   `import { filter, firstValueFrom, ReplaySubject, take, timeout } from "rxjs";
 
-/**
- * Bridge the page's event stream into a Node-side RxJS Observable.
- * Call BEFORE page.goto so the binding is installed first. A ReplaySubject buffers
- * every event, so \`expect\` matches events whether they already fired or fire next.
- *
- *   const ev = await capture(page);
- *   await page.goto(url);
- *   await page.locator("#submit").click();
- *   await ev.expect((e) => e.source === "button#submit" && e.type === "click");
- */
+// capture(page): bridge the page's event stream into a Node-side RxJS Observable.
+// Full typed docs live in index.d.ts (kept as the single source). Call BEFORE
+// page.goto. The ReplaySubject is bounded so a long-lived page can't grow it
+// without limit — 500 events is far more than any spec inspects.
 export async function capture(page) {
-  const subject = new ReplaySubject();
+  const subject = new ReplaySubject(500);
   await page.exposeBinding("__isolateEmit", (_source, evt) => subject.next(evt));
   const events$ = subject.asObservable();
   return {
@@ -136,15 +130,9 @@ export async function capture(page) {
   };
 }
 
-/**
- * Wait until the isolate preview has hydrated and its stage is interactive, so a
- * click actually does something — clicking an island BEFORE hydration is a silent
- * no-op against the SSR markup. Call after page.goto, before interacting.
- *
- *   await page.goto(url);
- *   await waitHydrated(page);
- *   await page.locator("#increment").click();
- */
+// waitHydrated(page): resolve once the preview has hydrated and its stage is
+// interactive (clicking an island before hydration is a silent no-op against SSR
+// markup). Full typed docs live in index.d.ts. Call after page.goto, before interacting.
 export async function waitHydrated(page, opts = {}) {
   await page.waitForFunction(
     () => globalThis.__isolateReady === true,
@@ -156,8 +144,7 @@ export async function waitHydrated(page, opts = {}) {
 
 // Types for the helper, so specs that `import { capture } from "isolate-events"`
 // get autocomplete on the bridge, the predicate, and the IsolateEvent shape.
-const EVENTS_DTS =
-  `import type { Page } from "@playwright/test";
+const EVENTS_DTS = `import type { Page } from "@playwright/test";
 import type { Observable } from "rxjs";
 
 /** A single event a previewed component emitted, as recorded by isolate's stream. */

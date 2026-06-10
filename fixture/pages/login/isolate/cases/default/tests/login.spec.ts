@@ -14,7 +14,9 @@ test("each button instance has its own controls group", async ({ page }) => {
   const cancel = page.locator("#cancel");
 
   // Disabling the #submit group leaves #cancel untouched.
-  await page.locator(".ctrl-group", { hasText: "#submit" }).locator("input[type=checkbox]").check();
+  await page.locator(".ctrl-group", { hasText: "#submit" }).locator(
+    "input[type=checkbox]",
+  ).check();
   await expect(submit).toBeDisabled();
   await expect(cancel).toBeEnabled();
 });
@@ -23,8 +25,10 @@ test("logs input events with the value the field emitted", async ({ page }) => {
   await page.goto("/pages/login/auth/default");
   await page.locator("#email").fill("hello");
 
-  // Some row attributed to the email input carries the typed value.
-  const valueRow = page.locator(".iso-log__row", { hasText: "hello" }).first();
+  // Locate the row by its SOURCE (the email input), not a broad "hello" text match
+  // that any row could satisfy, then assert that row carries the typed value.
+  const valueRow = page.locator(".iso-log__row", { hasText: "input#email" })
+    .first();
   await expect(valueRow).toContainText("input#email");
   await expect(valueRow).toContainText("hello");
 });
@@ -38,10 +42,13 @@ test("does not log events on inert markup (only controls)", async ({ page }) => 
 test("a disabled control emits no events (not even pointer events)", async ({ page }) => {
   await page.goto("/pages/login/auth/default");
   // Disable #cancel via its controls group.
-  await page.locator(".ctrl-group", { hasText: "#cancel" }).locator("input[type=checkbox]").check();
+  await page.locator(".ctrl-group", { hasText: "#cancel" }).locator(
+    "input[type=checkbox]",
+  ).check();
   await expect(page.locator("#cancel")).toBeDisabled();
 
   // Force a click on the disabled button — pointer events fire but must be ignored.
   await page.locator("#cancel").click({ force: true });
-  await expect(page.locator(".iso-log__row", { hasText: "button#cancel" })).toHaveCount(0);
+  await expect(page.locator(".iso-log__row", { hasText: "button#cancel" }))
+    .toHaveCount(0);
 });

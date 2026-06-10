@@ -4,7 +4,13 @@
 // (the case is a PAGE — the component plus the sub-components it renders — with a
 // LIVE, typed controls panel grouped per component), and a /api/run endpoint that
 // runs a case's Playwright tests against the live app. Cached between runs.
-import { basename, dirname, relative } from "jsr:@std/path@^1";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  relative,
+  resolve,
+} from "jsr:@std/path@^1";
 import { copy } from "jsr:@std/fs@^1";
 import type { CaseDef, ComponentEntry, ControlDef } from "./discover.ts";
 
@@ -46,7 +52,9 @@ async function linkOrCopy(target: string, path: string): Promise<void> {
     return;
   } catch { /* junction unavailable — fall through to a copy */ }
   console.warn(
-    `⚠ couldn't symlink ${basename(target)}/ (Windows without Developer Mode?) — ` +
+    `⚠ couldn't symlink ${
+      basename(target)
+    }/ (Windows without Developer Mode?) — ` +
       `copied it instead.\n  The preview is a snapshot: re-run isolate to pick up ` +
       `source edits, or enable Developer Mode for live links.`,
   );
@@ -256,10 +264,17 @@ function previewIsland(
   return `import * as mod from "${compImp}";
 import { Controls } from "${controlsImp}";
 
-const Component = (mod.default ?? mod[${
-    JSON.stringify(exportName)
-  }] ?? Object.values(mod).find((v) => typeof v === "function"));
 const NAME = ${JSON.stringify(exportName)};
+const Component = (mod.default ?? mod[NAME] ?? Object.values(mod).find((v) => typeof v === "function"));
+// The last resort above (first exported function) makes a wrong/renamed export a
+// SILENT blank render. Fail loudly instead so a bad export is obvious immediately.
+if (typeof Component !== "function") {
+  throw new Error(
+    "isolate: no component found in " + ${JSON.stringify(compImp)} +
+      " — expected a default export or a named export \\"" + NAME +
+      "\\" (exports seen: " + (Object.keys(mod).join(", ") || "none") + ").",
+  );
+}
 const DEFS = ${JSON.stringify(defs)};
 const SUB_DEFS = ${JSON.stringify(subDefs)};
 const BACKGROUND = ${JSON.stringify(background ?? "#ffffff")};
@@ -293,21 +308,57 @@ export default function Route() {
 `;
 }
 
+/**
+ * Which of the requested `tests` /api/run will actually execute: each must resolve
+ * to a real `.spec` file INSIDE the host root. We resolve first (collapsing `..`)
+ * and check containment with `relative`, so a crafted `${hostRoot}/../etc/x.spec.ts`
+ * can't escape — the run endpoint spawns Playwright unauthenticated on localhost,
+ * so it must only ever run the host's own tests. Exported so it's unit-tested; the
+ * generated endpoint below inlines the identical logic (it can't import this module).
+ */
+export function filterSpecs(tests: unknown, hostRoot: string): string[] {
+  if (!Array.isArray(tests)) return [];
+  const root = resolve(hostRoot);
+  return tests
+    .filter((s): s is string => typeof s === "string")
+    .map((s) => resolve(s))
+    .filter((abs) => {
+      const rel = relative(root, abs);
+      const inside = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+      return inside && /\.spec\.tsx?$/.test(abs);
+    });
+}
+
 /** POST /api/run { tests: string[] } -> runs those specs via the Playwright runner. */
 function runEndpoint(runner: string, config: string, hostRoot: string): string {
-  return `const RUNNER = ${JSON.stringify(runner)};
+  return `import { isAbsolute, relative, resolve } from "jsr:@std/path@^1";
+
+const RUNNER = ${JSON.stringify(runner)};
 const PW_BIN = RUNNER + "/.bin/playwright";
 const CONFIG = ${JSON.stringify(config)};
-const HOST_ROOT = ${JSON.stringify(hostRoot)};
+const HOST_ROOT = resolve(${JSON.stringify(hostRoot)});
+
+// Only run real .spec files that resolve INSIDE the host root. Resolve first so a
+// crafted "../" path can't escape — this endpoint spawns Playwright unauthenticated
+// on localhost, so it must never run anything outside the host's own tests.
+// (Mirror of scaffold.ts's exported filterSpecs(), which is unit-tested.)
+function validSpecs(tests: unknown): string[] {
+  if (!Array.isArray(tests)) return [];
+  return tests
+    .filter((s) => typeof s === "string")
+    .map((s) => resolve(s as string))
+    .filter((abs) => {
+      const rel = relative(HOST_ROOT, abs);
+      const inside = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+      return inside && /\\.spec\\.tsx?$/.test(abs);
+    });
+}
 
 export const handler = {
   async POST(ctx: any) {
     let body: any = {};
     try { body = await ctx.req.json(); } catch (_e) { /* empty */ }
-    const tests: string[] = Array.isArray(body.tests) ? body.tests : [];
-    const specs = tests.filter((s) =>
-      typeof s === "string" && s.startsWith(HOST_ROOT) && /\\.spec\\.tsx?$/.test(s)
-    );
+    const specs = validSpecs(body.tests);
     if (!specs.length) {
       return Response.json({ ok: false, error: "no valid tests" }, { status: 400 });
     }

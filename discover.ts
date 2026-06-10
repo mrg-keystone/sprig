@@ -49,6 +49,17 @@ export interface ControlDef {
   value?: unknown;
 }
 
+/**
+ * A case's `_mocks[name]` directive for a sub-component:
+ *   "stub" / true        — swap every instance for a labeled placeholder
+ *   { props: {...} }      — force these props onto every instance
+ * (`stub: true` inside the object form is also honored.)
+ */
+export type MockSpec =
+  | "stub"
+  | true
+  | { stub?: boolean; props?: Record<string, unknown> };
+
 export interface CaseDef {
   name: string;
   label: string;
@@ -56,7 +67,7 @@ export interface CaseDef {
   props: Record<string, unknown>;
   innerHtml?: string;
   signals?: Record<string, unknown>;
-  mocks?: Record<string, unknown>;
+  mocks?: Record<string, MockSpec>;
   route: string;
   tests: TestRef[];
 }
@@ -128,7 +139,7 @@ async function* walkDirs(root: string): AsyncGenerator<string> {
 }
 
 /** Parse fixture.controls into control definitions (objects), or {value} for bare values. */
-function parseControlDefs(raw: unknown): Record<string, ControlDef> {
+export function parseControlDefs(raw: unknown): Record<string, ControlDef> {
   const defs: Record<string, ControlDef> = {};
   if (raw && typeof raw === "object") {
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
@@ -141,7 +152,7 @@ function parseControlDefs(raw: unknown): Record<string, ControlDef> {
 }
 
 /** A sensible initial value for a declared control that the case doesn't set. */
-function controlDefault(def: ControlDef): unknown {
+export function controlDefault(def: ControlDef): unknown {
   if (def.value !== undefined) return def.value;
   switch (def.type) {
     case "boolean":
@@ -150,7 +161,9 @@ function controlDefault(def: ControlDef): unknown {
     case "range":
       return def.min ?? 0;
     case "select":
-      return def.options?.[0];
+      // Empty/missing options would seed an `undefined` prop into the panel — fall
+      // back to "" so the control renders an (empty) value instead.
+      return def.options?.[0] ?? "";
     case "color":
       return "#000000";
     default:
@@ -159,17 +172,17 @@ function controlDefault(def: ControlDef): unknown {
 }
 
 /** Split a case JSON: bare keys -> props, _name/_innerHtml/_signals -> special. */
-function parseCaseValues(obj: Record<string, unknown>) {
+export function parseCaseValues(obj: Record<string, unknown>) {
   const props: Record<string, unknown> = {};
   let innerHtml: string | undefined;
   let signals: Record<string, unknown> | undefined;
-  let mocks: Record<string, unknown> | undefined;
+  let mocks: Record<string, MockSpec> | undefined;
   let label: string | undefined;
   for (const [k, v] of Object.entries(obj ?? {})) {
     if (k === "_name") label = String(v);
     else if (k === "_innerHtml") innerHtml = String(v);
     else if (k === "_signals") signals = v as Record<string, unknown>;
-    else if (k === "_mocks") mocks = v as Record<string, unknown>;
+    else if (k === "_mocks") mocks = v as Record<string, MockSpec>;
     else if (k.startsWith("_")) { /* unknown special — ignore */ }
     else props[k] = v;
   }
@@ -191,8 +204,7 @@ async function findComponentFile(
   );
   const pick = exact ?? ci ?? tsx[0];
   // No exact or case-insensitive match: we either fall back to an arbitrary
-  // .tsx (Vite then imports the wrong component) or find none (empty path → a
-  // cryptic import error at preview time). Surface it now instead.
+  // .tsx (Vite then imports the wrong component) or find none. Surface it now.
   if (!exact && !ci) {
     problems.push({
       kind: "component-file",
@@ -202,7 +214,10 @@ async function findComponentFile(
         : `no .tsx file for export "${exportName}"`,
     });
   }
-  return `${dir}/${pick ?? ""}`;
+  // When nothing resolves, return "" rather than a misleading "${dir}/" — callers
+  // can treat the empty string as "no component file" instead of building a bogus
+  // path that fails cryptically (e.g. an attempt to import a directory) under --force.
+  return pick ? `${dir}/${pick}` : "";
 }
 
 async function collectTests(testsDir: string): Promise<TestRef[]> {
@@ -331,10 +346,16 @@ export async function discover(projectRoot: string): Promise<DiscoverResult> {
             fixture.components as Record<string, unknown>,
           )
         ) {
-          const ctrls =
-            (spec && typeof spec === "object" && !Array.isArray(spec))
-              ? (spec as { controls?: unknown }).controls
-              : spec; // allow the bare-controls shorthand: "Button": { "disabled": {...} }
+          // Full form is `"Button": { "controls": {...} }`; the shorthand drops the
+          // wrapper: `"Button": { "disabled": {...} }`. Treat the object as the
+          // wrapper ONLY when it actually carries a `controls` key — otherwise the
+          // whole object IS the controls map. (Consequence: a control literally
+          // named "controls" must use the full-form wrapper, or it's read as one.)
+          const isWrapper = spec != null && typeof spec === "object" &&
+            !Array.isArray(spec) && "controls" in (spec as object);
+          const ctrls = isWrapper
+            ? (spec as { controls?: unknown }).controls
+            : spec;
           subControlDefs[name] = parseControlDefs(ctrls);
         }
       }
