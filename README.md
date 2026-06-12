@@ -36,16 +36,23 @@ install? Run it one-off with `deno run -A jsr:@mrg-keystone/isolate <cmd>`.
 | `isolate list`          | List discovered components + their cases and routes                                                                |
 | `isolate dev`           | Build & serve the preview app, open the browser (`--no-open` to skip)                                              |
 | `isolate test [filter]` | Run every case's Playwright tests headlessly (`--json` for agents/CI)                                              |
-| `isolate update`        | Install/refresh the bundled Claude Code skill at `~/.claude/skills` and the global CLI, both to the latest release |
+| `isolate update`        | Install/refresh the bundled Claude Code skills at `~/.claude/skills` and the global CLI, both to the latest release |
 
 The project commands take `--root <path>` to point at the Fresh project
 (default: the current directory).
 
-The package also ships the **deno-fresh2 Claude Code skill** (under `skill/`):
-expert Fresh 2 guidance that includes how to author `isolate/` fixtures.
-`isolate
-update` installs it at user scope — it deletes
-`~/.claude/skills/deno-fresh2` and replaces it with the latest published copy
+The package also ships **three Claude Code skills** (under `skills/`), one per
+stage of the build lifecycle:
+
+| Skill                  | Stage | What it does                                                                            |
+| ---------------------- | ----- | --------------------------------------------------------------------------------------- |
+| `skills/prototype`     | 1     | Build a throwaway single-file clickable HTML prototype to answer "what are we building" |
+| `skills/ui-breakdown`  | 2     | Decompose a mock/prototype into a build-ready spec (components, tokens, fixtures)        |
+| `skills/deno-fresh2`   | 3     | Expert Fresh 2 guidance for the real build, including authoring `isolate/` fixtures      |
+
+Each skill directory is named after its SKILL.md `name:`. `isolate update`
+installs all of them at user scope — for each it deletes
+`~/.claude/skills/<name>` and replaces it with the latest published copy
 (it refuses to delete a dir that holds a git checkout, so a dev setup is never
 clobbered).
 
@@ -312,8 +319,8 @@ deno task test   # unit tests
 deno task e2e    # the fixture app's Playwright suite
 ```
 
-`deno task install` links the bundled Fresh 2 skill into `~/.claude/skills` and
-installs the `isolate` CLI globally from JSR.
+`deno task install` links every bundled skill (`skills/*`) into
+`~/.claude/skills` and installs the `isolate` CLI globally from JSR.
 
 ## License
 

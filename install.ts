@@ -1,15 +1,21 @@
 // `deno task install` — set isolate up for everyday DEV use:
-//   1. Symlink the Fresh 2 skill (this repo's `skill/` folder) at USER scope
-//      so Claude Code picks it up: ~/.claude/skills/<skill-name>.
+//   1. Symlink every skill in this repo's `skills/` folder at USER scope
+//      so Claude Code picks them up: ~/.claude/skills/<skill-name>.
 //   2. Install the `isolate` CLI at GLOBAL scope from JSR, so `isolate <cmd>`
 //      works in any project.
 //
-// The skill source is this repo's `skill/` directory. Installing is a
-// symlink, so edits to the skill reflect live — this is the dev-mode setup;
-// consumers should run `isolate update` instead, which installs a plain copy
-// of the latest published version. Idempotent and non-destructive: it never
-// clobbers an existing, different skill folder, and when the symlink already
-// points here it just reports "already installed".
+// The skill sources are the directories under `skills/` (one skill each,
+// named by their SKILL.md frontmatter). Installing is a symlink, so edits to
+// a skill reflect live — this is the dev-mode setup; consumers should run
+// `isolate update` instead, which installs a plain copy of the latest
+// published version. Idempotent and non-destructive: it never clobbers an
+// existing, different skill folder, and when a symlink already points here
+// it just reports "already installed".
+//
+// One special layout: this checkout may itself live INSIDE an installed
+// skill dir (~/.claude/skills/deno-fresh2/isolate). The target then can't be
+// a single symlink — instead each entry of the skill source (SKILL.md,
+// references/, evals/) is symlinked individually into the target dir.
 import { basename, join } from "jsr:@std/path@^1";
 
 const CLI_NAME = "isolate";
@@ -42,32 +48,65 @@ async function skillName(skillDir: string): Promise<string> {
   return basename(skillDir);
 }
 
-async function installSkill(skillDir: string): Promise<void> {
+/**
+ * The checkout-inside-the-skill layout: the target dir is an ancestor of this
+ * repo, so it can't be replaced by a symlink. Link the skill's entries
+ * (SKILL.md, references/, …) into it one by one. Existing symlinks that
+ * point into this repo are re-pointed; anything else is left untouched.
+ */
+async function linkEntries(skillDir: string, target: string, repoReal: string) {
+  for await (const entry of Deno.readDir(skillDir)) {
+    const src = join(skillDir, entry.name);
+    const dest = join(target, entry.name);
+    const destReal = await real(dest);
+    const srcReal = await real(src);
+    if (destReal && srcReal && destReal === srcReal) continue; // already right
+    const info = await lstat(dest);
+    if (info) {
+      // Replace only our own links: a symlink that points into this repo
+      // (possibly dangling after a re-layout). Never touch real files.
+      if (!info.isSymlink) {
+        console.warn(`⚠ ${dest} exists and isn't ours — leaving it.`);
+        continue;
+      }
+      const raw = await Deno.readLink(dest);
+      const resolved = raw.startsWith("/") ? raw : join(target, raw);
+      if (!resolved.startsWith(repoReal + "/")) {
+        console.warn(`⚠ ${dest} links outside this repo — leaving it.`);
+        continue;
+      }
+      await Deno.remove(dest);
+    }
+    await Deno.symlink(src, dest);
+    console.log(`  ↳ linked ${entry.name}`);
+  }
+}
+
+async function installSkill(skillDir: string, repoDir: string): Promise<void> {
   const home = Deno.env.get("HOME");
   if (!home) {
     console.warn("⚠ HOME not set — skipping skill install.");
     return;
   }
-  if (!(await lstat(join(skillDir, "SKILL.md")))) {
-    console.warn(
-      `⚠ no SKILL.md in ${skillDir} — this checkout doesn't carry the skill, ` +
-        `so there's nothing to install at user scope. Installing the CLI only.`,
-    );
-    return;
-  }
-
   const name = await skillName(skillDir);
   const skillsRoot = join(home, ".claude", "skills");
   const target = join(skillsRoot, name);
 
   const targetReal = await real(target);
   const sourceReal = await real(skillDir);
+  const repoReal = (await real(repoDir)) ?? repoDir;
 
   // Already pointing at (or literally being) this skill → nothing to do.
   if (targetReal && sourceReal && targetReal === sourceReal) {
-    console.log(
-      `✓ skill '${name}' already installed at user scope → ${target}`,
-    );
+    console.log(`✓ skill '${name}' already installed → ${target}`);
+    return;
+  }
+
+  // The dev layout where this checkout lives INSIDE the target skill dir
+  // (e.g. ~/.claude/skills/deno-fresh2/isolate): link entries individually.
+  if (targetReal && repoReal.startsWith(targetReal + "/")) {
+    console.log(`✓ skill '${name}' hosts this checkout — linking entries:`);
+    await linkEntries(skillDir, target, repoReal);
     return;
   }
 
@@ -116,8 +155,15 @@ if (!repoDir) {
   console.error("Cannot resolve the install directory.");
   Deno.exit(1);
 }
-const skillDir = join(repoDir, "skill"); // the skill ships inside the repo
 
-await installSkill(skillDir);
+// Every directory under skills/ that carries a SKILL.md is an installable skill.
+const skillsDir = join(repoDir, "skills");
+for await (const entry of Deno.readDir(skillsDir)) {
+  if (!entry.isDirectory) continue;
+  const dir = join(skillsDir, entry.name);
+  if (!(await lstat(join(dir, "SKILL.md")))) continue;
+  await installSkill(dir, repoDir);
+}
+
 await installCli();
 console.log("\nDone. Try:  isolate list   (from inside a Fresh project)");

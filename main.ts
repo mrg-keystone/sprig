@@ -7,7 +7,7 @@
 //   isolate dev --force       # …even if some isolate/ configs are malformed
 //   isolate dev --root PATH   # …against a Fresh app elsewhere (default: cwd)
 //   isolate test [filter]     # run cases' Playwright tests headlessly (--json for agents)
-//   isolate update            # reinstall the latest skill (~/.claude/skills) + this CLI
+//   isolate update            # reinstall the latest skills (~/.claude/skills) + this CLI
 //
 // Malformed fixture.json / case JSON and unresolved component files are
 // collected during discovery and reported up front: `dev` and `test` refuse to
