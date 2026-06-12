@@ -7,12 +7,14 @@
 //   isolate dev --force       # …even if some isolate/ configs are malformed
 //   isolate dev --root PATH   # …against a Fresh app elsewhere (default: cwd)
 //   isolate test [filter]     # run cases' Playwright tests headlessly (--json for agents)
+//   isolate update            # reinstall the latest skill (~/.claude/skills) + this CLI
 //
 // Malformed fixture.json / case JSON and unresolved component files are
 // collected during discovery and reported up front: `dev` and `test` refuse to
 // start until they're fixed (use `dev --force` to preview the valid ones anyway).
 import { type ComponentEntry, discover, type Problem } from "./discover.ts";
 import { setupApp } from "./scaffold.ts";
+import { cmdUpdate } from "./update.ts";
 import { resolve } from "jsr:@std/path@^1";
 
 /** Format discovery problems as a human-readable batch; paths shown relative to root. */
@@ -624,8 +626,13 @@ async function main() {
     case "test":
       await cmdTest(parseTestArgs(Deno.args.slice(1)));
       break;
+    case "update":
+      await cmdUpdate();
+      break;
     default:
-      console.error(`Unknown command: ${cmd}\nTry: isolate [list|dev|test]`);
+      console.error(
+        `Unknown command: ${cmd}\nTry: isolate [list|dev|test|update]`,
+      );
       Deno.exit(1);
   }
 }

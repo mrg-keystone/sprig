@@ -1,15 +1,16 @@
-// `deno task install` — set isolate up for everyday use:
-//   1. Install the Fresh 2 skill (this repo's parent folder) at USER scope so
-//      Claude Code picks it up: ~/.claude/skills/<skill-name>.
+// `deno task install` — set isolate up for everyday DEV use:
+//   1. Symlink the Fresh 2 skill (this repo's `skill/` folder) at USER scope
+//      so Claude Code picks it up: ~/.claude/skills/<skill-name>.
 //   2. Install the `isolate` CLI at GLOBAL scope from JSR, so `isolate <cmd>`
 //      works in any project.
 //
-// The skill source is the repo's PARENT directory (the repo lives inside the
-// skill, e.g. <skill>/isolate). Installing is a symlink, so edits to the skill
-// reflect live. Idempotent and non-destructive: it never clobbers an existing,
-// different skill folder, and on a checkout that already lives at the install
-// location it just reports "already installed".
-import { basename, dirname, join } from "jsr:@std/path@^1";
+// The skill source is this repo's `skill/` directory. Installing is a
+// symlink, so edits to the skill reflect live — this is the dev-mode setup;
+// consumers should run `isolate update` instead, which installs a plain copy
+// of the latest published version. Idempotent and non-destructive: it never
+// clobbers an existing, different skill folder, and when the symlink already
+// points here it just reports "already installed".
+import { basename, join } from "jsr:@std/path@^1";
 
 const CLI_NAME = "isolate";
 const JSR_PKG = "jsr:@mrg-keystone/isolate";
@@ -64,7 +65,9 @@ async function installSkill(skillDir: string): Promise<void> {
 
   // Already pointing at (or literally being) this skill → nothing to do.
   if (targetReal && sourceReal && targetReal === sourceReal) {
-    console.log(`✓ skill '${name}' already installed at user scope → ${target}`);
+    console.log(
+      `✓ skill '${name}' already installed at user scope → ${target}`,
+    );
     return;
   }
 
@@ -72,7 +75,9 @@ async function installSkill(skillDir: string): Promise<void> {
   if (info) {
     // Something else is already there — don't destroy it.
     console.warn(
-      `⚠ ${target} already exists and points elsewhere (${targetReal ?? "?"}).\n` +
+      `⚠ ${target} already exists and points elsewhere (${
+        targetReal ?? "?"
+      }).\n` +
         `  Leaving it untouched. Remove it and re-run if you want to link this checkout.`,
     );
     return;
@@ -111,7 +116,7 @@ if (!repoDir) {
   console.error("Cannot resolve the install directory.");
   Deno.exit(1);
 }
-const skillDir = dirname(repoDir); // the repo lives inside the skill folder
+const skillDir = join(repoDir, "skill"); // the skill ships inside the repo
 
 await installSkill(skillDir);
 await installCli();

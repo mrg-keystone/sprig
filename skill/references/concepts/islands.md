@@ -1,0 +1,58 @@
+# Islands
+
+> Source: https://fresh.deno.dev/docs/concepts/islands
+
+## TL;DR
+An island is an interactive Preact component that hydrates client-side. Place it in `islands/` (root) or any `(_islands)/` folder inside `routes/`. Use PascalCase or kebab-case filenames. Props must be serializable; functions cannot be passed.
+
+## Defining an island
+```tsx
+// islands/Counter.tsx
+import { useSignal } from "@preact/signals";
+
+export default function Counter() {
+  const count = useSignal(0);
+  return <button onClick={() => count.value++}>{count}</button>;
+}
+```
+Use it from any route or component:
+```tsx
+import Counter from "../islands/Counter.tsx";
+export default () => <main><Counter /></main>;
+```
+
+## Co-located islands
+Place islands next to the routes that use them via `(_islands)`:
+```
+routes/
+  dashboard/
+    index.tsx
+    (_islands)/
+      Chart.tsx
+```
+
+## Serializable prop types
+- Primitives: string, number, boolean, bigint, null, undefined
+- Special numbers: `Infinity`, `-Infinity`, `-0`, `NaN`
+- `Date`, `RegExp`, `URL`, `Uint8Array`
+- `Map`, `Set`, `Temporal.*`
+- Plain objects + arrays of the above
+- Preact **Signals**
+- **JSX elements** (server-rendered chunks can be passed as children/props)
+- Circular references are preserved
+
+## NOT supported
+- Functions (event handlers must live inside the island)
+- Class instances (other than the explicitly-supported types)
+
+## Nesting
+Islands can render other islands. JSX passed as `children` from a server component is rendered server-side and embedded as static HTML inside the island.
+
+## Gotchas
+- File must be a default export.
+- Importing an island from a non-route file is fine; what matters is that it lives under an islands directory.
+- If you accidentally pass a function prop, the build/runtime will error — move the handler inside the island.
+
+## See also
+- `concepts/signals.md` — preferred state primitive inside islands
+- `advanced/serialization.md` — full serialization spec
