@@ -2,8 +2,9 @@
 
 > A small CLI for Fresh 2 projects: spin up a standalone, Storybook-style preview
 > for any component/island/page, with a live controls panel, an event log, and a
-> one-click Playwright runner. The tool source is **bundled with this skill** at
-> `isolate/` (a real git repo, published as `@mrg-keystone/isolate`).
+> one-click Playwright runner. Published as `@mrg-keystone/isolate` on JSR — this
+> skill ships inside that same package (under `skill/`) and `isolate update`
+> refreshes both.
 
 ## TL;DR
 
