@@ -27,7 +27,12 @@ export function skillNameFrom(md: string, fallback: string): string {
 }
 
 async function fetchJson(url: string): Promise<Record<string, unknown>> {
-  const res = await fetch(url);
+  // api.jsr.io asks tools to identify themselves (jsr.io/docs/api).
+  const res = await fetch(url, {
+    headers: {
+      "user-agent": `mrg-keystone-isolate; https://jsr.io/@${SCOPE}/${PKG}`,
+    },
+  });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} — ${url}`);
   return await res.json();
 }
@@ -39,8 +44,12 @@ export async function cmdUpdate(): Promise<void> {
     Deno.exit(1);
   }
 
-  const meta = await fetchJson(`${JSR_BASE}/meta.json`);
-  const latest = meta.latest as string;
+  // The AUTHORITATIVE latest: jsr.io's CDN-cached meta.json lags new
+  // releases by minutes, which would reinstall the previous version.
+  const meta = await fetchJson(
+    `https://api.jsr.io/scopes/${SCOPE}/packages/${PKG}`,
+  );
+  const latest = meta.latestVersion as string;
   console.log(`Latest published @${SCOPE}/${PKG}: ${latest}`);
 
   const vmeta = await fetchJson(`${JSR_BASE}/${latest}_meta.json`);

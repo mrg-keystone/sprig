@@ -7,26 +7,11 @@ on:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-      # Version = <major>.<minor> from deno.json + the run number as the patch,
-      # so every merge to main publishes a new version automatically.
-      - name: Version + publish
-        env:
-          JSR_TOKEN: ${{ secrets.JSR_TOKEN }}
-        run: |
-          MAJMIN=$(jq -r '.version | split(".")[0:2] | join(".")' deno.json)
-          jq --arg v "$MAJMIN.$GITHUB_RUN_NUMBER" '.version = $v' deno.json > d && mv d deno.json
-          echo "Publishing $MAJMIN.$GITHUB_RUN_NUMBER"
-          # No --allow-slow-types: this package has no public API exports, so the
-          #   slow-types check passes trivially. Passing the flag made JSR take a
-          #   slow server-side path (it skips .d.ts gen); dropping it lets JSR
-          #   process the publish on the normal/fast path.
-          # --no-provenance: provenance attestation separately stalls the JSR
-          #   publish task ~2h on GitHub runners; id-token:write does not help.
-          #   We authenticate with the JSR token instead.
-          deno publish --token "$JSR_TOKEN" --allow-dirty --no-provenance
+    uses: mrg-keystone/actions/.github/workflows/jsr-publish.yml@main
+    permissions:
+      contents: write # the workflow commits the version bump back
+    secrets: inherit
+    with:
+      # No public API exports → no slow types; passing --allow-slow-types
+      # makes JSR take its slow server-side publish path (skips .d.ts gen).
+      allow-slow-types: false
