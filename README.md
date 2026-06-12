@@ -31,11 +31,11 @@ install? Run it one-off with `deno run -A jsr:@mrg-keystone/isolate <cmd>`.
 
 ## The commands
 
-| Command                 | What it does                                                                                                       |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `isolate list`          | List discovered components + their cases and routes                                                                |
-| `isolate dev`           | Build & serve the preview app, open the browser (`--no-open` to skip)                                              |
-| `isolate test [filter]` | Run every case's Playwright tests headlessly (`--json` for agents/CI)                                              |
+| Command                 | What it does                                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `isolate list`          | List discovered components + their cases and routes                                                                 |
+| `isolate dev`           | Build & serve the preview app, open the browser (`--no-open` to skip)                                               |
+| `isolate test [filter]` | Run every case's Playwright tests headlessly (`--json` for agents/CI)                                               |
 | `isolate update`        | Install/refresh the bundled Claude Code skills at `~/.claude/skills` and the global CLI, both to the latest release |
 
 The project commands take `--root <path>` to point at the Fresh project
@@ -44,16 +44,16 @@ The project commands take `--root <path>` to point at the Fresh project
 The package also ships **three Claude Code skills** (under `skills/`), one per
 stage of the build lifecycle:
 
-| Skill                  | Stage | What it does                                                                            |
-| ---------------------- | ----- | --------------------------------------------------------------------------------------- |
-| `skills/prototype`     | 1     | Build a throwaway single-file clickable HTML prototype to answer "what are we building" |
-| `skills/ui-breakdown`  | 2     | Decompose a mock/prototype into a build-ready spec (components, tokens, fixtures)        |
-| `skills/deno-fresh2`   | 3     | Expert Fresh 2 guidance for the real build, including authoring `isolate/` fixtures      |
+| Skill                 | Stage | What it does                                                                            |
+| --------------------- | ----- | --------------------------------------------------------------------------------------- |
+| `skills/prototype`    | 1     | Build a throwaway single-file clickable HTML prototype to answer "what are we building" |
+| `skills/ui-breakdown` | 2     | Decompose a mock/prototype into a build-ready spec (components, tokens, fixtures)       |
+| `skills/deno-fresh2`  | 3     | Expert Fresh 2 guidance for the real build, including authoring `isolate/` fixtures     |
 
 Each skill directory is named after its SKILL.md `name:`. `isolate update`
 installs all of them at user scope — for each it deletes
-`~/.claude/skills/<name>` and replaces it with the latest published copy
-(it refuses to delete a dir that holds a git checkout, so a dev setup is never
+`~/.claude/skills/<name>` and replaces it with the latest published copy (it
+refuses to delete a dir that holds a git checkout, so a dev setup is never
 clobbered).
 
 ## Quickstart — your first preview in 5 minutes
@@ -122,6 +122,14 @@ Three source roots are scanned; a component is "isolatable" the moment it has an
 So `components/button/` with `category:"buttons"`, `folder:"regular"`, case
 `primary` serves at `/components/buttons/regular/primary` — not
 `/components/button/...`.
+
+**How the component itself is resolved:** the folder name pascal-cases into the
+expected export (`float-button` → `FloatButton`), the matching `.tsx` file is
+imported, and the component must be its **default export or a named export with
+that exact name** — nothing else. A file that matches by name but exports
+neither is reported as a config problem by `list`/`dev`/`test`, and the preview
+renders a visible error card (file, expected export, exports actually seen)
+instead of a blank stage.
 
 ## `fixture.json`
 

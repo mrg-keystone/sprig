@@ -12,7 +12,12 @@ import {
   resolve,
 } from "jsr:@std/path@^1";
 import { copy } from "jsr:@std/fs@^1";
-import type { CaseDef, ComponentEntry, ControlDef } from "./discover.ts";
+import type {
+  CaseDef,
+  ComponentEntry,
+  ControlDef,
+  Problem,
+} from "./discover.ts";
 
 async function exists(p: string): Promise<boolean> {
   try {
@@ -80,6 +85,7 @@ export interface SetupResult {
 export async function setupApp(
   hostRoot: string,
   entries: ComponentEntry[],
+  problems: Problem[] = [],
 ): Promise<SetupResult> {
   const home = Deno.env.get("HOME");
   if (!home) throw new Error("HOME is not set; cannot locate ~/isolate");
@@ -205,9 +211,21 @@ export default defineConfig({
       testFiles: c.tests.map((t) => t.file),
     }))
   );
+  // Config problems ship in the manifest so the GALLERY shows them — a `--force`
+  // preview must say in the browser which components are broken, not look complete.
+  const flatProblems = problems.map((p) => ({
+    kind: p.kind,
+    path: p.path.startsWith(hostRoot + "/")
+      ? p.path.slice(hostRoot.length + 1)
+      : p.path,
+    detail: p.detail,
+  }));
   await write(
     `${appDir}/manifest.ts`,
-    `export const cases = ${JSON.stringify(flatCases, null, 2)} as const;\n`,
+    `export const cases = ${JSON.stringify(flatCases, null, 2)} as const;\n\n` +
+      `export const problems = ${
+        JSON.stringify(flatProblems, null, 2)
+      } as const;\n`,
   );
   // Shared gallery component + index routes: / (all), /components, /pages.
   await write(`${appDir}/gallery.tsx`, GALLERY_LIB);
@@ -230,16 +248,27 @@ export default defineConfig({
     const islandFile = `${appDir}/routes/(_islands)/${
       pascal(e.slug)
     }Preview.tsx`;
+    const hostRel = (p: string) =>
+      p.startsWith(hostRoot + "/") ? p.slice(hostRoot.length + 1) : p;
+    // No component file at all (e.g. under --force): importing "" would crash the
+    // whole Vite build — generate an island that just renders the error card.
     await write(
       islandFile,
-      previewIsland(
-        relImport(islandFile, e.componentFile.replace(hostRoot, appDir)),
-        e.exportName,
-        relImport(islandFile, `${appDir}/controls.tsx`),
-        e.controlDefs,
-        e.subControlDefs,
-        e.background,
-      ),
+      e.componentFile
+        ? previewIsland(
+          relImport(islandFile, e.componentFile.replace(hostRoot, appDir)),
+          hostRel(e.componentFile),
+          e.exportName,
+          relImport(islandFile, `${appDir}/controls.tsx`),
+          e.controlDefs,
+          e.subControlDefs,
+          e.background,
+        )
+        : missingFileIsland(
+          relImport(islandFile, `${appDir}/controls.tsx`),
+          hostRel(e.dir),
+          e.exportName,
+        ),
     );
     for (const c of e.cases) {
       const routeFile = `${appDir}/routes${c.route}.tsx`;
@@ -255,6 +284,7 @@ export default defineConfig({
  *  control defs (other components on the page), and background. */
 function previewIsland(
   compImp: string,
+  hostFile: string,
   exportName: string,
   controlsImp: string,
   defs: Record<string, ControlDef>,
@@ -262,25 +292,55 @@ function previewIsland(
   background: string | undefined,
 ): string {
   return `import * as mod from "${compImp}";
-import { Controls } from "${controlsImp}";
+import { Controls, IsoError } from "${controlsImp}";
 
 const NAME = ${JSON.stringify(exportName)};
-const Component = (mod.default ?? mod[NAME] ?? Object.values(mod).find((v) => typeof v === "function"));
-// The last resort above (first exported function) makes a wrong/renamed export a
-// SILENT blank render. Fail loudly instead so a bad export is obvious immediately.
-if (typeof Component !== "function") {
-  throw new Error(
-    "isolate: no component found in " + ${JSON.stringify(compImp)} +
-      " — expected a default export or a named export \\"" + NAME +
-      "\\" (exports seen: " + (Object.keys(mod).join(", ") || "none") + ").",
-  );
-}
+const FILE = ${JSON.stringify(hostFile)};
+// Resolution is default → named export, NOTHING ELSE. A first-exported-function
+// fallback used to render the WRONG component silently, and a throw here used to
+// kill the route — an unresolved export renders a visible error card instead.
+const Component = mod.default ?? (mod as Record<string, unknown>)[NAME];
+const EXPORTS = (mod.default !== undefined ? ["default"] : [])
+  .concat(Object.keys(mod).filter((k) => k !== "default"));
 const DEFS = ${JSON.stringify(defs)};
 const SUB_DEFS = ${JSON.stringify(subDefs)};
 const BACKGROUND = ${JSON.stringify(background ?? "#ffffff")};
 
 export default function Preview({ config }: { config: any }) {
+  if (typeof Component !== "function") {
+    return (
+      <IsoError
+        title={"can't render " + NAME}
+        file={FILE}
+        expected={'a default export or a named export "' + NAME + '"'}
+        seen={EXPORTS}
+      />
+    );
+  }
   return <Controls Component={Component} name={NAME} config={config} defs={DEFS} subDefs={SUB_DEFS} background={BACKGROUND} />;
+}
+`;
+}
+
+/** Stand-in island for an entry with NO component file: importing one would crash
+ *  the whole preview build, so the case renders an error card naming the gap. */
+function missingFileIsland(
+  controlsImp: string,
+  hostDir: string,
+  exportName: string,
+): string {
+  return `import { IsoError } from "${controlsImp}";
+
+export default function Preview(_props: { config: any }) {
+  return (
+    <IsoError
+      title={"can't render " + ${JSON.stringify(exportName)}}
+      file={${JSON.stringify(hostDir)} + "/ (no .tsx file)"}
+      expected={'a component file exporting "' + ${
+    JSON.stringify(exportName)
+  } + '" (default or named)'}
+    />
+  );
 }
 `;
 }
@@ -337,57 +397,101 @@ const RUNNER = ${JSON.stringify(runner)};
 const PW_BIN = RUNNER + "/.bin/playwright";
 const CONFIG = ${JSON.stringify(config)};
 const HOST_ROOT = resolve(${JSON.stringify(hostRoot)});
+const RUNNER_FIX = "re-run \`isolate dev\` to install it, or: cd " +
+  RUNNER.replace(/\\/node_modules$/, "") + " && npm i @playwright/test rxjs@^7";
+
+const stripAnsi = (s: string) => s.replace(/\\u001b\\[[0-9;]*m/g, "");
 
 // Only run real .spec files that resolve INSIDE the host root. Resolve first so a
 // crafted "../" path can't escape — this endpoint spawns Playwright unauthenticated
 // on localhost, so it must never run anything outside the host's own tests.
 // (Mirror of scaffold.ts's exported filterSpecs(), which is unit-tested.)
-function validSpecs(tests: unknown): string[] {
-  if (!Array.isArray(tests)) return [];
-  return tests
-    .filter((s) => typeof s === "string")
-    .map((s) => resolve(s as string))
-    .filter((abs) => {
-      const rel = relative(HOST_ROOT, abs);
-      const inside = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
-      return inside && /\\.spec\\.tsx?$/.test(abs);
-    });
+// Returns null for a runnable spec, else WHY it was rejected — the run button
+// shows the reason, so a failure never collapses to a bare "no valid tests".
+async function specReason(s: unknown): Promise<string | null> {
+  if (typeof s !== "string") return "not a file path";
+  const abs = resolve(s);
+  const rel = relative(HOST_ROOT, abs);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
+    return "outside the project root (" + HOST_ROOT + ")";
+  }
+  if (!/\\.spec\\.tsx?$/.test(abs)) return "not a .spec.ts/.spec.tsx file";
+  try { await Deno.stat(abs); } catch { return "file not found"; }
+  return null;
 }
 
 export const handler = {
   async POST(ctx: any) {
     let body: any = {};
     try { body = await ctx.req.json(); } catch (_e) { /* empty */ }
-    const specs = validSpecs(body.tests);
+    const requested: unknown[] = Array.isArray(body.tests) ? body.tests : [];
+    const specs: string[] = [];
+    const rejected: string[] = [];
+    for (const t of requested) {
+      const why = await specReason(t);
+      if (why === null) specs.push(resolve(t as string));
+      else rejected.push(String(t) + " — " + why);
+    }
     if (!specs.length) {
-      return Response.json({ ok: false, error: "no valid tests" }, { status: 400 });
+      return Response.json({
+        ok: false,
+        error: rejected.length
+          ? "no runnable tests:\\n" + rejected.join("\\n")
+          : "no tests requested",
+      }, { status: 400 });
+    }
+    try { await Deno.stat(PW_BIN); } catch {
+      return Response.json({
+        ok: false,
+        error: "Playwright runner missing at " + PW_BIN + " — " + RUNNER_FIX,
+      }, { status: 500 });
     }
     const baseURL = new URL(ctx.req.url).origin;
-    const out = await new Deno.Command(PW_BIN, {
-      args: ["test", ...specs, "--config", CONFIG, "--reporter=json"],
-      env: { ...Deno.env.toObject(), NODE_PATH: RUNNER, ISOLATE_BASE_URL: baseURL },
-      stdout: "piped",
-      stderr: "piped",
-    }).output();
+    let out;
+    try {
+      out = await new Deno.Command(PW_BIN, {
+        args: ["test", ...specs, "--config", CONFIG, "--reporter=json"],
+        env: { ...Deno.env.toObject(), NODE_PATH: RUNNER, ISOLATE_BASE_URL: baseURL },
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+    } catch (e) {
+      return Response.json({
+        ok: false,
+        error: "couldn't start the Playwright runner (" + ((e as Error).message || e) +
+          ") — " + RUNNER_FIX,
+      }, { status: 500 });
+    }
 
     const results: { title: string; ok: boolean; error?: string }[] = [];
+    // Playwright reports per-spec failures under suites, but a spec that can't
+    // even load (syntax error, bad import) lands in top-level \`errors\` — without
+    // it a broken spec file reads as an empty, reasonless run.
+    let topErrors: string[] = [];
     try {
       const j = JSON.parse(new TextDecoder().decode(out.stdout));
+      topErrors = (j.errors || [])
+        .map((e: any) => e && e.message).filter(Boolean)
+        .map((m: any) => stripAnsi(String(m)));
       const walk = (s: any) => {
         (s.specs || []).forEach((sp: any) => {
           const err = (sp.tests || []).flatMap((t: any) => (t.results || []))
             .map((r: any) => r.error?.message).filter(Boolean)[0];
-          results.push({ title: sp.title, ok: !!sp.ok, error: err });
+          results.push({ title: sp.title, ok: !!sp.ok, error: err ? stripAnsi(String(err)) : undefined });
         });
         (s.suites || []).forEach(walk);
       };
       (j.suites || []).forEach(walk);
     } catch { /* unparsable */ }
 
+    const stderrTail = stripAnsi(new TextDecoder().decode(out.stderr)).trim().slice(-400);
     return Response.json({
       ok: out.code === 0,
       results,
-      error: results.length ? undefined : new TextDecoder().decode(out.stderr).slice(-400),
+      error: results.length ? undefined : (
+        topErrors.join("\\n\\n") || stderrTail ||
+        "Playwright produced no test results (exit " + out.code + ")"
+      ),
     });
   },
 };
@@ -399,6 +503,34 @@ const CONTROLS_LIB =
 import { useEffect, useMemo, useRef } from "preact/hooks";
 import { options } from "preact";
 import { filter, fromEvent, map, merge, Subject } from "rxjs";
+
+// A LOUD stand-in for a component that can't render (missing file, unresolved
+// export). The preview must never show a blank stage or a dead route — the card
+// names the file, what was expected, and what the module actually exports.
+export function IsoError(
+  props: { title: string; file?: string; expected?: string; seen?: string[]; hint?: string },
+) {
+  return (
+    <div class="iso-error">
+      <h2 class="iso-error__title">⚠ {props.title}</h2>
+      {props.file
+        ? <p class="iso-error__row"><span class="iso-error__key">file</span><code>{props.file}</code></p>
+        : null}
+      {props.expected
+        ? <p class="iso-error__row"><span class="iso-error__key">expected</span><code>{props.expected}</code></p>
+        : null}
+      {props.seen
+        ? (
+          <p class="iso-error__row">
+            <span class="iso-error__key">exports seen</span>
+            <code>{props.seen.length ? props.seen.join(", ") : "none"}</code>
+          </p>
+        )
+        : null}
+      <p class="iso-error__hint">{props.hint || "Fix the export (or the file name) and reload — \`isolate list\` shows every config problem."}</p>
+    </div>
+  );
+}
 
 // --- sub-component mock + control layer ---------------------------------------
 // Every preview route is a PAGE: a top-level component and the sub-components it
@@ -818,6 +950,7 @@ export default function RunTests({ tests }: { tests: string[] }) {
   const status = useSignal("idle");
   const results = useSignal<{ title: string; ok: boolean; error?: string }[]>([]);
   const ok = useSignal<boolean | null>(null);
+  const error = useSignal<string | null>(null);
 
   if (!tests || tests.length === 0) {
     return <span class="iso-run iso-run--none">no tests</span>;
@@ -827,6 +960,7 @@ export default function RunTests({ tests }: { tests: string[] }) {
     status.value = "running";
     results.value = [];
     ok.value = null;
+    error.value = null;
     try {
       const res = await fetch("/api/run", {
         method: "POST",
@@ -836,8 +970,14 @@ export default function RunTests({ tests }: { tests: string[] }) {
       const j = await res.json();
       results.value = j.results || [];
       ok.value = !!j.ok;
-    } catch (_e) {
+      // A run with no per-test results carries its reason in j.error — keep it,
+      // a bare "✗ error" tells the user nothing about what to fix.
+      if (!j.ok && results.value.length === 0) {
+        error.value = j.error || ("run failed (HTTP " + res.status + ")");
+      }
+    } catch (e) {
       ok.value = false;
+      error.value = "couldn't reach /api/run — " + ((e as Error).message || e);
     }
     status.value = "done";
   };
@@ -856,7 +996,13 @@ export default function RunTests({ tests }: { tests: string[] }) {
                   {r.ok ? "✓" : "✗"} {r.title}
                 </span>
               ))
-              : <span class={"iso-dot " + (ok.value ? "ok" : "fail")}>{ok.value ? "✓ ok" : "✗ error"}</span>}
+              : ok.value
+              ? <span class="iso-dot ok">✓ ok</span>
+              : (
+                <span class="iso-dot fail iso-run__error" title={error.value || "error"}>
+                  ✗ {(error.value || "error").split("\\n")[0]}
+                </span>
+              )}
           </span>
         )
         : null}
@@ -892,7 +1038,7 @@ export default function Route() {
 `;
 }
 
-const GALLERY_LIB = `import { cases } from "./manifest.ts";
+const GALLERY_LIB = `import { cases, problems } from "./manifest.ts";
 import RunTests from "./routes/(_islands)/RunTests.tsx";
 
 function group(arr, key) {
@@ -916,6 +1062,21 @@ export function Gallery({ only }: { only?: "component" | "page" }) {
         {only ? " · " : ""}
         {shown.length + " case(s)"}
       </p>
+      {problems.length
+        ? (
+          <section class="iso-problems">
+            <h2 class="iso-problems__title">⚠ {problems.length} config problem(s) — these previews are broken</h2>
+            <ul class="iso-problems__list">
+              {problems.map((p) => (
+                <li class="iso-problems__row" key={p.path + p.detail}>
+                  <code class="iso-problems__path">{p.path}</code>
+                  <span class="iso-problems__detail">{p.detail}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )
+        : null}
       {targets.length === 0 ? <p class="ctrl-empty">nothing here yet</p> : null}
       {targets.map((target) => {
         const byCat = group(byTarget[target], "category");
@@ -1008,6 +1169,29 @@ a { color: inherit; }
 .iso-run__results { display: inline-flex; gap: 0.6rem; font-size: 0.7rem; }
 .iso-dot.ok { color: var(--iso-ok); }
 .iso-dot.fail { color: var(--iso-fail); }
+/* the run failed before producing per-test results — show WHY, inline; the full
+   text rides in the title attribute */
+.iso-run__error { max-width: 24rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* config problems banner on the gallery (what --force is hiding) */
+.iso-problems { margin: 0 0 2rem; padding: 0.8rem 1rem; border: 1px solid var(--iso-fail);
+  border-radius: 8px; background: #fff5f5; }
+.iso-problems__title { margin: 0 0 0.5rem; font-size: 0.8rem; color: var(--iso-fail); }
+.iso-problems__list { margin: 0; padding: 0; list-style: none; }
+.iso-problems__row { display: flex; flex-wrap: wrap; gap: 0.2rem 0.7rem; padding: 0.25rem 0;
+  font-size: 0.75rem; border-top: 1px dotted var(--iso-line); }
+.iso-problems__path { font-weight: 600; }
+.iso-problems__detail { opacity: 0.75; }
+
+/* error card: a component that can't render (missing file / unresolved export) */
+.iso-error { max-width: 36rem; margin: 1rem; padding: 1.2rem 1.4rem; border: 1px dashed var(--iso-fail);
+  border-radius: 10px; background: #fff5f5; color: var(--iso-ink); }
+.iso-error__title { margin: 0 0 0.8rem; font-size: 1rem; color: var(--iso-fail); }
+.iso-error__row { display: flex; gap: 0.7rem; margin: 0.3rem 0; font-size: 0.8rem; align-items: baseline; }
+.iso-error__key { flex: 0 0 7rem; opacity: 0.55; font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.1em; }
+.iso-error__row code { word-break: break-all; }
+.iso-error__hint { margin: 0.9rem 0 0; font-size: 0.75rem; opacity: 0.7; }
 
 .iso-back { position: fixed; top: 1rem; left: 1rem; z-index: 5; font-size: 0.75rem; text-decoration: none;
   padding: 0.35rem 0.7rem; border: 1px solid var(--iso-line); border-radius: 999px;

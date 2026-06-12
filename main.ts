@@ -25,6 +25,7 @@ function formatProblems(problems: Problem[], root: string): string {
     "fixture-json": "malformed fixture.json",
     "case-json": "malformed case JSON",
     "component-file": "unresolved component file",
+    "component-export": "component export not found",
   };
   return problems
     .map((p) => `  ⚠ ${head[p.kind]}\n      ${rel(p.path)}\n      ${p.detail}`)
@@ -206,20 +207,53 @@ export interface WaitOptions {
 export function waitHydrated(page: Page, opts?: WaitOptions): Promise<void>;
 `;
 
-/** Ensure ~/.isolate-runner has @playwright/test, rxjs, and the isolate-events helper. */
-async function ensureRunner() {
+/**
+ * Ensure ~/.isolate-runner has @playwright/test, rxjs, and the isolate-events
+ * helper. Returns whether the runner is usable; when it isn't, the EXACT cause
+ * and fix have already been printed — a broken runner must never surface for the
+ * first time as a cryptic spawn failure inside `isolate test` or a ▸ run button.
+ */
+async function ensureRunner(): Promise<boolean> {
   const home = Deno.env.get("HOME");
-  if (!home) return;
+  if (!home) {
+    console.warn(
+      "⚠ HOME is not set — can't set up the Playwright runner (~/.isolate-runner).\n" +
+        "  ▸ run buttons and `isolate test` will fail until it is.",
+    );
+    return false;
+  }
   const dir = `${home}/.isolate-runner`;
   const mods = `${dir}/node_modules`;
   await Deno.mkdir(dir, { recursive: true });
+
+  // npm wrapper: a missing npm binary (no Node.js installed) otherwise explodes
+  // as an unexplained NotFound — name the dependency and the consequence instead.
+  let npmMissing = false;
+  const npm = async (
+    args: string[],
+    io: "inherit" | "null",
+  ): Promise<boolean> => {
+    try {
+      const r = await new Deno.Command("npm", {
+        args,
+        cwd: dir,
+        stdout: io,
+        stderr: io,
+      }).output();
+      return r.success;
+    } catch {
+      if (!npmMissing) {
+        npmMissing = true;
+        console.warn(
+          "⚠ npm not found — the Playwright runner needs Node.js/npm installed.",
+        );
+      }
+      return false;
+    }
+  };
+
   if (!(await pathExists(`${dir}/package.json`))) {
-    await new Deno.Command("npm", {
-      args: ["init", "-y"],
-      cwd: dir,
-      stdout: "null",
-      stderr: "null",
-    }).output();
+    await npm(["init", "-y"], "null");
   }
 
   // 1. @playwright/test (matched to the system playwright version when available).
@@ -235,29 +269,13 @@ async function ensureRunner() {
       const m = new TextDecoder().decode(v.stdout).match(/(\d+\.\d+\.\d+)/);
       if (m) ver = m[1];
     } catch { /* fall back to latest */ }
-    const r = await new Deno.Command("npm", {
-      args: ["i", `@playwright/test@${ver}`],
-      cwd: dir,
-      stdout: "inherit",
-      stderr: "inherit",
-    }).output();
-    if (!r.success) {
-      console.warn(
-        "⚠ couldn't install @playwright/test — run buttons may fail.\n" +
-          `  Fix: (cd ${dir} && npm i @playwright/test)`,
-      );
-    }
+    await npm(["i", `@playwright/test@${ver}`], "inherit");
   }
 
   // 2. rxjs — the event-stream test helper depends on it.
   if (!(await pathExists(`${mods}/rxjs`))) {
     console.log("Installing rxjs for the event-stream test helper…");
-    await new Deno.Command("npm", {
-      args: ["i", "rxjs@^7"],
-      cwd: dir,
-      stdout: "inherit",
-      stderr: "inherit",
-    }).output();
+    await npm(["i", "rxjs@^7"], "inherit");
   }
 
   // 3. The isolate-events helper, importable from specs as "isolate-events".
@@ -279,6 +297,25 @@ async function ensureRunner() {
   );
   await Deno.writeTextFile(`${pkgDir}/index.js`, EVENTS_HELPER);
   await Deno.writeTextFile(`${pkgDir}/index.d.ts`, EVENTS_DTS);
+
+  // Verify what actually landed (npm can "succeed" and still leave gaps), and
+  // print ONE consolidated warning naming the gap, the consequence, and the fix.
+  const missing: string[] = [];
+  if (!(await pathExists(`${mods}/.bin/playwright`))) {
+    missing.push("@playwright/test");
+  }
+  if (!(await pathExists(`${mods}/rxjs`))) missing.push("rxjs");
+  if (missing.length) {
+    console.warn(
+      `⚠ Playwright runner incomplete — missing ${missing.join(" + ")}.\n` +
+        "  ▸ run buttons and `isolate test` will fail until it's fixed:\n" +
+        `    cd ${dir} && npm i ${
+          missing.map((m) => (m === "rxjs" ? "rxjs@^7" : m)).join(" ")
+        }`,
+    );
+    return false;
+  }
+  return true;
 }
 
 async function cmdDev(opts: { open: boolean; force: boolean }) {
@@ -307,7 +344,9 @@ async function cmdDev(opts: { open: boolean; force: boolean }) {
 
   await ensureRunner();
   console.log(`Setting up an isolate app for ${entries.length} component(s)…`);
-  const { appDir, scaffolded } = await setupApp(root, entries);
+  // Problems ride along so the gallery itself shows them — under --force the
+  // terminal warning scrolls away, but the broken previews are in the browser.
+  const { appDir, scaffolded } = await setupApp(root, entries, problems);
   if (scaffolded) console.log(`Scaffolded a fresh app at ${appDir}`);
 
   // It's a real Fresh app now — just run its own dev task.
@@ -528,9 +567,27 @@ async function cmdTest(
     return;
   }
 
-  await ensureRunner();
-  const { appDir } = await setupApp(root, entries);
+  const runnerOk = await ensureRunner();
   const runner = `${Deno.env.get("HOME")}/.isolate-runner/node_modules`;
+  // Refuse to spawn a runner that isn't there — the raw spawn failure is a
+  // cryptic NotFound with no hint that ~/.isolate-runner is the problem.
+  if (!runnerOk || !(await pathExists(`${runner}/.bin/playwright`))) {
+    const msg = "Playwright runner unavailable (~/.isolate-runner) — " +
+      "see the warning above; fix it and re-run.";
+    if (opts.json) {
+      console.log(
+        JSON.stringify(
+          { ok: false, ran: false, total: 0, tests: [], error: msg },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.error(`✗ ${msg}`);
+    }
+    Deno.exit(1);
+  }
+  const { appDir } = await setupApp(root, entries);
 
   let child: Deno.ChildProcess | undefined;
   let baseURL = opts.baseUrl;

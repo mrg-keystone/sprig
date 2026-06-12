@@ -93,7 +93,7 @@ export interface ComponentEntry {
 
 /** A config problem found during discovery — surfaced up front, not swallowed. */
 export interface Problem {
-  kind: "fixture-json" | "case-json" | "component-file";
+  kind: "fixture-json" | "case-json" | "component-file" | "component-export";
   /** The offending file (fixture/case JSON) or component directory. */
   path: string;
   /** Human-readable explanation: a JSON parse message, or what resolution did. */
@@ -189,6 +189,38 @@ export function parseCaseValues(obj: Record<string, unknown>) {
   return { props, innerHtml, signals, mocks, label };
 }
 
+/**
+ * Statically scan a module's source for what it exports. We can't `import()` host
+ * files from the CLI process (their deps resolve against the HOST's import map,
+ * not ours), so this is a text-level lint: declaration exports, list exports
+ * (incl. `as` renames), and `export default`. Type-only exports are skipped —
+ * they don't exist at runtime, so they can't satisfy the component lookup.
+ */
+export function scanExports(
+  src: string,
+): { names: string[]; hasDefault: boolean } {
+  const names = new Set<string>();
+  let hasDefault = /^\s*export\s+default\b/m.test(src);
+  for (
+    const m of src.matchAll(
+      /^\s*export\s+(?:async\s+)?(?:function\*?|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm,
+    )
+  ) {
+    names.add(m[1]);
+  }
+  for (const m of src.matchAll(/^\s*export\s*\{([^}]*)\}/gm)) {
+    for (const part of m[1].split(",")) {
+      const p = part.trim();
+      if (!p || /^type\s/.test(p)) continue;
+      const as = p.match(/^([\w$]+)\s+as\s+([\w$]+)$/);
+      const name = as ? as[2] : p;
+      if (name === "default") hasDefault = true;
+      else if (/^[\w$]+$/.test(name)) names.add(name);
+    }
+  }
+  return { names: [...names], hasDefault };
+}
+
 async function findComponentFile(
   dir: string,
   exportName: string,
@@ -213,6 +245,23 @@ async function findComponentFile(
         ? `no file matching export "${exportName}" — falling back to ${pick}`
         : `no .tsx file for export "${exportName}"`,
     });
+  } else {
+    // The file matched by name — now verify it actually EXPORTS the component.
+    // The preview resolves `default` then the named export; anything else used to
+    // render the wrong export silently. Catch it here, before the preview builds.
+    try {
+      const { names, hasDefault } = scanExports(
+        await Deno.readTextFile(`${dir}/${pick}`),
+      );
+      if (!hasDefault && !names.includes(exportName)) {
+        problems.push({
+          kind: "component-export",
+          path: `${dir}/${pick}`,
+          detail: `no default export and no export named "${exportName}" — ` +
+            `exports seen: ${names.join(", ") || "none"}`,
+        });
+      }
+    } catch { /* unreadable — the preview's own error card will surface it */ }
   }
   // When nothing resolves, return "" rather than a misleading "${dir}/" — callers
   // can treat the empty string as "no component file" instead of building a bogus

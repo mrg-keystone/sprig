@@ -11,6 +11,7 @@ import {
   discover,
   parseCaseValues,
   parseControlDefs,
+  scanExports,
 } from "./discover.ts";
 
 const ROOT = fromFileUrl(new URL("./fixtures/fresh-app", import.meta.url));
@@ -178,6 +179,44 @@ Deno.test("unresolved component file (export ≠ filename) is reported", async (
   });
 });
 
+Deno.test("a name-matched file that lacks the export is reported (component-export)", async () => {
+  await withProject({
+    // File matches the folder name, but exports neither default nor "Gadget" —
+    // the old first-exported-function fallback rendered Thing silently.
+    "components/gadget/Gadget.tsx": "export function Thing() { return null; }",
+    "components/gadget/isolate/fixture.json": "{}",
+  }, ({ problems }) => {
+    const p = problems.find((x) => x.kind === "component-export");
+    assert(
+      p,
+      `expected a component-export problem, got ${JSON.stringify(problems)}`,
+    );
+    assert(p.path.endsWith("gadget/Gadget.tsx"));
+    assert(p.detail.includes('"Gadget"'));
+    assert(p.detail.includes("Thing"));
+  });
+});
+
+Deno.test("a default export satisfies the lookup regardless of its name", async () => {
+  await withProject({
+    "components/gadget/Gadget.tsx":
+      "export default function Whatever() { return null; }",
+    "components/gadget/isolate/fixture.json": "{}",
+  }, ({ problems }) => {
+    assertEquals(problems, []);
+  });
+});
+
+Deno.test("a renamed list export (`X as Gadget`) satisfies the lookup", async () => {
+  await withProject({
+    "components/gadget/Gadget.tsx":
+      "function Impl() { return null; }\nexport { Impl as Gadget };",
+    "components/gadget/isolate/fixture.json": "{}",
+  }, ({ problems }) => {
+    assertEquals(problems, []);
+  });
+});
+
 Deno.test("a clean synthetic project reports zero problems", async () => {
   await withProject({
     "components/gadget/Gadget.tsx": "export function Gadget() { return null; }",
@@ -190,6 +229,43 @@ Deno.test("a clean synthetic project reports zero problems", async () => {
 });
 
 // --- pure helpers (fast, no project) -----------------------------------------
+
+Deno.test("scanExports: declaration, default, list, and rename forms", () => {
+  assertEquals(scanExports("export function Btn() {}"), {
+    names: ["Btn"],
+    hasDefault: false,
+  });
+  assertEquals(scanExports("export default function Btn() {}"), {
+    names: [],
+    hasDefault: true,
+  });
+  assertEquals(scanExports("export const A = 1;\nexport class B {}"), {
+    names: ["A", "B"],
+    hasDefault: false,
+  });
+  assertEquals(scanExports("const X = 1;\nexport { X, X as Y };"), {
+    names: ["X", "Y"],
+    hasDefault: false,
+  });
+  assertEquals(scanExports("const X = 1;\nexport { X as default };"), {
+    names: [],
+    hasDefault: true,
+  });
+  assertEquals(scanExports("export async function go() {}").names, ["go"]);
+  // Type-only exports don't exist at runtime — they must not satisfy the lookup.
+  assertEquals(scanExports("export type { Props };\nexport interface P {}"), {
+    names: [],
+    hasDefault: false,
+  });
+  // Indented/commented noise: only line-leading export statements count.
+  assertEquals(
+    scanExports("// export default x\nconst s = 'export default';"),
+    {
+      names: [],
+      hasDefault: false,
+    },
+  );
+});
 
 Deno.test("parseControlDefs: object stays a ControlDef, bare/array value → {value}", () => {
   const d = parseControlDefs({
