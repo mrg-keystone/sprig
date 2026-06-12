@@ -109,24 +109,35 @@ export async function cmdUpdate(): Promise<void> {
   console.log(`✓ skill '${name}' ${latest} installed → ${target}`);
 
   console.log(`Refreshing the global '${CLI_NAME}' CLI…`);
-  const { success } = await new Deno.Command("deno", {
-    args: [
-      "install",
-      "-gA",
-      "-f",
-      "-n",
-      CLI_NAME,
-      `jsr:@${SCOPE}/${PKG}@${latest}`,
-    ],
-    stdout: "inherit",
-    stderr: "inherit",
-  }).output();
-  if (!success) {
+  const install = async (spec: string) => {
+    const { success } = await new Deno.Command("deno", {
+      args: ["install", "-gA", "-f", "-n", CLI_NAME, spec],
+      stdout: "inherit",
+      stderr: "inherit",
+    }).output();
+    return success;
+  };
+  if (await install(`jsr:@${SCOPE}/${PKG}@${latest}`)) {
+    console.log(`✓ '${CLI_NAME}' CLI at ${latest}. Update complete.`);
+    return;
+  }
+  // deno resolves jsr: versions via the CDN-cached package metadata, which
+  // can lag a fresh release by hours — the pinned spec then fails even
+  // though the version is live. Install what the CDN does offer instead of
+  // failing the whole update; a later re-run picks up the pin.
+  console.warn(
+    `⚠ pinned install of ${latest} failed (the registry CDN is likely still ` +
+      `propagating). Installing the newest version deno can see…`,
+  );
+  if (!(await install(`jsr:@${SCOPE}/${PKG}`))) {
     console.error(
       `✗ CLI refresh failed. Retry with:\n` +
         `    deno install -gA -f -n ${CLI_NAME} jsr:@${SCOPE}/${PKG}@${latest}`,
     );
     Deno.exit(1);
   }
-  console.log(`✓ '${CLI_NAME}' CLI at ${latest}. Update complete.`);
+  console.log(
+    `✓ '${CLI_NAME}' CLI installed (pre-${latest} until the CDN catches up — ` +
+      `re-run 'isolate update' later to pin ${latest}). Skill is at ${latest}.`,
+  );
 }
