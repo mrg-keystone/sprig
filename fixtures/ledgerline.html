@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledgerline — personal finance</title>
+<!--
+  ui-breakdown STRESS fixture #2 ("ledgerline") — deliberately covers what
+  pulse.html does NOT. All data mocked inline from a SEEDED xorshift32 prng
+  (seed 7) against a FIXED epoch (2026-06-01) so every run renders
+  byte-identical — the mock data IS the implied backend schema, at load
+  (900 transactions / 5 accounts / 8 budget categories / 24 merchants / 6
+  recurring rules).
+
+  Pages (NO router on purpose — plain [data-view] container toggling, no hash,
+  no History API): overview, transactions, budgets, recurring, settings.
+
+  Shared (authorial intent): topbar, nav rail (bottom tab bar ≤640px),
+  toast QUEUE (capped at 4 — drops oldest), badge, button, skeleton,
+  confirm-dialog (generic app-wide primitive; current SOLE caller is
+  transactions→delete — shared by design, not by usage count).
+  Page-local: stat cards + spending ticker + category ring (overview),
+  txn table + pagination + txn-detail dialog (transactions), budget cards
+  (budgets), rule carousel + add-rule form with async validation
+  idle→checking→invalid/valid (recurring), theme picker (settings).
+
+  THEMES: three data-theme token sets — light / dark / contrast.
+  BREAKPOINTS: 640px, 960px, 1280px (+ prefers-reduced-motion, honored in
+  CSS and gated in JS via matchMedia).
+  Animation mechanisms: CSS keyframes/transitions, a REGISTERED CUSTOM
+  PROPERTY transition (@property --ring-p driving a conic-gradient sweep),
+  WAAPI (dialog entrance via element.animate), IntersectionObserver reveals,
+  CSS-only scroll-snap carousel (no JS — classification trap: looks
+  interactive, is static), native <dialog> focus management.
+  Cardinality spread: 900-row table paginated at 25/page vs an 8-row budget
+  list with no pagination.
+
+  DELIBERATE JANK TRAPS (all labeled "JANK:" inline — distinct from pulse's):
+    1. .ticker-track keyframes animate margin-left (layout property)
+    2. .stat-card entrance animates filter: blur() (paint storm)
+    3. overview count-up is setTimeout(16)-driven animation
+    4. ticker rAF loop calls getBoundingClientRect per chip EVERY FRAME
+       (forced synchronous layout inside requestAnimationFrame)
+    5. table-wrap scroll listener is non-passive and unthrottled
+  Correct-pattern counterweights (lints must NOT flag these): budget bars
+  animate transform: scaleX, view/dialog motion is transform+opacity only,
+  carousel is pure CSS scroll-snap.
+-->
+<style>
+  /* ============ design tokens ============ */
+  :root {
+    --bg: #f6f6f3; --surface: #ffffff; --surface-2: #efefe9;
+    --ink: #20231f; --ink-2: #5b6157; --ink-3: #9aa094;
+    --accent: #0d7a5f; --accent-2: #36b08e; --accent-soft: #e2f3ec;
+    --pos: #0d7a5f; --pos-soft: #e2f3ec;
+    --neg: #c2362b; --neg-soft: #fbe7e4;
+    --warn: #b07908; --warn-soft: #fdf3da;
+    --line: #e2e3dc; --backdrop: rgba(24, 28, 22, .45);
+    --r-sm: 6px; --r-md: 10px; --r-lg: 14px;
+    --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px;
+    --font: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --fs-xs: 11px; --fs-sm: 13px; --fs-md: 15px; --fs-lg: 19px; --fs-xl: 28px;
+    --shadow-1: 0 1px 2px rgba(24,28,22,.07);
+    --shadow-2: 0 8px 28px rgba(24,28,22,.14);
+    --ease-out: cubic-bezier(.22,.9,.35,1);
+    --dur-1: 140ms; --dur-2: 260ms; --dur-3: 480ms;
+  }
+  [data-theme="dark"] {
+    --bg: #161814; --surface: #1f221d; --surface-2: #262a24;
+    --ink: #e8eae4; --ink-2: #a7ad9f; --ink-3: #6d7367;
+    --accent: #4cc2a0; --accent-2: #2e8d73; --accent-soft: #1d3a31;
+    --pos: #4cc2a0; --pos-soft: #1d3a31;
+    --neg: #e5705f; --neg-soft: #3c211d;
+    --warn: #d8a93e; --warn-soft: #38301a;
+    --line: #32362f; --backdrop: rgba(0,0,0,.6);
+    --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+    --shadow-2: 0 8px 28px rgba(0,0,0,.5);
+  }
+  [data-theme="contrast"] {
+    --bg: #ffffff; --surface: #ffffff; --surface-2: #f0f0f0;
+    --ink: #000000; --ink-2: #1f1f1f; --ink-3: #444444;
+    --accent: #005538; --accent-2: #007a50; --accent-soft: #d6efe4;
+    --pos: #005538; --pos-soft: #d6efe4;
+    --neg: #8f1308; --neg-soft: #ffd9d4;
+    --warn: #6e4a00; --warn-soft: #ffefc2;
+    --line: #000000; --backdrop: rgba(0,0,0,.7);
+    --shadow-1: none; --shadow-2: 0 0 0 2px #000;
+  }
+
+  /* registered custom property — the ring sweep animates THIS, not a real CSS prop */
+  @property --ring-p {
+    syntax: "<number>";
+    inherits: false;
+    initial-value: 0;
+  }
+
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font); font-size: var(--fs-md); color: var(--ink);
+    background: var(--bg); display: grid;
+    grid-template-columns: 200px 1fr; grid-template-rows: 56px 1fr;
+    grid-template-areas: "rail topbar" "rail main";
+  }
+
+  /* ===== shared/common components (designed app-wide): topbar, rail,
+     confirm-dialog, toast, badge, btn, skeleton ===== */
+  .topbar {
+    grid-area: topbar; display: flex; align-items: center; gap: var(--s-4);
+    padding: 0 var(--s-5); background: var(--surface);
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 30;
+  }
+  .topbar h1 { font-size: var(--fs-lg); font-weight: 650; letter-spacing: -.01em; }
+  .topbar .spacer { flex: 1; }
+  .net-worth { font-family: var(--mono); font-size: var(--fs-sm); color: var(--ink-2); }
+  .net-worth strong { color: var(--pos); font-size: var(--fs-md); }
+
+  .rail {
+    grid-area: rail; background: var(--surface); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: var(--s-1); padding: var(--s-4) var(--s-2);
+    z-index: 31;
+  }
+  .rail .brand {
+    display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3);
+    font-weight: 700; letter-spacing: -.02em; margin-bottom: var(--s-4);
+  }
+  .brand-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+  .rail nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-btn {
+    display: flex; align-items: center; gap: var(--s-3); width: 100%;
+    padding: var(--s-2) var(--s-3); border: 0; background: none; cursor: pointer;
+    color: var(--ink-2); font: inherit; font-size: var(--fs-sm); border-radius: var(--r-sm);
+    transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+  }
+  .nav-btn:hover { background: var(--surface-2); color: var(--ink); }
+  .nav-btn[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .nav-btn svg { width: 16px; height: 16px; flex: none; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: var(--s-2);
+    padding: 7px 14px; border-radius: var(--r-sm); border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); font: inherit; font-size: var(--fs-sm);
+    cursor: pointer; transition: background var(--dur-1) var(--ease-out),
+      border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn:active { transform: translateY(1px); }
+  .btn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn--primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+  .btn--danger { color: var(--neg); border-color: var(--neg); background: none; }
+  .btn--danger:hover { background: var(--neg-soft); }
+  .btn--ghost { border-color: transparent; background: none; color: var(--ink-2); }
+  .btn--ghost:hover { background: var(--surface-2); color: var(--ink); }
+
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: var(--fs-xs); font-weight: 600; letter-spacing: .02em;
+  }
+  .badge--cleared { background: var(--pos-soft); color: var(--pos); }
+  .badge--pending { background: var(--warn-soft); color: var(--warn); }
+  .badge--flagged { background: var(--neg-soft); color: var(--neg); }
+
+  /* toast queue — shared, mounted globally, CAPPED AT 4 (oldest dropped) */
+  .toast-stack {
+    position: fixed; bottom: var(--s-5); right: var(--s-5); z-index: 90;
+    display: flex; flex-direction: column; gap: var(--s-2); width: 300px;
+  }
+  .toast {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-sm); box-shadow: var(--shadow-2); padding: var(--s-3) var(--s-4);
+    font-size: var(--fs-sm); animation: toast-in var(--dur-2) var(--ease-out);
+  }
+  .toast--error { border-color: var(--neg); }
+  .toast--error strong { color: var(--neg); }
+  @keyframes toast-in { from { opacity: 0; transform: translateX(16px); } }
+
+  /* skeleton — shared loading primitive */
+  .skel { border-radius: var(--r-sm); background:
+    linear-gradient(100deg, var(--surface-2) 40%, var(--surface) 50%, var(--surface-2) 60%);
+    background-size: 200% 100%; animation: shimmer 1.1s linear infinite; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  /* native confirm dialog — shared primitive (sole caller today: txn delete) */
+  dialog { border: 0; border-radius: var(--r-lg); background: var(--surface); color: var(--ink);
+    box-shadow: var(--shadow-2); padding: 0; max-width: 420px; width: calc(100vw - 48px); }
+  dialog::backdrop { background: var(--backdrop); }
+  .dlg-body { padding: var(--s-5); }
+  .dlg-body h3 { font-size: var(--fs-lg); margin-bottom: var(--s-2); }
+  .dlg-body p { color: var(--ink-2); font-size: var(--fs-sm); line-height: 1.5; }
+  .dlg-actions { display: flex; justify-content: flex-end; gap: var(--s-2);
+    padding: var(--s-4) var(--s-5); border-top: 1px solid var(--line); }
+
+  /* ============ main / views ============ */
+  main { grid-area: main; padding: var(--s-5); overflow-y: auto; }
+  section[data-view] { animation: view-in var(--dur-2) var(--ease-out); }
+  section[data-view][hidden] { display: none; }
+  @keyframes view-in { from { opacity: 0; transform: translateY(8px); } }
+  .view-head { display: flex; align-items: baseline; gap: var(--s-3); margin-bottom: var(--s-5); flex-wrap: wrap; }
+  .view-head h2 { font-size: var(--fs-xl); letter-spacing: -.02em; }
+  .view-head .sub { color: var(--ink-3); font-size: var(--fs-sm); }
+  .view-head .spacer { flex: 1; }
+
+  /* ---- overview (page-local) ---- */
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-4); margin-bottom: var(--s-5); }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
+    padding: var(--s-4); box-shadow: var(--shadow-1);
+    opacity: 0;
+  }
+  .stat-card.revealed {
+    /* JANK 2: entrance animates filter: blur() — paint-heavy; rebuild with opacity/transform only */
+    animation: card-in var(--dur-3) var(--ease-out) forwards;
+  }
+  @keyframes card-in {
+    from { opacity: 0; filter: blur(8px); }
+    to   { opacity: 1; filter: blur(0); }
+  }
+  .stat-card .label { font-size: var(--fs-xs); color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; }
+  .stat-card .value { font-family: var(--mono); font-size: var(--fs-xl); margin: var(--s-1) 0; }
+  .stat-card .delta { font-size: var(--fs-sm); }
+  .delta.up { color: var(--pos); } .delta.down { color: var(--neg); }
+
+  .overview-cols { display: grid; grid-template-columns: 1fr 280px; gap: var(--s-4); }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
+    padding: var(--s-4); box-shadow: var(--shadow-1); }
+  .panel h3 { font-size: var(--fs-sm); color: var(--ink-2); margin-bottom: var(--s-3); }
+
+  /* spending ticker — marquee of recent txns */
+  .ticker { overflow: hidden; border-block: 1px solid var(--line); margin-bottom: var(--s-5);
+    background: var(--surface); border-radius: var(--r-sm); position: relative; }
+  .ticker-track {
+    display: inline-flex; gap: var(--s-5); padding: var(--s-2) 0; white-space: nowrap;
+    /* JANK 1: keyframes animate margin-left (layout property) — rebuild with transform: translateX */
+    animation: ticker-roll 28s linear infinite;
+  }
+  @keyframes ticker-roll { from { margin-left: 0; } to { margin-left: -50%; } }
+  .ticker .chip { font-size: var(--fs-sm); color: var(--ink-2); }
+  .ticker .chip strong { font-family: var(--mono); color: var(--ink); }
+  .ticker-now { position: absolute; top: 4px; right: 8px; font-size: var(--fs-xs);
+    color: var(--ink-3); background: var(--surface); padding: 0 6px; }
+
+  /* category ring — conic gradient swept by transitioning the REGISTERED prop */
+  .ring-wrap { display: flex; align-items: center; gap: var(--s-4); }
+  .ring {
+    width: 120px; height: 120px; border-radius: 50%; flex: none;
+    background: conic-gradient(var(--accent) calc(var(--ring-p) * 1%), var(--surface-2) 0);
+    transition: --ring-p 1.2s var(--ease-out);
+    display: grid; place-items: center;
+  }
+  .ring::after { content: attr(data-label); width: 84px; height: 84px; border-radius: 50%;
+    background: var(--surface); display: grid; place-items: center;
+    font-family: var(--mono); font-size: var(--fs-sm); }
+  .ring-legend { font-size: var(--fs-sm); color: var(--ink-2); display: flex; flex-direction: column; gap: var(--s-1); }
+
+  .sparkbars { display: flex; align-items: flex-end; gap: 3px; height: 48px; margin-top: var(--s-2); }
+  .sparkbars i { flex: 1; background: var(--accent-2); border-radius: 2px 2px 0 0; opacity: .8; }
+
+  /* ---- transactions (page-local) ---- */
+  .filter-bar { display: flex; gap: var(--s-2); margin-bottom: var(--s-4); flex-wrap: wrap; align-items: center; }
+  .filter-bar select, .filter-bar input[type="search"] {
+    font: inherit; font-size: var(--fs-sm); padding: 6px 10px; border-radius: var(--r-sm);
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  }
+  .table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
+    overflow: auto; max-height: 520px; box-shadow: var(--shadow-1); }
+  .table-wrap.scrolled thead { box-shadow: 0 2px 6px rgba(24,28,22,.12); }
+  table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+  thead { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+  th { text-align: left; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .05em;
+    color: var(--ink-3); padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--line); }
+  td { padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--line); }
+  tbody tr { cursor: pointer; transition: background var(--dur-1) var(--ease-out); }
+  tbody tr:hover { background: var(--surface-2); }
+  td.amount { font-family: var(--mono); text-align: right; }
+  td.amount.neg { color: var(--neg); } td.amount.pos { color: var(--pos); }
+  .merchant-cell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pager { display: flex; align-items: center; gap: var(--s-3); margin-top: var(--s-3);
+    font-size: var(--fs-sm); color: var(--ink-2); }
+  .pager .spacer { flex: 1; }
+
+  .txn-detail dl { display: grid; grid-template-columns: 110px 1fr; gap: var(--s-2) var(--s-3);
+    font-size: var(--fs-sm); }
+  .txn-detail dt { color: var(--ink-3); } .txn-detail dd { overflow-wrap: anywhere; }
+
+  /* ---- budgets (page-local) ---- */
+  .budget-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s-4); }
+  .budget-card { background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-md); padding: var(--s-4); box-shadow: var(--shadow-1); }
+  .budget-card .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .budget-card .cat { font-weight: 600; }
+  .budget-card .nums { font-family: var(--mono); font-size: var(--fs-sm); color: var(--ink-2); }
+  .bar { height: 8px; border-radius: 999px; background: var(--surface-2); margin-top: var(--s-3); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: inherit;
+    transform-origin: left center; transform: scaleX(0);
+    transition: transform var(--dur-3) var(--ease-out); }  /* correct pattern: scaleX, not width */
+  .bar i.over { background: var(--neg); }
+  .budget-card .hint { font-size: var(--fs-xs); color: var(--ink-3); margin-top: var(--s-2); }
+
+  /* ---- recurring (page-local) ---- */
+  /* pure CSS scroll-snap carousel — no JS owns this; it is STATIC */
+  .carousel { display: flex; gap: var(--s-4); overflow-x: auto; scroll-snap-type: x mandatory;
+    padding-bottom: var(--s-2); margin-bottom: var(--s-5); }
+  .rule-card { scroll-snap-align: start; flex: 0 0 240px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-4);
+    box-shadow: var(--shadow-1); }
+  .rule-card .merchant { font-weight: 600; margin-bottom: var(--s-1); }
+  .rule-card .cadence { font-size: var(--fs-xs); color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
+  .rule-card .amt { font-family: var(--mono); font-size: var(--fs-lg); margin: var(--s-2) 0; }
+  .rule-card .next { font-size: var(--fs-sm); color: var(--ink-2); }
+
+  .rule-form { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); max-width: 560px; }
+  .rule-form label { font-size: var(--fs-xs); color: var(--ink-2); display: flex; flex-direction: column; gap: var(--s-1); }
+  .rule-form input, .rule-form select { font: inherit; font-size: var(--fs-sm); padding: 7px 10px;
+    border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+  .rule-form .full { grid-column: 1 / -1; }
+  .vstatus { font-size: var(--fs-xs); display: inline-flex; align-items: center; gap: 6px; min-height: 16px; }
+  .vstatus.checking { color: var(--warn); }
+  .vstatus.invalid { color: var(--neg); }
+  .vstatus.valid { color: var(--pos); }
+  .vstatus .spin { width: 10px; height: 10px; border: 2px solid currentColor; border-top-color: transparent;
+    border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(1turn); } }
+  input.invalid { border-color: var(--neg); animation: shake var(--dur-2) var(--ease-out); }
+  @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+  /* ---- settings (page-local) ---- */
+  .settings-block { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
+    padding: var(--s-4); box-shadow: var(--shadow-1); max-width: 560px; margin-bottom: var(--s-4); }
+  .settings-block h3 { font-size: var(--fs-sm); margin-bottom: var(--s-3); }
+  .theme-row { display: flex; gap: var(--s-2); }
+  .theme-swatch { width: 72px; padding: var(--s-2); border-radius: var(--r-sm); border: 2px solid var(--line);
+    background: none; cursor: pointer; font: inherit; font-size: var(--fs-xs); color: var(--ink-2);
+    display: flex; flex-direction: column; gap: var(--s-1); align-items: center; }
+  .theme-swatch[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .theme-swatch .sw { width: 100%; height: 28px; border-radius: 4px; border: 1px solid var(--line); }
+
+  /* empty state — shared pattern, per-view copy */
+  .empty { text-align: center; padding: var(--s-6); color: var(--ink-3); }
+  .empty .face { font-size: 36px; margin-bottom: var(--s-2); }
+  .empty p { font-size: var(--fs-sm); max-width: 320px; margin: 0 auto var(--s-3); line-height: 1.5; }
+
+  /* demo states panel (fixture chrome, not part of the app) */
+  .demo-panel { position: fixed; bottom: var(--s-5); left: var(--s-5); z-index: 95;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
+    box-shadow: var(--shadow-2); padding: var(--s-3); font-size: var(--fs-xs); width: 168px; }
+  .demo-panel h4 { font-size: var(--fs-xs); color: var(--ink-3); text-transform: uppercase;
+    letter-spacing: .06em; margin-bottom: var(--s-2); }
+  .demo-panel .btn { width: 100%; justify-content: center; margin-bottom: var(--s-1); padding: 5px 8px; }
+
+  /* ============ breakpoints (640 / 960 / 1280) ============ */
+  @media (min-width: 1280px) {
+    .stat-grid { grid-template-columns: repeat(4, minmax(200px, 1fr)); }
+    .budget-grid { grid-template-columns: repeat(3, 1fr); }
+    main { padding: var(--s-6); }
+  }
+  @media (max-width: 960px) {
+    body { grid-template-columns: 56px 1fr; }
+    .rail .brand span, .nav-btn span { display: none; }   /* icon-only rail */
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    .overview-cols { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    body { grid-template-columns: 1fr; grid-template-rows: 56px 1fr 52px;
+      grid-template-areas: "topbar" "main" "rail"; }
+    .rail { flex-direction: row; border-right: 0; border-top: 1px solid var(--line);
+      padding: var(--s-1); justify-content: space-around; }
+    .rail .brand { display: none; }
+    .rail nav { flex-direction: row; flex: 1; justify-content: space-around; }
+    .nav-btn { flex-direction: column; gap: 2px; font-size: 10px; padding: var(--s-1); }
+    .nav-btn span { display: block; }
+    .stat-grid, .budget-grid { grid-template-columns: 1fr; }
+    .net-worth { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ticker-track { animation: none; }
+    .stat-card, .stat-card.revealed { animation: none; opacity: 1; filter: none; }
+    section[data-view], .toast { animation: none; }
+    .ring { transition: none; }
+    .bar i { transition: none; }
+    .skel { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <h1 id="view-title">Overview</h1>
+  <span class="spacer"></span>
+  <span class="net-worth">Net worth <strong id="net-worth">—</strong></span>
+  <button class="btn" id="sync-btn" title="Simulated sync — always fails in the demo">⟳ Sync</button>
+</header>
+
+<aside class="rail">
+  <div class="brand"><span class="brand-dot"></span><span>Ledgerline</span></div>
+  <nav aria-label="Main">
+    <button class="nav-btn" data-nav="overview" aria-current="page">
+      <svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="8" width="4" height="7" rx="1"/><rect x="6" y="4" width="4" height="11" rx="1"/><rect x="11" y="1" width="4" height="14" rx="1"/></svg>
+      <span>Overview</span></button>
+    <button class="nav-btn" data-nav="transactions">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h12v2H2z"/></svg>
+      <span>Transactions</span></button>
+    <button class="nav-btn" data-nav="budgets">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 7 7H8V1z"/><path d="M10 0v6h6a7 7 0 0 0-6-6z" opacity=".5"/></svg>
+      <span>Budgets</span></button>
+    <button class="nav-btn" data-nav="recurring">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 2a6 6 0 0 1 6 6h-2l3 4 3-4h-2A8 8 0 0 0 8 0v2zM8 14a6 6 0 0 1-6-6h2L1 4-2 8h2a8 8 0 0 0 8 8v-2z" transform="translate(1)"/></svg>
+      <span>Recurring</span></button>
+    <button class="nav-btn" data-nav="settings">
+      <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="2.5"/><path d="M8 0l1 3h-2zM8 16l-1-3h2zM0 8l3-1v2zM16 8l-3 1V7zM2.3 2.3l2.9 1.4-1.5 1.5zM13.7 13.7l-2.9-1.4 1.5-1.5zM13.7 2.3l-1.4 2.9-1.5-1.5zM2.3 13.7l1.4-2.9 1.5 1.5z"/></svg>
+      <span>Settings</span></button>
+  </nav>
+</aside>
+
+<main>
+  <!-- ================= OVERVIEW ================= -->
+  <section data-view="overview">
+    <div class="ticker" aria-hidden="true">
+      <div class="ticker-track" id="ticker-track"></div>
+      <span class="ticker-now" id="ticker-now"></span>
+    </div>
+
+    <div class="stat-grid" id="stat-grid"></div>
+
+    <div class="overview-cols">
+      <div class="panel">
+        <h3>Spending — last 30 days</h3>
+        <div class="sparkbars" id="sparkbars"></div>
+      </div>
+      <div class="panel">
+        <h3>Top category this month</h3>
+        <div class="ring-wrap">
+          <div class="ring" id="cat-ring" data-label="0%"></div>
+          <div class="ring-legend" id="ring-legend"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TRANSACTIONS ================= -->
+  <section data-view="transactions" hidden>
+    <div class="view-head">
+      <h2>Transactions</h2><span class="sub" id="txn-count"></span>
+      <span class="spacer"></span>
+    </div>
+    <div class="filter-bar">
+      <input type="search" id="f-search" placeholder="Search merchant…" aria-label="Search merchant">
+      <select id="f-account" aria-label="Filter by account"></select>
+      <select id="f-status" aria-label="Filter by status">
+        <option value="">All statuses</option>
+        <option value="cleared">Cleared</option>
+        <option value="pending">Pending</option>
+        <option value="flagged">Flagged</option>
+      </select>
+    </div>
+    <div class="table-wrap" id="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Merchant</th><th>Account</th><th>Category</th><th>Status</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody id="txn-tbody"></tbody>
+      </table>
+      <div class="empty" id="txn-empty" hidden>
+        <div class="face">🪺</div>
+        <p>No transactions match. Loosen the filters, or start spending money (not advised).</p>
+        <button class="btn" id="clear-filters">Clear filters</button>
+      </div>
+    </div>
+    <div class="pager">
+      <span id="pager-label"></span>
+      <span class="spacer"></span>
+      <button class="btn" id="pg-prev">‹ Prev</button>
+      <button class="btn" id="pg-next">Next ›</button>
+    </div>
+  </section>
+
+  <!-- ================= BUDGETS ================= -->
+  <section data-view="budgets" hidden>
+    <div class="view-head">
+      <h2>Budgets</h2><span class="sub">June 2026 · 8 categories</span>
+    </div>
+    <div class="budget-grid" id="budget-grid"></div>
+  </section>
+
+  <!-- ================= RECURRING ================= -->
+  <section data-view="recurring" hidden>
+    <div class="view-head">
+      <h2>Recurring</h2><span class="sub">6 active rules</span>
+    </div>
+    <div class="carousel" id="rule-carousel"></div>
+
+    <div class="panel" style="max-width:600px">
+      <h3>Add a rule</h3>
+      <form class="rule-form" id="rule-form" novalidate>
+        <label class="full">Rule name
+          <input type="text" id="r-name" placeholder="e.g. Gym membership" autocomplete="off">
+          <span class="vstatus" id="r-name-status" aria-live="polite"></span>
+        </label>
+        <label>Amount (EUR)
+          <input type="text" id="r-amount" placeholder="29.00" inputmode="decimal">
+        </label>
+        <label>Cadence
+          <select id="r-cadence"><option>monthly</option><option>weekly</option><option>yearly</option></select>
+        </label>
+        <div class="full" style="display:flex;gap:8px">
+          <button class="btn btn--primary" type="submit">Add rule</button>
+          <button class="btn btn--ghost" type="reset">Reset</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ================= SETTINGS ================= -->
+  <section data-view="settings" hidden>
+    <div class="view-head"><h2>Settings</h2></div>
+
+    <div class="settings-block">
+      <h3>Theme</h3>
+      <div class="theme-row" role="group" aria-label="Theme">
+        <button class="theme-swatch" data-set-theme="light" aria-pressed="true">
+          <span class="sw" style="background:#f6f6f3"></span>Light</button>
+        <button class="theme-swatch" data-set-theme="dark" aria-pressed="false">
+          <span class="sw" style="background:#161814"></span>Dark</button>
+        <button class="theme-swatch" data-set-theme="contrast" aria-pressed="false">
+          <span class="sw" style="background:#fff;border-color:#000"></span>Contrast</button>
+      </div>
+    </div>
+
+    <div class="settings-block">
+      <h3>Motion</h3>
+      <p style="font-size:var(--fs-sm);color:var(--ink-2);line-height:1.5">
+        Animations follow your system's <code>prefers-reduced-motion</code> setting
+        automatically — the ticker, card entrances, and ring sweep are disabled
+        when reduction is requested.</p>
+    </div>
+
+    <div class="settings-block">
+      <h3>Danger zone</h3>
+      <button class="btn btn--danger" id="wipe-btn">Simulate fresh account (wipe demo data)</button>
+      <p style="font-size:var(--fs-xs);color:var(--ink-3);margin-top:8px">
+        In-memory only. Use the demo panel's Reset to restore seeded data.</p>
+    </div>
+  </section>
+</main>
+
+<!-- shared: confirm-dialog — generic app-wide primitive
+     (current sole caller: transactions → delete; designed for app-wide use) -->
+<dialog id="confirm-dlg" aria-labelledby="confirm-title">
+  <div class="dlg-body">
+    <h3 id="confirm-title">Delete transaction?</h3>
+    <p id="confirm-msg">This only deletes it from the in-memory demo data.</p>
+  </div>
+  <div class="dlg-actions">
+    <button class="btn" id="confirm-cancel">Cancel</button>
+    <button class="btn btn--danger" id="confirm-ok">Delete</button>
+  </div>
+</dialog>
+
+<!-- page-local to transactions: detail dialog -->
+<dialog id="txn-dlg" class="txn-detail" aria-labelledby="txn-dlg-title">
+  <div class="dlg-body">
+    <h3 id="txn-dlg-title">Transaction</h3>
+    <dl id="txn-dl"></dl>
+  </div>
+  <div class="dlg-actions">
+    <button class="btn btn--danger" id="txn-delete">Delete…</button>
+    <button class="btn" id="txn-close">Close</button>
+  </div>
+</dialog>
+
+<div class="toast-stack" id="toast-stack" role="status" aria-live="polite"></div>
+
+<!-- fixture chrome: demo states panel -->
+<div class="demo-panel">
+  <h4>⚗ Demo states</h4>
+  <button class="btn" data-demo="empty">Empty</button>
+  <button class="btn" data-demo="loading">Loading</button>
+  <button class="btn" data-demo="error">Error toast</button>
+  <button class="btn" data-demo="overflow">Overflow</button>
+  <button class="btn" data-demo="reset">Reset data</button>
+</div>
+
+<script>
+/* ================= SEEDED MOCK DATA (deterministic) =================
+   xorshift32(7) + FIXED epoch 2026-06-01 → identical output every run.
+   Entities: account(5), category(8, 1:1 with budget), merchant(24),
+   transaction(900; FK account_id → account.id, category → category.name),
+   recurring_rule(6). Statuses: cleared | pending | flagged. */
+function xorshift32(seed) {
+  let x = seed >>> 0 || 1;
+  return function () {
+    x ^= x << 13; x >>>= 0;
+    x ^= x >> 17;
+    x ^= x << 5;  x >>>= 0;
+    return x / 4294967296;
+  };
+}
+const rnd = xorshift32(7);
+const EPOCH = new Date(2026, 5, 1);          // fixed — keeps screenshot diffs reproducible
+const fmtEUR = (n) => (n < 0 ? "−" : "") + "€" + Math.abs(n).toLocaleString("en-IE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtDate = (d) => d.toISOString().slice(0, 10);
+
+const ACCOUNTS = [
+  { id: "acc-1", name: "Everyday", kind: "checking", balance: 3482.19 },
+  { id: "acc-2", name: "Bills", kind: "checking", balance: 1206.4 },
+  { id: "acc-3", name: "Rainy day", kind: "savings", balance: 11890.0 },
+  { id: "acc-4", name: "Holiday fund", kind: "savings", balance: 2340.55 },
+  { id: "acc-5", name: "Shared flat", kind: "joint", balance: 412.83 },
+];
+const CATEGORIES = [
+  { name: "Groceries", budget: 520 }, { name: "Eating out", budget: 260 },
+  { name: "Transport", budget: 140 }, { name: "Utilities", budget: 210 },
+  { name: "Subscriptions", budget: 95 }, { name: "Health", budget: 120 },
+  { name: "Fun", budget: 180 }, { name: "Household", budget: 240 },
+];
+const MERCHANTS = [
+  "SuperValu", "Lidl 104 Dublin", "Tesco Express", "Dunnes Stores",
+  "Iarnród Éireann", "FreeNow", "Dublin Bus", "Applegreen",
+  "Electric Ireland", "Vodafone IE", "Irish Water", "An Post Insurance",
+  "Spotify", "NordVPN", "The Irish Times", "Netflix",
+  "Boots Pharmacy", "VHI Healthcare", "Elverys Sports", "The Bernard Shaw",
+  "Omniplex Cinema", "Eason Books", "IKEA Ballymun", "Woodie's DIY",
+];
+const STATUSES = ["cleared", "cleared", "cleared", "cleared", "pending", "flagged"]; // weighted
+
+function makeTxns(gen) {
+  const p = (arr) => arr[Math.floor(gen() * arr.length)];
+  const out = [];
+  for (let i = 0; i < 900; i++) {
+    const day = Math.floor(gen() * 150);                     // ~5 months back from epoch
+    const date = new Date(EPOCH); date.setDate(date.getDate() - day);
+    const cat = p(CATEGORIES);
+    const income = gen() < 0.06;
+    out.push({
+      id: "tx-" + String(i + 1).padStart(4, "0"),
+      date,
+      merchant: income ? "Acme Studio Payroll" : p(MERCHANTS),
+      account_id: p(ACCOUNTS).id,
+      category: income ? "Income" : cat.name,
+      status: p(STATUSES),
+      amount: income ? 2600 + Math.round(gen() * 900) : -(2 + gen() * 138),
+      note: gen() < 0.04 ? "split with flatmates — settle up via Revolut at month end" : "",
+    });
+  }
+  // seeded OVERFLOW row — long merchant, huge amount, wall-of-text note
+  out[6] = {
+    id: "tx-0007", date: new Date(2026, 4, 28),
+    merchant: "Greater Copenhagen Municipal Parking & Mobility Authority — Zone 4C Underground Long-Stay (EV bay surcharge applied)",
+    account_id: "acc-1", category: "Transport", status: "flagged",
+    amount: -1234567.89,
+    note: "Disputed. The machine charged the annual corporate fleet rate instead of the 2-hour visitor rate. Ticket ref CPH-44-0091128-B. Called +45 33 66 00 00 twice, was transferred four times, finally told to email mobility-disputes@example.dk with the ticket photo, the receipt, proof of address, and 'a short written account of the incident'. This is that account.",
+  };
+  out.sort((a, b) => b.date - a.date);
+  return out;
+}
+const RULES = [
+  { merchant: "Spotify", amount: 11.99, cadence: "monthly", next: "2026-06-14" },
+  { merchant: "Netflix", amount: 17.99, cadence: "monthly", next: "2026-06-03" },
+  { merchant: "VHI Healthcare", amount: 148.5, cadence: "monthly", next: "2026-06-21" },
+  { merchant: "Irish Water", amount: 60.0, cadence: "monthly", next: "2026-06-09" },
+  { merchant: "The Irish Times", amount: 12.0, cadence: "weekly", next: "2026-06-05" },
+  { merchant: "An Post Insurance", amount: 312.0, cadence: "yearly", next: "2027-01-15" },
+];
+
+/* ================= app state ================= */
+let txns = makeTxns(rnd);
+const state = {
+  view: "overview",
+  page: 0, perPage: 25,
+  search: "", account: "", status: "",
+  rules: RULES.slice(),
+};
+const $ = (s) => document.querySelector(s);
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+
+/* ================= view switching (NO router — container toggling) ===== */
+const TITLES = { overview: "Overview", transactions: "Transactions", budgets: "Budgets", recurring: "Recurring", settings: "Settings" };
+function showView(name) {
+  state.view = name;
+  document.querySelectorAll("section[data-view]").forEach((s) => { s.hidden = s.dataset.view !== name; });
+  document.querySelectorAll(".nav-btn").forEach((b) => {
+    if (b.dataset.nav === name) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  });
+  $("#view-title").textContent = TITLES[name];
+  if (name === "overview") renderOverview();
+  if (name === "transactions") renderTxns();
+  if (name === "budgets") renderBudgets();
+  if (name === "recurring") renderRules();
+}
+document.querySelectorAll(".nav-btn").forEach((b) => b.addEventListener("click", () => showView(b.dataset.nav)));
+
+/* ================= toasts — queue CAPPED AT 4, oldest dropped ========= */
+function toast(msg, kind) {
+  const stack = $("#toast-stack");
+  while (stack.children.length >= 4) stack.firstChild.remove();   // the cap
+  const el = document.createElement("div");
+  el.className = "toast" + (kind === "error" ? " toast--error" : "");
+  el.innerHTML = msg;
+  stack.appendChild(el);
+  setTimeout(() => el.remove(), 4200);
+}
+$("#sync-btn").addEventListener("click", () => {
+  toast("<strong>Sync failed.</strong> Bank connection timed out (demo always fails).", "error");
+});
+
+/* ================= overview ================= */
+function monthSpend() {
+  const out = {};
+  for (const t of txns) {
+    if (t.amount >= 0 || t.date.getMonth() !== 4) continue;       // May 2026 = "this month" pre-epoch
+    out[t.category] = (out[t.category] || 0) + Math.abs(t.amount);
+  }
+  return out;
+}
+function renderOverview() {
+  const total = ACCOUNTS.reduce((a, c) => a + c.balance, 0);
+  $("#net-worth").textContent = fmtEUR(total);
+
+  const spend = monthSpend();
+  const spent = Object.values(spend).reduce((a, b) => a + b, 0);
+  const income = txns.filter((t) => t.amount > 0 && t.date.getMonth() === 4).reduce((a, t) => a + t.amount, 0);
+  const cards = [
+    { label: "Net worth", value: total, delta: "+2.1% vs May", up: true },
+    { label: "Spent this month", value: -spent, delta: "−4.8% vs May", up: true },
+    { label: "Income this month", value: income, delta: "unchanged", up: true },
+    { label: "Flagged", value: txns.filter((t) => t.status === "flagged").length, delta: "needs review", up: false, plain: true },
+  ];
+  const grid = $("#stat-grid");
+  grid.innerHTML = cards.map((c) => `
+    <div class="stat-card">
+      <div class="label">${c.label}</div>
+      <div class="value" data-target="${c.plain ? c.value : c.value.toFixed(2)}" data-plain="${!!c.plain}">${c.plain ? "0" : "€0.00"}</div>
+      <div class="delta ${c.up ? "up" : "down"}">${c.delta}</div>
+    </div>`).join("");
+
+  // IntersectionObserver entrance reveal (staggered)
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e, i) => {
+      if (!e.isIntersecting) return;
+      e.target.style.animationDelay = (i * 70) + "ms";
+      e.target.classList.add("revealed");
+      io.unobserve(e.target);
+      countUp(e.target.querySelector(".value"));
+    });
+  }, { threshold: 0.3 });
+  grid.querySelectorAll(".stat-card").forEach((c) => io.observe(c));
+
+  // ticker
+  const recent = txns.slice(0, 14);
+  const chip = (t) => `<span class="chip">${esc(t.merchant.slice(0, 28))} <strong>${fmtEUR(t.amount)}</strong></span>`;
+  $("#ticker-track").innerHTML = recent.map(chip).join("") + recent.map(chip).join(""); // doubled for the loop
+  startTickerSpy();
+
+  // sparkbars: spend per day, last 30 days before epoch
+  const days = new Array(30).fill(0);
+  for (const t of txns) {
+    const d = Math.floor((EPOCH - t.date) / 86400000);
+    if (t.amount < 0 && d >= 0 && d < 30) days[29 - d] += Math.abs(t.amount);
+  }
+  const max = Math.max(...days, 1);
+  $("#sparkbars").innerHTML = days.map((v) => `<i style="height:${Math.max(4, (v / max) * 100)}%" title="${fmtEUR(-v)}"></i>`).join("");
+
+  // category ring — transition the registered custom property
+  const top = Object.entries(spend).sort((a, b) => b[1] - a[1])[0] || ["—", 0];
+  const pct = spent ? Math.round((top[1] / spent) * 100) : 0;
+  const ring = $("#cat-ring");
+  ring.dataset.label = pct + "%";
+  ring.style.setProperty("--ring-p", 0);
+  requestAnimationFrame(() => ring.style.setProperty("--ring-p", pct));
+  $("#ring-legend").innerHTML = `<strong>${esc(top[0])}</strong><span>${fmtEUR(-top[1])} of ${fmtEUR(-spent)}</span><span style="color:var(--ink-3)">share of June spend</span>`;
+}
+
+/* JANK 3: setTimeout(16)-driven count-up animation — rebuild with rAF or WAAPI */
+function countUp(el) {
+  if (reducedMotion.matches) { finishCount(el); return; }
+  const target = parseFloat(el.dataset.target), plain = el.dataset.plain === "true";
+  let step = 0; const steps = 36;
+  (function tick() {
+    step++;
+    const v = target * (1 - Math.pow(1 - step / steps, 3));
+    el.textContent = plain ? Math.round(v) : fmtEUR(v);
+    if (step < steps) setTimeout(tick, 16);
+  })();
+}
+function finishCount(el) {
+  const target = parseFloat(el.dataset.target);
+  el.textContent = el.dataset.plain === "true" ? String(Math.round(target)) : fmtEUR(target);
+}
+
+/* JANK 4: rAF loop forcing synchronous layout — getBoundingClientRect on every
+   chip every frame to find the one crossing the ticker midline. Rebuild by
+   computing position from animation time instead of measuring the DOM. */
+let tickerRaf = 0;
+function startTickerSpy() {
+  cancelAnimationFrame(tickerRaf);
+  if (reducedMotion.matches) return;
+  const track = $("#ticker-track"), label = $("#ticker-now");
+  (function spy() {
+    const mid = track.parentElement.getBoundingClientRect().left + track.parentElement.offsetWidth / 2;
+    let current = "";
+    for (const chip of track.children) {
+      const r = chip.getBoundingClientRect();               // forced layout, per chip, per frame
+      if (r.left <= mid && r.right >= mid) { current = chip.textContent; break; }
+    }
+    if (current) label.textContent = "now: " + current.slice(0, 24);
+    tickerRaf = requestAnimationFrame(spy);
+  })();
+}
+
+/* ================= transactions ================= */
+function filteredTxns() {
+  return txns.filter((t) =>
+    (!state.search || t.merchant.toLowerCase().includes(state.search)) &&
+    (!state.account || t.account_id === state.account) &&
+    (!state.status || t.status === state.status));
+}
+function renderTxns() {
+  const acc = $("#f-account");
+  if (!acc.options.length) {
+    acc.innerHTML = `<option value="">All accounts</option>` +
+      ACCOUNTS.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("");
+  }
+  const list = filteredTxns();
+  const pages = Math.max(1, Math.ceil(list.length / state.perPage));
+  state.page = Math.min(state.page, pages - 1);
+  const slice = list.slice(state.page * state.perPage, (state.page + 1) * state.perPage);
+
+  $("#txn-count").textContent = list.length + " of " + txns.length;
+  $("#txn-empty").hidden = list.length > 0;
+  $("#txn-tbody").innerHTML = slice.map((t) => {
+    const a = ACCOUNTS.find((x) => x.id === t.account_id);
+    return `<tr data-id="${t.id}">
+      <td style="font-family:var(--mono);font-size:var(--fs-xs)">${fmtDate(t.date)}</td>
+      <td class="merchant-cell" title="${esc(t.merchant)}">${esc(t.merchant)}</td>
+      <td>${esc(a ? a.name : t.account_id)}</td>
+      <td>${esc(t.category)}</td>
+      <td><span class="badge badge--${t.status}">${t.status}</span></td>
+      <td class="amount ${t.amount < 0 ? "neg" : "pos"}">${fmtEUR(t.amount)}</td>
+    </tr>`;
+  }).join("");
+  $("#pager-label").textContent = `Page ${state.page + 1} of ${pages} · ${state.perPage}/page`;
+  $("#pg-prev").disabled = state.page === 0;
+  $("#pg-next").disabled = state.page >= pages - 1;
+}
+$("#f-search").addEventListener("input", (e) => { state.search = e.target.value.toLowerCase(); state.page = 0; renderTxns(); });
+$("#f-account").addEventListener("change", (e) => { state.account = e.target.value; state.page = 0; renderTxns(); });
+$("#f-status").addEventListener("change", (e) => { state.status = e.target.value; state.page = 0; renderTxns(); });
+$("#clear-filters").addEventListener("click", () => {
+  state.search = state.account = state.status = ""; state.page = 0;
+  $("#f-search").value = ""; $("#f-account").value = ""; $("#f-status").value = "";
+  renderTxns();
+});
+$("#pg-prev").addEventListener("click", () => { state.page--; renderTxns(); });
+$("#pg-next").addEventListener("click", () => { state.page++; renderTxns(); });
+
+/* JANK 5: non-passive, unthrottled scroll listener (style work every event).
+   Rebuild with {passive:true} + rAF coalescing, or a scroll-driven animation. */
+$("#table-wrap").addEventListener("scroll", function () {
+  this.classList.toggle("scrolled", this.scrollTop > 4);
+});
+
+/* detail dialog (page-local) + delete via shared confirm dialog */
+let detailTxn = null;
+$("#txn-tbody").addEventListener("click", (e) => {
+  const row = e.target.closest("tr[data-id]");
+  if (!row) return;
+  detailTxn = txns.find((t) => t.id === row.dataset.id);
+  const t = detailTxn, a = ACCOUNTS.find((x) => x.id === t.account_id);
+  $("#txn-dlg-title").textContent = t.id;
+  $("#txn-dl").innerHTML = `
+    <dt>Date</dt><dd>${fmtDate(t.date)}</dd>
+    <dt>Merchant</dt><dd>${esc(t.merchant)}</dd>
+    <dt>Account</dt><dd>${esc(a.name)} (${a.kind})</dd>
+    <dt>Category</dt><dd>${esc(t.category)}</dd>
+    <dt>Status</dt><dd><span class="badge badge--${t.status}">${t.status}</span></dd>
+    <dt>Amount</dt><dd style="font-family:var(--mono)">${fmtEUR(t.amount)}</dd>
+    ${t.note ? `<dt>Note</dt><dd>${esc(t.note)}</dd>` : ""}`;
+  openDialog($("#txn-dlg"));
+});
+$("#txn-close").addEventListener("click", () => $("#txn-dlg").close());
+$("#txn-delete").addEventListener("click", () => {
+  $("#txn-dlg").close();
+  $("#confirm-msg").textContent = `Delete ${detailTxn.id} (${detailTxn.merchant.slice(0, 40)}…)? In-memory only.`;
+  openDialog($("#confirm-dlg"));
+});
+$("#confirm-cancel").addEventListener("click", () => $("#confirm-dlg").close());
+$("#confirm-ok").addEventListener("click", () => {
+  txns = txns.filter((t) => t !== detailTxn);
+  $("#confirm-dlg").close();
+  toast(`Deleted <strong>${detailTxn.id}</strong>.`);
+  renderTxns();
+});
+
+/* WAAPI entrance for native dialogs (transform+opacity — the correct pattern) */
+function openDialog(dlg) {
+  dlg.showModal();
+  if (reducedMotion.matches) return;
+  dlg.animate(
+    [{ opacity: 0, transform: "translateY(10px) scale(.98)" }, { opacity: 1, transform: "none" }],
+    { duration: 220, easing: "cubic-bezier(.22,.9,.35,1)" });
+}
+
+/* ================= budgets ================= */
+function renderBudgets() {
+  const spend = monthSpend();
+  $("#budget-grid").innerHTML = CATEGORIES.map((c) => {
+    const used = spend[c.name] || 0, pct = Math.min(1.25, used / c.budget);
+    return `<div class="budget-card">
+      <div class="row"><span class="cat">${esc(c.name)}</span>
+        <span class="nums">${fmtEUR(-used)} / €${c.budget}</span></div>
+      <div class="bar"><i class="${used > c.budget ? "over" : ""}" data-sx="${pct.toFixed(3)}"></i></div>
+      <div class="hint">${used > c.budget ? "over by " + fmtEUR(-(used - c.budget)) : fmtEUR(-(c.budget - used)).replace("−", "") + " left"}</div>
+    </div>`;
+  }).join("");
+  requestAnimationFrame(() =>
+    document.querySelectorAll(".bar i").forEach((i) => { i.style.transform = `scaleX(${i.dataset.sx})`; }));
+}
+
+/* ================= recurring ================= */
+function renderRules() {
+  $("#rule-carousel").innerHTML = state.rules.map((r) => `
+    <div class="rule-card">
+      <div class="cadence">${r.cadence}</div>
+      <div class="merchant">${esc(r.merchant)}</div>
+      <div class="amt">${fmtEUR(-r.amount)}</div>
+      <div class="next">next: ${r.next}</div>
+    </div>`).join("");
+}
+
+/* async validation: idle → checking → invalid/valid (fake 600ms lookup).
+   Deterministic rule: a name is "taken" if an existing rule merchant starts
+   with it (case-insensitive); under 3 chars is invalid immediately. */
+let vTimer = 0;
+$("#r-name").addEventListener("input", (e) => {
+  const el = e.target, status = $("#r-name-status"), v = el.value.trim();
+  clearTimeout(vTimer);
+  el.classList.remove("invalid");
+  if (!v) { status.className = "vstatus"; status.textContent = ""; return; }
+  if (v.length < 3) { status.className = "vstatus invalid"; status.textContent = "too short (min 3 chars)"; return; }
+  status.className = "vstatus checking";
+  status.innerHTML = `<span class="spin"></span> checking name…`;
+  vTimer = setTimeout(() => {
+    const taken = state.rules.some((r) => r.merchant.toLowerCase().startsWith(v.toLowerCase()));
+    if (taken) {
+      status.className = "vstatus invalid"; status.textContent = "a rule with this name exists";
+      el.classList.add("invalid");
+    } else {
+      status.className = "vstatus valid"; status.textContent = "✓ available";
+    }
+  }, 600);
+});
+$("#rule-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const name = $("#r-name").value.trim(), amount = parseFloat($("#r-amount").value);
+  if (name.length < 3 || !(amount > 0)) {
+    toast("<strong>Can't add rule.</strong> Name and a positive amount are required.", "error");
+    return;
+  }
+  state.rules.push({ merchant: name, amount, cadence: $("#r-cadence").value, next: "2026-07-01" });
+  e.target.reset(); $("#r-name-status").textContent = "";
+  renderRules();
+  toast(`Added rule <strong>${esc(name)}</strong>.`);
+});
+
+/* ================= settings ================= */
+document.querySelectorAll("[data-set-theme]").forEach((b) =>
+  b.addEventListener("click", () => {
+    document.documentElement.dataset.theme = b.dataset.setTheme;
+    document.querySelectorAll("[data-set-theme]").forEach((x) =>
+      x.setAttribute("aria-pressed", String(x === b)));
+  }));
+$("#wipe-btn").addEventListener("click", () => {
+  txns = [];
+  toast("Demo data wiped — views now show their empty states.");
+  showView("transactions");
+});
+
+/* ================= demo states panel (fixture chrome) ================= */
+document.querySelectorAll("[data-demo]").forEach((b) => b.addEventListener("click", () => {
+  const mode = b.dataset.demo;
+  if (mode === "empty") { txns = []; showView("transactions"); }
+  if (mode === "loading") fakeLoad();
+  if (mode === "error") toast("<strong>Something broke.</strong> Demo error toast — click Sync for another.", "error");
+  if (mode === "overflow") {
+    txns.length || (txns = makeTxns(xorshift32(7)));
+    state.search = "greater copenhagen"; $("#f-search").value = "Greater Copenhagen";
+    state.page = 0; showView("transactions");
+    const row = $("#txn-tbody tr"); if (row) row.click();
+  }
+  if (mode === "reset") {
+    txns = makeTxns(xorshift32(7));   // same seed → byte-identical 900 rows
+    state.search = state.account = state.status = ""; state.page = 0;
+    $("#f-search").value = "";
+    toast("Seeded data restored (deterministic — same 900 rows).");
+    showView(state.view);
+  }
+}));
+
+/* skeleton OVERLAY (doesn't touch the view's DOM, so listeners survive) */
+function fakeLoad() {
+  const view = document.querySelector("section[data-view]:not([hidden])");
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:absolute;inset:0;background:var(--bg);display:grid;gap:12px;align-content:start;padding:inherit;z-index:5";
+  overlay.innerHTML = `
+      <div class="skel" style="height:34px;width:40%"></div>
+      <div class="skel" style="height:120px"></div>
+      <div class="skel" style="height:120px"></div>
+      <div class="skel" style="height:240px"></div>`;
+  view.style.position = "relative";
+  view.appendChild(overlay);
+  setTimeout(() => overlay.remove(), 1100);
+}
+
+/* ================= utils & boot ================= */
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+showView("overview");
+</script>
+</body>
+</html>

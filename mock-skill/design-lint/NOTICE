@@ -1,0 +1,20 @@
+design-lint
+===========
+
+This tool embeds and modifies the anti-pattern detection engine from the
+"impeccable" project:
+
+    impeccable — https://github.com/pbakaus/impeccable
+    Copyright (c) 2026 Paul Bakaus
+    Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Modifications made in this distribution:
+  - Vendored only cli/engine/** (the detection engine); the npm CLI installer,
+    skills bundle, and web build are not included.
+  - Ported the URL/visual scanning path from Puppeteer to Astral
+    (jsr:@astral/astral) via an import-map shim (shims/puppeteer-astral.mjs)
+    so the tool runs under Deno with no npm/node_modules. Engine source files
+    under src/engine/** are unmodified from upstream.
+
+The Apache-2.0 license requires retention of the above copyright notice and
+this statement of changes.

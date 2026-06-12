@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CruxLog — climbing tracker prototype</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #07090d;
+    color: #f2f4f8;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 24px 12px;
+  }
+  /* ===== phone shell ===== */
+  .phone {
+    width: 410px; max-width: 100%; height: 820px; max-height: 94vh;
+    background: #0f1218; border: 1px solid #232a36; border-radius: 28px;
+    display: flex; flex-direction: column; overflow: hidden; position: relative;
+    box-shadow: 0 30px 80px rgba(0,0,0,.6);
+  }
+  header {
+    padding: 18px 20px 14px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #1b212c; flex-shrink: 0;
+  }
+  .brand { font-size: 21px; font-weight: 800; letter-spacing: -0.4px; }
+  .brand em { font-style: normal; color: #ff6b35; }
+  .brand-sub { font-size: 11.5px; color: #8b95a7; margin-top: 2px; }
+  .hdr-right { display: flex; align-items: center; gap: 10px; }
+  .streak {
+    font-size: 12px; font-weight: 700; color: #ffb35c; background: #2a1d10;
+    border: 1px solid #4a2f14; padding: 5px 10px; border-radius: 99px; white-space: nowrap;
+  }
+  .sync-btn {
+    background: #1a2030; border: 1px solid #2b3447; color: #aebadc; border-radius: 10px;
+    width: 36px; height: 36px; font-size: 16px; cursor: pointer;
+  }
+  .sync-btn:hover { background: #232c42; }
+
+  main { flex: 1; overflow-y: auto; padding: 16px 16px 90px; }
+  main::-webkit-scrollbar { width: 0; }
+
+  /* ===== bottom tabs ===== */
+  nav {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 66px;
+    background: rgba(13,16,23,.97); border-top: 1px solid #1b212c;
+    display: flex; z-index: 30;
+  }
+  nav button {
+    flex: 1; background: none; border: none; color: #6e7889; cursor: pointer;
+    font-size: 11px; font-weight: 600; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3px; font-family: inherit;
+  }
+  nav button .ico { font-size: 20px; }
+  nav button.active { color: #ff6b35; }
+
+  /* ===== generic bits ===== */
+  .card { background: #151a23; border: 1px solid #222a38; border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+  .sec-label { font-size: 11px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: #7b8698; margin: 18px 2px 10px; }
+  .btn-primary {
+    width: 100%; padding: 15px; background: #ff6b35; color: #1a0d05; border: none;
+    border-radius: 14px; font-size: 16px; font-weight: 800; cursor: pointer; font-family: inherit;
+  }
+  .btn-primary:hover { background: #ff7d4d; }
+  .btn-ghost {
+    width: 100%; padding: 13px; background: #1a2030; color: #cdd6e6; border: 1px solid #2b3447;
+    border-radius: 14px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+  .btn-ghost:hover { background: #232c42; }
+
+  /* ===== log tab ===== */
+  .hero { text-align: center; padding: 26px 14px 22px; }
+  .hero h2 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; }
+  .hero p { font-size: 13.5px; color: #8b95a7; margin-bottom: 18px; line-height: 1.5; }
+  .hero .big-ico { font-size: 44px; margin-bottom: 10px; display: block; }
+
+  .seg { display: flex; background: #10141c; border: 1px solid #232a36; border-radius: 12px; padding: 4px; gap: 4px; }
+  .seg button {
+    flex: 1; padding: 9px 4px; border: none; border-radius: 9px; background: transparent;
+    color: #8b95a7; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+  .seg button.on { background: #2a3346; color: #fff; }
+
+  .chips { display: flex; gap: 7px; overflow-x: auto; padding: 4px 2px 6px; }
+  .chips::-webkit-scrollbar { height: 0; }
+  .chips button {
+    flex-shrink: 0; padding: 8px 13px; border-radius: 99px; border: 1px solid #2b3447;
+    background: #161c28; color: #cdd6e6; font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+  .chips button.on { background: #ff6b35; border-color: #ff6b35; color: #1a0d05; }
+
+  .sent-row { display: flex; gap: 8px; }
+  .sent-row button {
+    flex: 1; padding: 11px; border-radius: 12px; font-size: 14px; font-weight: 800;
+    cursor: pointer; font-family: inherit; border: 1px solid #2b3447; background: #161c28; color: #8b95a7;
+  }
+  .sent-row button.on-sent { background: #11301f; border-color: #1f8a4c; color: #4ce58a; }
+  .sent-row button.on-fell { background: #321418; border-color: #a03540; color: #ff7a85; }
+
+  .note-input {
+    width: 100%; padding: 11px 13px; background: #10141c; border: 1px solid #232a36;
+    border-radius: 12px; color: #f2f4f8; font-size: 13.5px; font-family: inherit;
+  }
+  .note-input::placeholder { color: #5c6678; }
+  .form-row { margin-bottom: 12px; }
+  .form-lab { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: #7b8698; margin-bottom: 7px; }
+
+  .climb-row {
+    display: flex; align-items: center; gap: 11px; padding: 11px 12px;
+    background: #151a23; border: 1px solid #222a38; border-radius: 13px; margin-bottom: 8px;
+  }
+  .grade-badge {
+    min-width: 48px; text-align: center; padding: 8px 6px; border-radius: 10px;
+    font-weight: 800; font-size: 15px; flex-shrink: 0;
+  }
+  .gb-boulder { background: #33210f; color: #ffb35c; }
+  .gb-toprope { background: #102538; color: #5fb8ff; }
+  .gb-lead    { background: #251536; color: #c78bff; }
+  .climb-mid { flex: 1; min-width: 0; }
+  .climb-style { font-size: 12.5px; font-weight: 700; color: #aeb7c6; }
+  .climb-meta { font-size: 11.5px; color: #6e7889; margin-top: 2px; }
+  .climb-note { font-size: 12px; color: #8b95a7; margin-top: 4px; overflow-wrap: break-word; line-height: 1.45; }
+  .sent-pill { font-size: 12px; font-weight: 800; padding: 5px 10px; border-radius: 99px; flex-shrink: 0; }
+  .sp-yes { background: #11301f; color: #4ce58a; }
+  .sp-no  { background: #321418; color: #ff7a85; }
+  .del-x { background: none; border: none; color: #515b6d; font-size: 16px; cursor: pointer; padding: 4px 2px; flex-shrink: 0; }
+  .del-x:hover { color: #ff7a85; }
+
+  .sess-card { display: flex; align-items: center; gap: 12px; }
+  .sess-date { font-size: 14.5px; font-weight: 800; }
+  .sess-sub { font-size: 12px; color: #8b95a7; margin-top: 3px; }
+  .sess-hard { margin-left: auto; text-align: right; flex-shrink: 0; }
+  .sess-hard .v { font-size: 17px; font-weight: 800; color: #ffb35c; }
+  .sess-hard .l { font-size: 10.5px; color: #6e7889; letter-spacing: .8px; text-transform: uppercase; margin-top: 2px; }
+
+  .live-dot {
+    width: 8px; height: 8px; border-radius: 99px; background: #4ce58a; display: inline-block;
+    margin-right: 6px; animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+  .empty-box { text-align: center; padding: 34px 18px; color: #6e7889; }
+  .empty-box .e-ico { font-size: 36px; display: block; margin-bottom: 10px; }
+  .empty-box .e-t { font-size: 15px; font-weight: 700; color: #aeb7c6; margin-bottom: 5px; }
+  .empty-box .e-s { font-size: 13px; line-height: 1.5; }
+
+  /* ===== progress tab ===== */
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat { background: #151a23; border: 1px solid #222a38; border-radius: 14px; padding: 14px; }
+  .stat .v { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }
+  .stat .v small { font-size: 14px; color: #8b95a7; font-weight: 700; }
+  .stat .l { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #7b8698; margin-top: 4px; }
+  .acc-o { color: #ffb35c; } .acc-g { color: #4ce58a; } .acc-b { color: #5fb8ff; } .acc-p { color: #c78bff; }
+
+  .chart { display: flex; align-items: flex-end; gap: 10px; height: 150px; padding: 6px 4px 0; }
+  .chart .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 0; }
+  .bar-stack { width: 70%; max-width: 34px; display: flex; flex-direction: column; justify-content: flex-end; flex: 1; }
+  .bar-send { background: #ff6b35; border-radius: 4px 4px 0 0; }
+  .bar-att  { background: #2b3447; border-radius: 0 0 3px 3px; margin-top: 2px; }
+  .col .wk { font-size: 10px; color: #6e7889; margin-top: 7px; font-weight: 600; white-space: nowrap; }
+  .col .ct { font-size: 11px; font-weight: 800; color: #cdd6e6; margin-bottom: 5px; }
+  .legend { display: flex; gap: 16px; margin-top: 12px; padding-left: 4px; }
+  .legend span { font-size: 11.5px; color: #8b95a7; display: flex; align-items: center; gap: 6px; }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+  .pyr-row { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+  .pyr-g { width: 32px; font-size: 12.5px; font-weight: 800; color: #ffb35c; text-align: right; flex-shrink: 0; }
+  .pyr-track { flex: 1; height: 16px; background: #10141c; border-radius: 5px; overflow: hidden; }
+  .pyr-fill { height: 100%; background: linear-gradient(90deg, #b8431b, #ff6b35); border-radius: 5px; }
+  .pyr-n { width: 22px; font-size: 12px; color: #8b95a7; font-weight: 700; flex-shrink: 0; }
+
+  /* ===== leaderboard ===== */
+  .podium { display: flex; align-items: flex-end; gap: 8px; margin: 8px 0 16px; }
+  .pod { flex: 1; text-align: center; background: #151a23; border: 1px solid #222a38; border-radius: 14px 14px 6px 6px; padding: 12px 6px 10px; }
+  .pod.first { border-color: #5a4314; background: #1b1810; padding-top: 18px; }
+  .pod .medal { font-size: 19px; }
+  .ava {
+    width: 42px; height: 42px; border-radius: 99px; margin: 6px auto; display: flex;
+    align-items: center; justify-content: center; font-weight: 800; font-size: 15px; color: #0d1016;
+  }
+  .pod .nm { font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
+  .pod .pt { font-size: 14px; font-weight: 800; color: #ffb35c; margin-top: 2px; }
+  .pod .pt small { font-size: 10px; color: #6e7889; font-weight: 600; }
+
+  .lb-row {
+    display: flex; align-items: center; gap: 12px; padding: 11px 13px;
+    background: #151a23; border: 1px solid #222a38; border-radius: 13px; margin-bottom: 8px;
+  }
+  .lb-row.me { border-color: #ff6b35; background: #1d1510; }
+  .lb-rank { width: 22px; font-size: 14px; font-weight: 800; color: #6e7889; text-align: center; flex-shrink: 0; }
+  .lb-ava { width: 36px; height: 36px; border-radius: 99px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; color: #0d1016; flex-shrink: 0; }
+  .lb-mid { flex: 1; min-width: 0; }
+  .lb-name { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-sub { font-size: 11.5px; color: #8b95a7; margin-top: 2px; }
+  .lb-pts { text-align: right; flex-shrink: 0; max-width: 96px; }
+  .lb-pts .p { font-size: 16px; font-weight: 800; color: #ffb35c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-pts .pl { font-size: 10px; color: #6e7889; letter-spacing: .8px; text-transform: uppercase; }
+
+  .skel { background: linear-gradient(90deg, #161c28 25%, #1f2735 50%, #161c28 75%); background-size: 400px 100%; animation: shim 1.2s infinite linear; border-radius: 13px; }
+  @keyframes shim { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+  .skel-row { height: 60px; margin-bottom: 8px; }
+  .skel-block { height: 150px; margin-bottom: 12px; }
+
+  /* ===== toast ===== */
+  .toast-wrap { position: absolute; top: 14px; left: 14px; right: 14px; z-index: 60; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  .toast {
+    background: #3a161c; border: 1px solid #c2424f; color: #ffd7da; padding: 12px 14px;
+    border-radius: 13px; font-size: 13px; font-weight: 600; line-height: 1.45;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5); animation: drop .25s ease-out;
+  }
+  .toast.ok { background: #11301f; border-color: #1f8a4c; color: #c9f5db; }
+  .toast b { display: block; font-size: 13.5px; margin-bottom: 2px; }
+  @keyframes drop { from { transform: translateY(-12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  /* ===== modal ===== */
+  .modal-bg { position: absolute; inset: 0; background: rgba(4,6,10,.78); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .modal { background: #161c28; border: 1px solid #2b3447; border-radius: 20px; padding: 24px 20px; width: 100%; text-align: center; }
+  .modal h3 { font-size: 21px; font-weight: 800; margin: 6px 0 4px; }
+  .modal .m-sub { font-size: 13px; color: #8b95a7; margin-bottom: 16px; }
+  .m-stats { display: flex; gap: 8px; margin-bottom: 18px; }
+  .m-stat { flex: 1; background: #10141c; border-radius: 12px; padding: 12px 6px; }
+  .m-stat .v { font-size: 21px; font-weight: 800; color: #ffb35c; }
+  .m-stat .l { font-size: 10px; color: #6e7889; text-transform: uppercase; letter-spacing: .8px; margin-top: 3px; }
+
+  /* ===== demo panel ===== */
+  .demo-fab {
+    position: absolute; bottom: 78px; right: 14px; z-index: 40;
+    background: #232c42; color: #aebadc; border: 1px solid #3a4661;
+    border-radius: 99px; padding: 9px 14px; font-size: 12px; font-weight: 800; cursor: pointer;
+    font-family: inherit; box-shadow: 0 6px 18px rgba(0,0,0,.45);
+  }
+  .demo-panel {
+    position: absolute; bottom: 120px; right: 14px; z-index: 40; width: 215px;
+    background: #161c28; border: 1px solid #2b3447; border-radius: 16px; padding: 12px;
+    box-shadow: 0 14px 40px rgba(0,0,0,.6);
+  }
+  .demo-panel h4 { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: #7b8698; margin: 2px 2px 9px; }
+  .demo-panel button {
+    width: 100%; text-align: left; background: #10141c; border: 1px solid #232a36; color: #cdd6e6;
+    padding: 9px 11px; border-radius: 10px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+    font-family: inherit; margin-bottom: 6px;
+  }
+  .demo-panel button:hover { background: #1a2230; }
+  .demo-panel button.armed { border-color: #ff6b35; color: #ffb35c; }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <header>
+    <div>
+      <div class="brand">crux<em>log</em></div>
+      <div class="brand-sub">Gowanus Crag Works · Brooklyn</div>
+    </div>
+    <div class="hdr-right">
+      <span class="streak">🔥 4-wk streak</span>
+      <button class="sync-btn" onclick="syncNow()" title="Sync">⟳</button>
+    </div>
+  </header>
+
+  <main id="view"></main>
+
+  <nav>
+    <button id="tab-log" onclick="switchTab('log')"><span class="ico">🧗</span>Log</button>
+    <button id="tab-progress" onclick="switchTab('progress')"><span class="ico">📈</span>Progress</button>
+    <button id="tab-leaderboard" onclick="switchTab('leaderboard')"><span class="ico">🏆</span>Friends</button>
+  </nav>
+
+  <div class="toast-wrap" id="toasts"></div>
+  <div id="modal-root"></div>
+
+  <button class="demo-fab" onclick="ui.demoOpen=!ui.demoOpen;render()">⚗ demo states</button>
+  <div id="demo-root"></div>
+</div>
+
+<script>
+/* =====================================================================
+   HARDCODED DATA — everything the prototype shows lives here.
+   Dates are generated as offsets from "today" so the 6-week chart
+   is always populated whenever this file is opened.
+   ===================================================================== */
+
+const BOULDER_GRADES = ['V0','V1','V2','V3','V4','V5','V6','V7','V8'];
+const ROPE_GRADES = ['5.7','5.8','5.9','5.10a','5.10b','5.10c','5.10d','5.11a','5.11b','5.11c','5.11d','5.12a','5.12b','5.12c'];
+
+function daysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); d.setHours(18, 30, 0, 0); return d.toISOString(); }
+
+function initialData() {
+  return {
+    sessions: [ // newest first
+      { id: 1, date: daysAgo(2), climbs: [
+          { id: 101, grade: 'V4', style: 'boulder', sent: true,  note: '' },
+          { id: 102, grade: 'V5', style: 'boulder', sent: true,  note: 'finally stuck the dyno' },
+          { id: 103, grade: 'V6', style: 'boulder', sent: false, note: 'project — fell at the lip' },
+          { id: 104, grade: '5.11a', style: 'toprope', sent: true, note: '' },
+          { id: 105, grade: 'V3', style: 'boulder', sent: true,  note: 'warmup' } ] },
+      { id: 2, date: daysAgo(5), climbs: [
+          { id: 201, grade: '5.10c', style: 'lead', sent: true,  note: 'first lead at this grade!' },
+          { id: 202, grade: '5.10d', style: 'lead', sent: false, note: 'took at the third clip' },
+          { id: 203, grade: 'V4', style: 'boulder', sent: true,  note: '' },
+          { id: 204, grade: 'V4', style: 'boulder', sent: true,  note: '' } ] },
+      { id: 3, date: daysAgo(9), climbs: [
+          { id: 301, grade: 'V3', style: 'boulder', sent: true,  note: '' },
+          { id: 302, grade: 'V5', style: 'boulder', sent: true,  note: '' },
+          { id: 303, grade: 'V6', style: 'boulder', sent: false, note: '' },
+          { id: 304, grade: '5.11b', style: 'toprope', sent: false, note: 'pumped out' } ] },
+      { id: 4, date: daysAgo(12), climbs: [
+          { id: 401, grade: 'V2', style: 'boulder', sent: true, note: '' },
+          { id: 402, grade: 'V3', style: 'boulder', sent: true, note: '' },
+          { id: 403, grade: 'V4', style: 'boulder', sent: true, note: '' },
+          { id: 404, grade: 'V5', style: 'boulder', sent: false, note: '' },
+          { id: 405, grade: '5.10b', style: 'toprope', sent: true, note: '' } ] },
+      { id: 5, date: daysAgo(16), climbs: [
+          { id: 501, grade: '5.9',  style: 'lead', sent: true, note: 'first lead ever' },
+          { id: 502, grade: '5.10a', style: 'lead', sent: false, note: '' },
+          { id: 503, grade: 'V3', style: 'boulder', sent: true, note: '' } ] },
+      { id: 6, date: daysAgo(19), climbs: [
+          { id: 601, grade: 'V2', style: 'boulder', sent: true, note: '' },
+          { id: 602, grade: 'V4', style: 'boulder', sent: true, note: '' },
+          { id: 603, grade: 'V4', style: 'boulder', sent: false, note: '' },
+          { id: 604, grade: '5.10c', style: 'toprope', sent: true, note: '' } ] },
+      { id: 7, date: daysAgo(23), climbs: [
+          { id: 701, grade: 'V1', style: 'boulder', sent: true, note: '' },
+          { id: 702, grade: 'V2', style: 'boulder', sent: true, note: '' },
+          { id: 703, grade: 'V3', style: 'boulder', sent: true, note: '' },
+          { id: 704, grade: 'V4', style: 'boulder', sent: false, note: '' } ] },
+      { id: 8, date: daysAgo(27), climbs: [
+          { id: 801, grade: '5.10a', style: 'toprope', sent: true, note: '' },
+          { id: 802, grade: '5.10b', style: 'toprope', sent: true, note: '' },
+          { id: 803, grade: 'V3', style: 'boulder', sent: true, note: '' } ] },
+      { id: 9, date: daysAgo(33), climbs: [
+          { id: 901, grade: 'V1', style: 'boulder', sent: true, note: '' },
+          { id: 902, grade: 'V2', style: 'boulder', sent: true, note: '' },
+          { id: 903, grade: 'V3', style: 'boulder', sent: false, note: '' } ] },
+      { id: 10, date: daysAgo(38), climbs: [
+          { id: 1001, grade: 'V0', style: 'boulder', sent: true, note: '' },
+          { id: 1002, grade: 'V1', style: 'boulder', sent: true, note: '' },
+          { id: 1003, grade: 'V2', style: 'boulder', sent: true, note: '' },
+          { id: 1004, grade: '5.9', style: 'toprope', sent: true, note: '' } ] }
+    ],
+    leaderboard: {
+      week: [
+        { name: 'Maya R.',   initials: 'MR', color: '#5fb8ff', points: 320, sends: 11, hardest: 'V6',     me: false },
+        { name: 'You',       initials: 'YO', color: '#ff6b35', points: 285, sends: 9,  hardest: 'V5',     me: true  },
+        { name: 'Jonas K.',  initials: 'JK', color: '#c78bff', points: 240, sends: 8,  hardest: '5.11c',  me: false },
+        { name: 'Priya S.',  initials: 'PS', color: '#4ce58a', points: 195, sends: 7,  hardest: 'V4',     me: false },
+        { name: 'Sam T.',    initials: 'ST', color: '#ffd35c', points: 120, sends: 5,  hardest: '5.10b',  me: false },
+        { name: 'Dee W.',    initials: 'DW', color: '#ff8fab', points: 80,  sends: 3,  hardest: 'V2',     me: false }
+      ],
+      month: [
+        { name: 'You',       initials: 'YO', color: '#ff6b35', points: 1240, sends: 38, hardest: 'V5',    me: true  },
+        { name: 'Maya R.',   initials: 'MR', color: '#5fb8ff', points: 1180, sends: 35, hardest: 'V6',    me: false },
+        { name: 'Priya S.',  initials: 'PS', color: '#4ce58a', points: 930,  sends: 31, hardest: 'V5',    me: false },
+        { name: 'Jonas K.',  initials: 'JK', color: '#c78bff', points: 905,  sends: 26, hardest: '5.11c', me: false },
+        { name: 'Sam T.',    initials: 'ST', color: '#ffd35c', points: 610,  sends: 22, hardest: '5.10d', me: false },
+        { name: 'Dee W.',    initials: 'DW', color: '#ff8fab', points: 340,  sends: 14, hardest: 'V3',    me: false }
+      ]
+    }
+  };
+}
+
+// Overflow seeds (toggled from the demo panel) — deliberately too-long content.
+const OVERFLOW_FRIEND = { name: 'Maximilian Bartholomew Vandergrift-Oppenheimer III (Mad Max from Tuesday League)', initials: 'MB', color: '#9aa3b2', points: 1248932, sends: 412, hardest: 'V8', me: false, overflow: true };
+const OVERFLOW_NOTE = 'Project: "The Excruciatingly Long Traverse of Unrelenting Crimpy Doom" on the far left 45° wall, setter Dave, the one with the terrible pinch start where you have to heel-hook the volume and then deadpoint to the sloper that everyone says is a V7 move on a V5 and honestly they are right, my skin is gone, my soul is gone, see you Thursday.';
+
+let data = initialData();
+let nextId = 5000;
+
+// UI state
+const ui = {
+  tab: 'log',
+  form: { style: 'boulder', grade: 'V4', sent: true, note: '' },
+  currentSession: null,
+  lbPeriod: 'week',
+  lbLoaded: false,
+  loadingTab: null,
+  demoOpen: false,
+  demoEmpty: false,
+  demoOverflow: false
+};
+
+/* ============================ helpers ============================ */
+
+function fmtDate(iso) {
+  return new Date(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+function gradeNum(g) {
+  const b = BOULDER_GRADES.indexOf(g); if (b >= 0) return b;
+  return ROPE_GRADES.indexOf(g);
+}
+function climbPoints(c) {
+  if (!c.sent) return 0;
+  if (c.style === 'boulder') return (BOULDER_GRADES.indexOf(c.grade) + 1) * 10;
+  const base = (ROPE_GRADES.indexOf(c.grade) + 1) * 6;
+  return c.style === 'lead' ? Math.round(base * 1.5) : base;
+}
+function styleLabel(s) { return s === 'boulder' ? 'Boulder' : s === 'toprope' ? 'Top Rope' : 'Lead'; }
+function styleClass(s) { return s === 'boulder' ? 'gb-boulder' : s === 'toprope' ? 'gb-toprope' : 'gb-lead'; }
+function allSessions() {
+  const list = ui.demoEmpty ? [] : data.sessions.slice();
+  if (ui.currentSession) list.unshift(ui.currentSession);
+  return list;
+}
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function toast(html, ok) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (ok ? ' ok' : '');
+  el.innerHTML = html;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3800);
+}
+
+/* ============================ actions ============================ */
+
+function switchTab(t) {
+  ui.tab = t;
+  if (t === 'leaderboard' && !ui.lbLoaded) {
+    ui.loadingTab = 'leaderboard';
+    setTimeout(() => { ui.loadingTab = null; ui.lbLoaded = true; render(); }, 1000);
+  }
+  render();
+}
+
+function startSession() {
+  ui.currentSession = { id: nextId++, date: new Date().toISOString(), climbs: [], live: true };
+  ui.form = { style: 'boulder', grade: 'V4', sent: true, note: '' };
+  render();
+}
+
+function setStyle(s) {
+  ui.form.style = s;
+  const grades = s === 'boulder' ? BOULDER_GRADES : ROPE_GRADES;
+  if (!grades.includes(ui.form.grade)) ui.form.grade = s === 'boulder' ? 'V4' : '5.10b';
+  render();
+}
+function setGrade(g) { ui.form.grade = g; render(); }
+function setSent(v) { ui.form.sent = v; render(); }
+
+function addClimb() {
+  const noteEl = document.getElementById('note-in');
+  const note = noteEl ? noteEl.value.trim() : '';
+  ui.currentSession.climbs.unshift({
+    id: nextId++, grade: ui.form.grade, style: ui.form.style, sent: ui.form.sent, note,
+    t: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  });
+  ui.form.note = '';
+  render();
+}
+
+function removeClimb(id) {
+  ui.currentSession.climbs = ui.currentSession.climbs.filter(c => c.id !== id);
+  render();
+}
+
+function endSession() {
+  const s = ui.currentSession;
+  if (!s) return;
+  const sends = s.climbs.filter(c => c.sent).length;
+  const pts = s.climbs.reduce((a, c) => a + climbPoints(c), 0);
+  const hardest = s.climbs.filter(c => c.sent).sort((a, b) => gradeNum(b.grade) - gradeNum(a.grade))[0];
+  delete s.live;
+  if (s.climbs.length > 0) data.sessions.unshift(s);
+  ui.currentSession = null;
+  ui.summary = { total: s.climbs.length, sends, pts, hardest: hardest ? hardest.grade : '—' };
+  render();
+}
+function closeSummary() { ui.summary = null; render(); }
+
+function syncNow() {
+  const btn = document.querySelector('.sync-btn');
+  btn.textContent = '…';
+  setTimeout(() => {
+    btn.textContent = '⟳';
+    toast('<b>Sync failed</b>Couldn’t reach CruxLog cloud (error 503). Your climbs are saved on this device and will retry.');
+  }, 900);
+}
+
+function setLbPeriod(p) { ui.lbPeriod = p; render(); }
+
+/* ====================== demo-state actions ====================== */
+
+function demoEmpty() {
+  ui.demoEmpty = !ui.demoEmpty;
+  if (ui.demoEmpty) { ui.currentSession = null; }
+  render();
+}
+function demoLoading() {
+  ui.lbLoaded = false;
+  ui.loadingTab = ui.tab;
+  setTimeout(() => { ui.loadingTab = null; ui.lbLoaded = true; render(); }, 1400);
+  render();
+}
+function demoError() {
+  toast('<b>Couldn’t save climb</b>The wall map for "Overhang Cave" failed to load, so this climb has no location. Tap to retry.');
+}
+function demoOverflow() {
+  ui.demoOverflow = !ui.demoOverflow;
+  if (ui.demoOverflow) {
+    // long-note climb on the most recent session
+    const target = ui.currentSession || data.sessions[0];
+    if (target && !target.climbs.some(c => c.overflow)) {
+      target.climbs.unshift({ id: nextId++, grade: 'V5', style: 'boulder', sent: false, note: OVERFLOW_NOTE, overflow: true });
+    }
+    if (!data.leaderboard.week.some(f => f.overflow)) {
+      data.leaderboard.week.unshift(OVERFLOW_FRIEND);
+      data.leaderboard.month.unshift(OVERFLOW_FRIEND);
+    }
+  } else {
+    data.sessions.forEach(s => s.climbs = s.climbs.filter(c => !c.overflow));
+    if (ui.currentSession) ui.currentSession.climbs = ui.currentSession.climbs.filter(c => !c.overflow);
+    data.leaderboard.week = data.leaderboard.week.filter(f => !f.overflow);
+    data.leaderboard.month = data.leaderboard.month.filter(f => !f.overflow);
+  }
+  render();
+}
+function demoReset() {
+  data = initialData();
+  Object.assign(ui, { tab: 'log', currentSession: null, lbLoaded: false, loadingTab: null, demoEmpty: false, demoOverflow: false, summary: null, demoOpen: false });
+  toast('<b>Demo reset</b>All seeded data restored.', true);
+  render();
+}
+
+/* ============================ renderers ============================ */
+
+function renderLog() {
+  if (ui.loadingTab === 'log') {
+    return `<div class="skel" style="height:170px;margin-bottom:12px"></div>
+            <div class="skel skel-row"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>`;
+  }
+  let h = '';
+  const s = ui.currentSession;
+
+  if (!s) {
+    h += `<div class="hero">
+      <span class="big-ico">🧗</span>
+      <h2>Ready to climb?</h2>
+      <p>Start a session, then log every climb as you go —<br>grade, style, sent or not.</p>
+      <button class="btn-primary" onclick="startSession()">Start Session</button>
+    </div>`;
+  } else {
+    const sends = s.climbs.filter(c => c.sent).length;
+    h += `<div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="font-size:15px;font-weight:800"><span class="live-dot"></span>Session in progress</div>
+        <div style="font-size:12px;color:#8b95a7">${s.climbs.length} climbs · ${sends} sent</div>
+      </div>
+    </div>`;
+
+    // quick-add form
+    h += `<div class="card">
+      <div class="form-row">
+        <div class="form-lab">Style</div>
+        <div class="seg">
+          <button class="${ui.form.style==='boulder'?'on':''}" onclick="setStyle('boulder')">Boulder</button>
+          <button class="${ui.form.style==='toprope'?'on':''}" onclick="setStyle('toprope')">Top Rope</button>
+          <button class="${ui.form.style==='lead'?'on':''}" onclick="setStyle('lead')">Lead</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-lab">Grade</div>
+        <div class="chips">
+          ${(ui.form.style==='boulder'?BOULDER_GRADES:ROPE_GRADES).map(g =>
+            `<button class="${ui.form.grade===g?'on':''}" onclick="setGrade('${g}')">${g}</button>`).join('')}
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-lab">Result</div>
+        <div class="sent-row">
+          <button class="${ui.form.sent?'on-sent':''}" onclick="setSent(true)">Sent ✓</button>
+          <button class="${!ui.form.sent?'on-fell':''}" onclick="setSent(false)">Fell ✗</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <input id="note-in" class="note-input" placeholder="Note (optional) — beta, how it felt…" value="${esc(ui.form.note)}">
+      </div>
+      <button class="btn-primary" onclick="addClimb()">+ Log Climb</button>
+    </div>`;
+
+    // climbs in this session
+    if (s.climbs.length === 0) {
+      h += `<div class="empty-box">
+        <span class="e-ico">🪨</span>
+        <div class="e-t">No climbs logged yet</div>
+        <div class="e-s">Chalk up — your first climb of the session<br>will show up here.</div>
+      </div>`;
+    } else {
+      h += `<div class="sec-label">This session</div>`;
+      s.climbs.forEach(c => {
+        h += `<div class="climb-row">
+          <div class="grade-badge ${styleClass(c.style)}">${c.grade}</div>
+          <div class="climb-mid">
+            <div class="climb-style">${styleLabel(c.style)}</div>
+            <div class="climb-meta">${c.t || 'just now'}${c.sent ? ' · +' + climbPoints(c) + ' pts' : ''}</div>
+            ${c.note ? `<div class="climb-note">${esc(c.note)}</div>` : ''}
+          </div>
+          <span class="sent-pill ${c.sent?'sp-yes':'sp-no'}">${c.sent?'SENT':'FELL'}</span>
+          <button class="del-x" onclick="removeClimb(${c.id})">✕</button>
+        </div>`;
+      });
+    }
+
+    h += `<div style="margin-top:14px"><button class="btn-ghost" onclick="endSession()">End Session</button></div>`;
+  }
+
+  // history
+  h += `<div class="sec-label">Past sessions</div>`;
+  const hist = ui.demoEmpty ? [] : data.sessions;
+  if (hist.length === 0) {
+    h += `<div class="empty-box">
+      <span class="e-ico">📭</span>
+      <div class="e-t">No sessions yet</div>
+      <div class="e-s">Your climbing history will live here once<br>you finish your first session.</div>
+    </div>`;
+  } else {
+    hist.forEach(sess => {
+      const sends = sess.climbs.filter(c => c.sent).length;
+      const hardest = sess.climbs.filter(c => c.sent).sort((a,b) => gradeNum(b.grade) - gradeNum(a.grade))[0];
+      const noted = sess.climbs.find(c => c.note);
+      h += `<div class="card">
+        <div class="sess-card">
+          <div>
+            <div class="sess-date">${fmtDate(sess.date)}</div>
+            <div class="sess-sub">${sess.climbs.length} climbs · ${sends} sent · ${sess.climbs.reduce((a,c)=>a+climbPoints(c),0)} pts</div>
+          </div>
+          <div class="sess-hard">
+            <div class="v">${hardest ? hardest.grade : '—'}</div>
+            <div class="l">hardest</div>
+          </div>
+        </div>
+        ${noted ? `<div class="climb-note" style="margin-top:9px;padding-top:9px;border-top:1px solid #1f2733">“${esc(noted.note)}” <span style="color:#5c6678">— ${noted.grade}</span></div>` : ''}
+      </div>`;
+    });
+  }
+  return h;
+}
+
+function renderProgress() {
+  if (ui.loadingTab === 'progress') {
+    return `<div class="skel skel-block"></div>
+            <div class="skel skel-block"></div>
+            <div class="skel skel-row"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>`;
+  }
+
+  const sessions = allSessions();
+  const climbs = sessions.flatMap(s => s.climbs);
+
+  if (climbs.length === 0) {
+    return `<div class="empty-box" style="padding-top:90px">
+      <span class="e-ico">📈</span>
+      <div class="e-t">Nothing to chart yet</div>
+      <div class="e-s">Log a few sessions and your progress —<br>volume, send rate, hardest grades —<br>will show up here.</div>
+    </div>`;
+  }
+
+  // stats
+  const sent = climbs.filter(c => c.sent);
+  const hb = sent.filter(c => c.style === 'boulder').sort((a,b) => gradeNum(b.grade)-gradeNum(a.grade))[0];
+  const hr = sent.filter(c => c.style !== 'boulder').sort((a,b) => gradeNum(b.grade)-gradeNum(a.grade))[0];
+  const rate = Math.round(100 * sent.length / climbs.length);
+  const monthAgo = Date.now() - 30 * 86400000;
+  const sessMonth = sessions.filter(s => new Date(s.date).getTime() > monthAgo).length;
+
+  let h = `<div class="stat-grid">
+    <div class="stat"><div class="v acc-o">${hb ? hb.grade : '—'}</div><div class="l">Hardest boulder</div></div>
+    <div class="stat"><div class="v acc-p">${hr ? hr.grade : '—'}</div><div class="l">Hardest rope send</div></div>
+    <div class="stat"><div class="v acc-g">${rate}<small>%</small></div><div class="l">Send rate</div></div>
+    <div class="stat"><div class="v acc-b">${sessMonth}</div><div class="l">Sessions / 30 days</div></div>
+  </div>`;
+
+  // last 6 weeks chart (computed from sessions, so new logs move it)
+  const weeks = [];
+  for (let i = 5; i >= 0; i--) {
+    const end = new Date(); end.setHours(23,59,59,999); end.setDate(end.getDate() - i * 7);
+    const start = new Date(end); start.setDate(start.getDate() - 6); start.setHours(0,0,0,0);
+    const wc = climbs.filter(c => {
+      const sess = sessions.find(s => s.climbs.includes(c));
+      const t = new Date(sess.date).getTime();
+      return t >= start.getTime() && t <= end.getTime();
+    });
+    weeks.push({
+      label: start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      sends: wc.filter(c => c.sent).length,
+      falls: wc.filter(c => !c.sent).length
+    });
+  }
+  const maxTotal = Math.max(1, ...weeks.map(w => w.sends + w.falls));
+
+  h += `<div class="sec-label">Volume · last 6 weeks</div>
+  <div class="card">
+    <div class="chart">
+      ${weeks.map(w => {
+        const sh = Math.round(110 * w.sends / maxTotal);
+        const fh = Math.round(110 * w.falls / maxTotal);
+        return `<div class="col">
+          <div class="ct">${w.sends + w.falls || ''}</div>
+          <div class="bar-stack">
+            <div class="bar-send" style="height:${sh}px"></div>
+            <div class="bar-att" style="height:${fh}px"></div>
+          </div>
+          <div class="wk">${w.label}</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="legend">
+      <span><i style="background:#ff6b35"></i> Sent</span>
+      <span><i style="background:#2b3447"></i> Attempts</span>
+    </div>
+  </div>`;
+
+  // boulder grade pyramid
+  const pyramid = BOULDER_GRADES.map(g => ({ g, n: sent.filter(c => c.style === 'boulder' && c.grade === g).length }))
+    .filter(r => r.n > 0).reverse();
+  const maxP = Math.max(1, ...pyramid.map(r => r.n));
+  h += `<div class="sec-label">Boulder sends by grade</div><div class="card">`;
+  if (pyramid.length === 0) {
+    h += `<div style="font-size:13px;color:#6e7889;text-align:center;padding:10px">No boulder sends yet.</div>`;
+  } else {
+    pyramid.forEach(r => {
+      h += `<div class="pyr-row">
+        <div class="pyr-g">${r.g}</div>
+        <div class="pyr-track"><div class="pyr-fill" style="width:${Math.max(6, Math.round(100*r.n/maxP))}%"></div></div>
+        <div class="pyr-n">${r.n}</div>
+      </div>`;
+    });
+  }
+  h += `</div>`;
+  return h;
+}
+
+function renderLeaderboard() {
+  if (ui.loadingTab === 'leaderboard') {
+    return `<div class="sec-label">Crew leaderboard</div>
+      <div class="skel" style="height:140px;margin-bottom:14px"></div>
+      <div class="skel skel-row"></div><div class="skel skel-row"></div>
+      <div class="skel skel-row"></div><div class="skel skel-row"></div>`;
+  }
+
+  const list = ui.demoEmpty ? [] : data.leaderboard[ui.lbPeriod];
+
+  let h = `<div class="seg" style="margin-bottom:14px">
+    <button class="${ui.lbPeriod==='week'?'on':''}" onclick="setLbPeriod('week')">This Week</button>
+    <button class="${ui.lbPeriod==='month'?'on':''}" onclick="setLbPeriod('month')">This Month</button>
+  </div>`;
+
+  if (list.length === 0) {
+    h += `<div class="empty-box" style="padding-top:70px">
+      <span class="e-ico">🤝</span>
+      <div class="e-t">No friends yet</div>
+      <div class="e-s">Invite your climbing crew to compare<br>sends and talk smack.</div>
+      <div style="margin-top:16px"><button class="btn-ghost" onclick="demoError()">Invite Friends</button></div>
+    </div>`;
+    return h;
+  }
+
+  const sorted = list.slice().sort((a,b) => b.points - a.points);
+  const top3 = sorted.slice(0, 3);
+  const rest = sorted.slice(3);
+
+  // podium: 2nd, 1st, 3rd
+  const order = [top3[1], top3[0], top3[2]].filter(Boolean);
+  const medal = p => p === top3[0] ? '🥇' : p === top3[1] ? '🥈' : '🥉';
+  h += `<div class="podium">
+    ${order.map(p => `
+      <div class="pod ${p === top3[0] ? 'first' : ''}">
+        <div class="medal">${medal(p)}</div>
+        <div class="ava" style="background:${p.color}">${p.initials}</div>
+        <div class="nm">${esc(p.name)}</div>
+        <div class="pt">${p.points.toLocaleString()} <small>pts</small></div>
+      </div>`).join('')}
+  </div>`;
+
+  sorted.forEach((p, i) => {
+    h += `<div class="lb-row ${p.me ? 'me' : ''}">
+      <div class="lb-rank">${i + 1}</div>
+      <div class="lb-ava" style="background:${p.color}">${p.initials}</div>
+      <div class="lb-mid">
+        <div class="lb-name">${esc(p.name)}${p.me ? ' <span style="color:#ff6b35;font-size:11px">(you)</span>' : ''}</div>
+        <div class="lb-sub">${p.sends} sends · hardest ${p.hardest}</div>
+      </div>
+      <div class="lb-pts"><div class="p">${p.points.toLocaleString()}</div><div class="pl">pts</div></div>
+    </div>`;
+  });
+
+  h += `<div style="font-size:11.5px;color:#5c6678;text-align:center;margin-top:14px;line-height:1.5">
+    Points: boulders 10×(V+1) · top rope 6×grade · lead ×1.5 bonus.<br>Resets ${ui.lbPeriod === 'week' ? 'every Monday' : 'on the 1st'}.</div>`;
+  return h;
+}
+
+function render() {
+  // tabs
+  ['log','progress','leaderboard'].forEach(t =>
+    document.getElementById('tab-' + t).classList.toggle('active', ui.tab === t));
+
+  // main view
+  const view = document.getElementById('view');
+  view.innerHTML = ui.tab === 'log' ? renderLog() : ui.tab === 'progress' ? renderProgress() : renderLeaderboard();
+
+  // summary modal
+  const modal = document.getElementById('modal-root');
+  modal.innerHTML = !ui.summary ? '' : `
+    <div class="modal-bg" onclick="closeSummary()">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div style="font-size:40px">🎉</div>
+        <h3>Nice session!</h3>
+        <div class="m-sub">${fmtDate(new Date().toISOString())} · Gowanus Crag Works</div>
+        <div class="m-stats">
+          <div class="m-stat"><div class="v">${ui.summary.total}</div><div class="l">Climbs</div></div>
+          <div class="m-stat"><div class="v">${ui.summary.sends}</div><div class="l">Sends</div></div>
+          <div class="m-stat"><div class="v">${ui.summary.hardest}</div><div class="l">Hardest</div></div>
+          <div class="m-stat"><div class="v">+${ui.summary.pts}</div><div class="l">Points</div></div>
+        </div>
+        <button class="btn-primary" onclick="closeSummary()">Done</button>
+      </div>
+    </div>`;
+
+  // demo panel
+  document.getElementById('demo-root').innerHTML = !ui.demoOpen ? '' : `
+    <div class="demo-panel">
+      <h4>Demo states</h4>
+      <button class="${ui.demoEmpty ? 'armed' : ''}" onclick="demoEmpty()">${ui.demoEmpty ? '✓ ' : ''}Empty state (no data)</button>
+      <button onclick="demoLoading()">Replay loading skeleton</button>
+      <button onclick="demoError()">Trigger error toast</button>
+      <button class="${ui.demoOverflow ? 'armed' : ''}" onclick="demoOverflow()">${ui.demoOverflow ? '✓ ' : ''}Overflow content</button>
+      <button onclick="demoReset()">Reset demo data</button>
+    </div>`;
+}
+
+render();
+</script>
+</body>
+</html>

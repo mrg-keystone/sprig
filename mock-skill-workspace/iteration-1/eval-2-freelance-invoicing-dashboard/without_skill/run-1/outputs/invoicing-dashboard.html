@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Studio Invoices — Freelance Dashboard</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --ink: #1c2333;
+    --ink-soft: #6b7280;
+    --line: #e5e7eb;
+    --accent: #4f46e5;
+    --accent-soft: #eef2ff;
+    --green: #059669;
+    --green-soft: #ecfdf5;
+    --amber: #b45309;
+    --amber-soft: #fffbeb;
+    --red: #dc2626;
+    --red-soft: #fef2f2;
+    --gray-soft: #f3f4f6;
+    --radius: 12px;
+    --shadow: 0 1px 3px rgba(16,24,40,.07), 0 1px 2px rgba(16,24,40,.05);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 24px 64px; }
+
+  /* ---------- header ---------- */
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 26px; gap: 16px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .logo {
+    width: 40px; height: 40px; border-radius: 10px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 17px;
+  }
+  .brand h1 { font-size: 19px; letter-spacing: -.01em; }
+  .brand p { font-size: 12.5px; color: var(--ink-soft); }
+  .header-actions { display: flex; gap: 10px; align-items: center; }
+
+  button { font: inherit; cursor: pointer; border: none; border-radius: 9px; }
+  .btn-primary {
+    background: var(--accent); color: #fff; padding: 10px 16px; font-weight: 600; font-size: 14px;
+    box-shadow: var(--shadow); transition: background .15s;
+  }
+  .btn-primary:hover { background: #4338ca; }
+  .btn-ghost {
+    background: transparent; color: var(--ink-soft); padding: 10px 12px; font-size: 13px; font-weight: 500;
+  }
+  .btn-ghost:hover { color: var(--ink); }
+
+  /* ---------- stat cards ---------- */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 22px; }
+  @media (max-width: 820px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat {
+    background: var(--surface); border-radius: var(--radius); padding: 16px 18px;
+    box-shadow: var(--shadow); border: 1px solid var(--line);
+  }
+  .stat .label { font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .05em; }
+  .stat .value { font-size: 24px; font-weight: 750; margin-top: 6px; letter-spacing: -.02em; }
+  .stat .sub { font-size: 12px; color: var(--ink-soft); margin-top: 3px; }
+  .stat.outstanding .value { color: var(--accent); }
+  .stat.overdue .value { color: var(--red); }
+  .stat.paid .value { color: var(--green); }
+
+  /* ---------- main grid ---------- */
+  .grid { display: grid; grid-template-columns: 1.75fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 920px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface); border-radius: var(--radius);
+    box-shadow: var(--shadow); border: 1px solid var(--line); overflow: hidden;
+  }
+  .card-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 12px; }
+  .card-head h2 { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  .card-head .hint { font-size: 12px; color: var(--ink-soft); }
+
+  /* ---------- filters ---------- */
+  .filters { display: flex; gap: 6px; padding: 0 20px 12px; flex-wrap: wrap; }
+  .chip {
+    background: var(--gray-soft); color: var(--ink-soft); border-radius: 999px;
+    padding: 5px 12px; font-size: 12.5px; font-weight: 600; border: 1px solid transparent;
+  }
+  .chip:hover { color: var(--ink); }
+  .chip.active { background: var(--accent-soft); color: var(--accent); border-color: #c7d2fe; }
+
+  /* ---------- table ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--ink-soft); padding: 9px 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    background: #fafafa; white-space: nowrap;
+  }
+  thead th:first-child, tbody td:first-child { padding-left: 18px; }
+  thead th:last-child, tbody td:last-child { padding-right: 14px; text-align: right; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  tbody td { padding: 12px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr { transition: background .12s; }
+  tbody tr:hover { background: #fafbff; }
+  tr.just-changed { animation: flash 1.2s ease-out; }
+  @keyframes flash { 0% { background: #f0fdf4; } 100% { background: transparent; } }
+
+  .inv-id { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 12px; }
+  .client { font-weight: 600; }
+  .project { font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; }
+  .amount { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .due { color: var(--ink-soft); font-size: 12.5px; white-space: nowrap; }
+  .due.overdue-text { color: var(--red); font-weight: 600; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; border-radius: 999px;
+    padding: 3px 10px; font-size: 11.5px; font-weight: 700; letter-spacing: .02em; white-space: nowrap;
+  }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .pill.paid    { background: var(--green-soft); color: var(--green); }
+  .pill.sent    { background: var(--accent-soft); color: var(--accent); }
+  .pill.overdue { background: var(--red-soft); color: var(--red); }
+  .pill.draft   { background: var(--gray-soft); color: var(--ink-soft); }
+
+  .row-actions { display: flex; gap: 5px; justify-content: flex-end; }
+  .mini {
+    font-size: 11.5px; font-weight: 600; padding: 4px 8px; border-radius: 7px; border: 1px solid var(--line);
+    background: #fff; color: var(--ink); transition: all .12s; white-space: nowrap;
+  }
+  .mini:hover { border-color: #c7d2fe; background: var(--accent-soft); color: var(--accent); }
+  .mini.pay { border-color: #a7f3d0; background: var(--green-soft); color: var(--green); }
+  .mini.pay:hover { background: #d1fae5; }
+  .mini.del { color: var(--ink-soft); }
+  .mini.del:hover { border-color: #fecaca; background: var(--red-soft); color: var(--red); }
+
+  .empty { padding: 40px 20px; text-align: center; color: var(--ink-soft); font-size: 13.5px; }
+
+  /* ---------- chart ---------- */
+  .chart-card .card-head { padding-bottom: 4px; }
+  .chart-wrap { padding: 8px 14px 16px; }
+  .chart-total { padding: 0 20px; font-size: 13px; color: var(--ink-soft); }
+  .chart-total strong { color: var(--ink); font-size: 16px; }
+  .bar { transition: height .35s ease, y .35s ease; cursor: pointer; }
+  .bar:hover { opacity: .85; }
+  .bar-label { font-size: 10px; fill: var(--ink-soft); font-weight: 600; }
+  .bar-value { font-size: 9.5px; fill: var(--ink); font-weight: 700; }
+  .gridline { stroke: var(--line); stroke-width: 1; }
+  .grid-label { font-size: 9px; fill: #9ca3af; }
+  .legend { display: flex; gap: 14px; padding: 0 20px 14px; font-size: 12px; color: var(--ink-soft); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+  /* ---------- side panel extras ---------- */
+  .side-stack { display: flex; flex-direction: column; gap: 18px; }
+  .tip {
+    background: var(--accent-soft); border: 1px solid #c7d2fe; border-radius: var(--radius);
+    padding: 13px 16px; font-size: 12.5px; color: #3730a3; line-height: 1.5;
+  }
+
+  /* ---------- modal ---------- */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(17,24,39,.45); backdrop-filter: blur(2px);
+    display: none; align-items: flex-start; justify-content: center; padding: 7vh 16px; z-index: 50;
+  }
+  .overlay.open { display: flex; }
+  .modal {
+    background: #fff; border-radius: 16px; width: 460px; max-width: 100%;
+    box-shadow: 0 20px 50px rgba(16,24,40,.25); animation: pop .18s ease-out;
+    max-height: 86vh; overflow-y: auto;
+  }
+  @keyframes pop { from { transform: translateY(10px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
+  .modal-head { padding: 20px 24px 0; display: flex; justify-content: space-between; align-items: center; }
+  .modal-head h3 { font-size: 17px; letter-spacing: -.01em; }
+  .modal-close { background: var(--gray-soft); width: 30px; height: 30px; border-radius: 8px; font-size: 15px; color: var(--ink-soft); }
+  .modal form { padding: 18px 24px 24px; display: grid; gap: 14px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px; color: #374151; }
+  .field input, .field select {
+    width: 100%; font: inherit; font-size: 14px; padding: 9px 11px; border: 1px solid #d1d5db; border-radius: 9px;
+    background: #fff; color: var(--ink);
+  }
+  .field input:focus, .field select:focus { outline: 2px solid #c7d2fe; border-color: var(--accent); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+  .btn-secondary { background: var(--gray-soft); color: var(--ink); padding: 10px 16px; font-weight: 600; font-size: 14px; }
+  .field-error { color: var(--red); font-size: 12px; display: none; }
+
+  /* ---------- toast ---------- */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: #111827; color: #fff; padding: 11px 18px; border-radius: 10px; font-size: 13.5px; font-weight: 500;
+    box-shadow: 0 10px 25px rgba(0,0,0,.25); transition: transform .25s ease; z-index: 60; max-width: 90vw;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast b { color: #6ee7b7; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <div class="logo">RC</div>
+      <div>
+        <h1>Studio Invoices</h1>
+        <p>Raphael Castro · Freelance Design</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="btn-ghost" id="resetBtn" title="Restore the original demo data">Reset demo</button>
+      <button class="btn-primary" id="newInvoiceBtn">+ New Invoice</button>
+    </div>
+  </header>
+
+  <section class="stats">
+    <div class="stat outstanding">
+      <div class="label">Outstanding</div>
+      <div class="value" id="statOutstanding">—</div>
+      <div class="sub" id="statOutstandingSub"></div>
+    </div>
+    <div class="stat overdue">
+      <div class="label">Overdue</div>
+      <div class="value" id="statOverdue">—</div>
+      <div class="sub" id="statOverdueSub"></div>
+    </div>
+    <div class="stat paid">
+      <div class="label">Paid this month</div>
+      <div class="value" id="statPaidMonth">—</div>
+      <div class="sub" id="statPaidMonthSub"></div>
+    </div>
+    <div class="stat">
+      <div class="label">Revenue YTD</div>
+      <div class="value" id="statYtd">—</div>
+      <div class="sub" id="statYtdSub"></div>
+    </div>
+  </section>
+
+  <div class="grid">
+
+    <!-- ============ invoice list ============ -->
+    <div class="card">
+      <div class="card-head">
+        <h2>Invoices</h2>
+        <span class="hint" id="invoiceCount"></span>
+      </div>
+      <div class="filters" id="filters">
+        <button class="chip active" data-filter="all">All</button>
+        <button class="chip" data-filter="sent">Sent</button>
+        <button class="chip" data-filter="overdue">Overdue</button>
+        <button class="chip" data-filter="paid">Paid</button>
+        <button class="chip" data-filter="draft">Drafts</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Invoice</th>
+            <th>Client / Project</th>
+            <th>Amount</th>
+            <th>Due</th>
+            <th>Status</th>
+            <th><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody id="invoiceBody"></tbody>
+      </table>
+      <div class="empty" id="emptyState" style="display:none">No invoices match this filter.</div>
+    </div>
+
+    <!-- ============ side: chart + tip ============ -->
+    <div class="side-stack">
+      <div class="card chart-card">
+        <div class="card-head">
+          <h2>Monthly revenue · 2026</h2>
+        </div>
+        <div class="chart-total">Collected so far: <strong id="chartTotal">—</strong></div>
+        <div class="chart-wrap">
+          <svg id="chart" viewBox="0 0 380 210" width="100%" role="img" aria-label="Monthly revenue bar chart"></svg>
+        </div>
+        <div class="legend">
+          <span><i style="background:#4f46e5"></i> Collected (paid)</span>
+          <span><i style="background:#c7d2fe"></i> Billed, awaiting payment</span>
+        </div>
+      </div>
+      <div class="tip">
+        <strong>Try it:</strong> click <em>Mark paid</em> on an unpaid invoice and watch the chart and the stat
+        cards update. Or hit <em>+ New Invoice</em> to add one. Changes are saved locally — <em>Reset demo</em> restores the sample data.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ new invoice modal ============ -->
+<div class="overlay" id="overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head">
+      <h3 id="modalTitle">New invoice</h3>
+      <button class="modal-close" id="modalClose" aria-label="Close">✕</button>
+    </div>
+    <form id="invoiceForm" novalidate>
+      <div class="field">
+        <label for="fClient">Client</label>
+        <input id="fClient" name="client" type="text" placeholder="e.g. Harbor & Co." required>
+      </div>
+      <div class="field">
+        <label for="fProject">Project / description</label>
+        <input id="fProject" name="project" type="text" placeholder="e.g. Brand identity refresh" required>
+      </div>
+      <div class="two-col">
+        <div class="field">
+          <label for="fAmount">Amount (USD)</label>
+          <input id="fAmount" name="amount" type="number" min="1" step="0.01" placeholder="2400" required>
+        </div>
+        <div class="field">
+          <label for="fStatus">Status</label>
+          <select id="fStatus" name="status">
+            <option value="draft">Draft</option>
+            <option value="sent" selected>Sent</option>
+            <option value="paid">Paid</option>
+          </select>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="field">
+          <label for="fIssued">Issue date</label>
+          <input id="fIssued" name="issued" type="date" required>
+        </div>
+        <div class="field">
+          <label for="fDue">Due date</label>
+          <input id="fDue" name="due" type="date" required>
+        </div>
+      </div>
+      <div class="field-error" id="formError">Please fill in client, project, a positive amount and both dates.</div>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="cancelBtn">Cancel</button>
+        <button type="submit" class="btn-primary">Create invoice</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------------- data ----------------
+  const STORAGE_KEY = "studio-invoices-v1";
+  const TODAY = new Date(); TODAY.setHours(0,0,0,0);
+  const YEAR = TODAY.getFullYear();
+
+  // Seed data: a believable six months of freelance design work.
+  // paidOn drives which month the revenue lands in on the chart.
+  const seed = () => ([
+    { id: "INV-2026-014", client: "Larkspur Coffee",   project: "Packaging design — spring line",   amount: 3200, issued: iso(YEAR,5,28), due: iso(YEAR,6,27),  status: "draft", paidOn: null },
+    { id: "INV-2026-013", client: "Harbor & Co.",      project: "Brand identity refresh",           amount: 5400, issued: iso(YEAR,5,20), due: iso(YEAR,6,19),  status: "sent",  paidOn: null },
+    { id: "INV-2026-012", client: "Nimbus Health",     project: "App icon + design system audit",   amount: 2750, issued: iso(YEAR,5,12), due: iso(YEAR,6,11),  status: "sent",  paidOn: null },
+    { id: "INV-2026-011", client: "Pinegate Realty",   project: "Website redesign — phase 2",       amount: 4800, issued: iso(YEAR,4,22), due: iso(YEAR,5,22),  status: "sent",  paidOn: null }, // overdue (due May 22)
+    { id: "INV-2026-010", client: "Bluefin Analytics", project: "Pitch deck design",                amount: 1900, issued: iso(YEAR,4,30), due: iso(YEAR,5,30),  status: "sent",  paidOn: null }, // overdue
+    { id: "INV-2026-009", client: "Harbor & Co.",      project: "Logo concepts — round 2",          amount: 2400, issued: iso(YEAR,5,2),  due: iso(YEAR,6,1),   status: "paid",  paidOn: iso(YEAR,6,3) },
+    { id: "INV-2026-008", client: "Orchard Lane",      project: "E-commerce UI kit",                amount: 6100, issued: iso(YEAR,4,8),  due: iso(YEAR,5,8),   status: "paid",  paidOn: iso(YEAR,5,6) },
+    { id: "INV-2026-007", client: "Nimbus Health",     project: "Marketing site illustrations",     amount: 3300, issued: iso(YEAR,3,25), due: iso(YEAR,4,24),  status: "paid",  paidOn: iso(YEAR,4,28) },
+    { id: "INV-2026-006", client: "Pinegate Realty",   project: "Website redesign — phase 1",       amount: 4800, issued: iso(YEAR,3,10), due: iso(YEAR,4,9),   status: "paid",  paidOn: iso(YEAR,4,2) },
+    { id: "INV-2026-005", client: "Cobalt Brewing",    project: "Label series (4 SKUs)",            amount: 4200, issued: iso(YEAR,2,18), due: iso(YEAR,3,20),  status: "paid",  paidOn: iso(YEAR,3,17) },
+    { id: "INV-2026-004", client: "Bluefin Analytics", project: "Brand guidelines doc",             amount: 2100, issued: iso(YEAR,2,4),  due: iso(YEAR,3,6),   status: "paid",  paidOn: iso(YEAR,3,2) },
+    { id: "INV-2026-003", client: "Larkspur Coffee",   project: "Menu + signage design",            amount: 1850, issued: iso(YEAR,1,28), due: iso(YEAR,2,27),  status: "paid",  paidOn: iso(YEAR,2,20) },
+    { id: "INV-2026-002", client: "Orchard Lane",      project: "Landing page design",              amount: 2900, issued: iso(YEAR,1,15), due: iso(YEAR,2,14),  status: "paid",  paidOn: iso(YEAR,2,10) },
+    { id: "INV-2026-001", client: "Cobalt Brewing",    project: "Taproom poster series",            amount: 1600, issued: iso(YEAR,1,6),  due: iso(YEAR,2,5),   status: "paid",  paidOn: iso(YEAR,1,30) },
+  ]);
+
+  function iso(y, m, d) { return `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
+
+  let invoices = load();
+  let filter = "all";
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) { const arr = JSON.parse(raw); if (Array.isArray(arr) && arr.length) return arr; }
+    } catch (_) { /* corrupted storage -> reseed */ }
+    return seed();
+  }
+  function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(invoices)); } catch (_) {} }
+
+  // ---------------- helpers ----------------
+  const fmt = n => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const fmtCents = n => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: Number.isInteger(n) ? 0 : 2 });
+  const parseDate = s => { const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); };
+  const fmtDate = s => parseDate(s).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  // status is derived for display: a "sent" invoice past its due date is overdue
+  function effectiveStatus(inv) {
+    if (inv.status === "sent" && parseDate(inv.due) < TODAY) return "overdue";
+    return inv.status;
+  }
+  function dueLabel(inv) {
+    const st = effectiveStatus(inv);
+    const days = Math.round((parseDate(inv.due) - TODAY) / 86400000);
+    if (st === "paid")  return "Paid " + fmtDate(inv.paidOn || inv.due);
+    if (st === "draft") return "Due " + fmtDate(inv.due);
+    if (days < 0)  return `${Math.abs(days)}d overdue`;
+    if (days === 0) return "Due today";
+    return `Due in ${days}d`;
+  }
+
+  function nextId() {
+    let max = 0;
+    invoices.forEach(i => { const m = i.id.match(/(\d+)$/); if (m) max = Math.max(max, +m[1]); });
+    return `INV-${YEAR}-${String(max + 1).padStart(3, "0")}`;
+  }
+
+  // ---------------- rendering ----------------
+  const tbody = document.getElementById("invoiceBody");
+  const emptyState = document.getElementById("emptyState");
+
+  let flashId = null; // row to flash after a change
+
+  function render() {
+    renderStats();
+    renderTable();
+    renderChart();
+    save();
+  }
+
+  function renderStats() {
+    const open = invoices.filter(i => effectiveStatus(i) === "sent");
+    const over = invoices.filter(i => effectiveStatus(i) === "overdue");
+    const sum = arr => arr.reduce((s, i) => s + i.amount, 0);
+
+    const paid = invoices.filter(i => i.status === "paid" && i.paidOn);
+    const thisMonth = paid.filter(i => { const d = parseDate(i.paidOn); return d.getFullYear() === YEAR && d.getMonth() === TODAY.getMonth(); });
+    const ytd = paid.filter(i => parseDate(i.paidOn).getFullYear() === YEAR);
+
+    setStat("statOutstanding", fmt(sum(open) + sum(over)), "statOutstandingSub", `${open.length + over.length} unpaid invoice${open.length + over.length === 1 ? "" : "s"}`);
+    setStat("statOverdue", fmt(sum(over)), "statOverdueSub", over.length ? `${over.length} invoice${over.length === 1 ? "" : "s"} past due` : "Nothing past due 🎉");
+    setStat("statPaidMonth", fmt(sum(thisMonth)), "statPaidMonthSub", TODAY.toLocaleDateString("en-US", { month: "long" }));
+    setStat("statYtd", fmt(sum(ytd)), "statYtdSub", `${ytd.length} invoices collected`);
+  }
+  function setStat(idV, val, idS, sub) {
+    document.getElementById(idV).textContent = val;
+    document.getElementById(idS).textContent = sub;
+  }
+
+  function renderTable() {
+    const rows = invoices.filter(i => filter === "all" || effectiveStatus(i) === filter);
+    document.getElementById("invoiceCount").textContent =
+      `${rows.length} of ${invoices.length} invoice${invoices.length === 1 ? "" : "s"}`;
+
+    tbody.innerHTML = "";
+    emptyState.style.display = rows.length ? "none" : "block";
+
+    for (const inv of rows) {
+      const st = effectiveStatus(inv);
+      const tr = document.createElement("tr");
+      if (inv.id === flashId) tr.className = "just-changed";
+
+      const stLabel = { paid: "Paid", sent: "Sent", overdue: "Overdue", draft: "Draft" }[st];
+
+      tr.innerHTML = `
+        <td class="inv-id">${inv.id}</td>
+        <td>
+          <div class="client">${esc(inv.client)}</div>
+          <div class="project">${esc(inv.project)}</div>
+        </td>
+        <td class="amount">${fmtCents(inv.amount)}</td>
+        <td class="due ${st === "overdue" ? "overdue-text" : ""}">${dueLabel(inv)}</td>
+        <td><span class="pill ${st}">${stLabel}</span></td>
+        <td>
+          <div class="row-actions">
+            ${st === "draft" ? `<button class="mini" data-act="send" data-id="${inv.id}">Send</button>` : ""}
+            ${st !== "paid" && st !== "draft" ? `<button class="mini pay" data-act="pay" data-id="${inv.id}">Mark paid</button>` : ""}
+            ${st === "draft" ? `<button class="mini pay" data-act="pay" data-id="${inv.id}">Mark paid</button>` : ""}
+            ${st === "paid" ? `<button class="mini" data-act="unpay" data-id="${inv.id}" title="Move back to Sent">Undo</button>` : ""}
+            <button class="mini del" data-act="del" data-id="${inv.id}" title="Delete invoice">🗑</button>
+          </div>
+        </td>`;
+      tbody.appendChild(tr);
+    }
+    flashId = null;
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+
+  // ---------------- chart ----------------
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  function renderChart() {
+    // collected revenue lands in the month it was PAID; billed-unpaid lands in the month it was issued
+    const collected = Array(12).fill(0);
+    const billed = Array(12).fill(0);
+    for (const inv of invoices) {
+      if (inv.status === "paid" && inv.paidOn) {
+        const d = parseDate(inv.paidOn);
+        if (d.getFullYear() === YEAR) collected[d.getMonth()] += inv.amount;
+      } else if (inv.status !== "draft") {
+        const d = parseDate(inv.issued);
+        if (d.getFullYear() === YEAR) billed[d.getMonth()] += inv.amount;
+      }
+    }
+
+    const monthsToShow = Math.max(TODAY.getMonth() + 1, 6); // at least Jan..Jun
+    const W = 380, H = 210, padL = 38, padB = 26, padT = 18;
+    const plotW = W - padL - 8, plotH = H - padT - padB;
+    const maxVal = Math.max(1000, ...collected.slice(0, monthsToShow).map((c, i) => c + billed[i]));
+    const niceMax = Math.ceil(maxVal / 2000) * 2000;
+    const slot = plotW / monthsToShow;
+    const barW = Math.min(34, slot * 0.58);
+
+    let svg = "";
+
+    // gridlines
+    const steps = 4;
+    for (let s = 0; s <= steps; s++) {
+      const v = (niceMax / steps) * s;
+      const y = padT + plotH - (v / niceMax) * plotH;
+      svg += `<line class="gridline" x1="${padL}" x2="${W - 6}" y1="${y}" y2="${y}"></line>`;
+      svg += `<text class="grid-label" x="${padL - 5}" y="${y + 3}" text-anchor="end">${v >= 1000 ? (v/1000) + "k" : v}</text>`;
+    }
+
+    for (let m = 0; m < monthsToShow; m++) {
+      const x = padL + slot * m + (slot - barW) / 2;
+      const hC = (collected[m] / niceMax) * plotH;
+      const hB = (billed[m] / niceMax) * plotH;
+      const yC = padT + plotH - hC;
+      const yB = yC - hB;
+
+      if (billed[m] > 0)
+        svg += `<rect class="bar" x="${x}" y="${yB}" width="${barW}" height="${Math.max(hB,1)}" rx="3" fill="#c7d2fe"><title>${MONTHS[m]}: ${fmt(billed[m])} billed, awaiting payment</title></rect>`;
+      if (collected[m] > 0)
+        svg += `<rect class="bar" x="${x}" y="${yC}" width="${barW}" height="${Math.max(hC,1)}" rx="3" fill="#4f46e5"><title>${MONTHS[m]}: ${fmt(collected[m])} collected</title></rect>`;
+      if (collected[m] > 0)
+        svg += `<text class="bar-value" x="${x + barW/2}" y="${Math.min(yC, yB) - 4}" text-anchor="middle">${Math.round(collected[m]/100)/10}k</text>`;
+
+      svg += `<text class="bar-label" x="${x + barW/2}" y="${H - 8}" text-anchor="middle">${MONTHS[m]}</text>`;
+    }
+
+    document.getElementById("chart").innerHTML = svg;
+    document.getElementById("chartTotal").textContent = fmt(collected.reduce((a,b) => a+b, 0)) + ` across ${MONTHS[0]}–${MONTHS[monthsToShow-1]}`;
+  }
+
+  // ---------------- actions ----------------
+  tbody.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    const inv = invoices.find(i => i.id === btn.dataset.id);
+    if (!inv) return;
+
+    switch (btn.dataset.act) {
+      case "pay":
+        inv.status = "paid";
+        inv.paidOn = iso(YEAR, TODAY.getMonth() + 1, TODAY.getDate());
+        flashId = inv.id;
+        toast(`<b>${inv.id}</b> marked paid — ${fmt(inv.amount)} added to ${TODAY.toLocaleDateString("en-US",{month:"long"})} revenue`);
+        break;
+      case "unpay":
+        inv.status = "sent";
+        inv.paidOn = null;
+        flashId = inv.id;
+        toast(`${inv.id} moved back to Sent`);
+        break;
+      case "send":
+        inv.status = "sent";
+        flashId = inv.id;
+        toast(`${inv.id} sent to ${esc(inv.client)}`);
+        break;
+      case "del":
+        invoices = invoices.filter(i => i.id !== inv.id);
+        toast(`${inv.id} deleted`);
+        break;
+    }
+    render();
+  });
+
+  // filters
+  document.getElementById("filters").addEventListener("click", (e) => {
+    const chip = e.target.closest(".chip");
+    if (!chip) return;
+    filter = chip.dataset.filter;
+    document.querySelectorAll(".chip").forEach(c => c.classList.toggle("active", c === chip));
+    renderTable();
+  });
+
+  // ---------------- modal ----------------
+  const overlay = document.getElementById("overlay");
+  const form = document.getElementById("invoiceForm");
+  const formError = document.getElementById("formError");
+
+  function openModal() {
+    form.reset();
+    formError.style.display = "none";
+    document.getElementById("fIssued").value = iso(YEAR, TODAY.getMonth() + 1, TODAY.getDate());
+    const due = new Date(TODAY); due.setDate(due.getDate() + 30);
+    document.getElementById("fDue").value = iso(due.getFullYear(), due.getMonth() + 1, due.getDate());
+    overlay.classList.add("open");
+    document.getElementById("fClient").focus();
+  }
+  function closeModal() { overlay.classList.remove("open"); }
+
+  document.getElementById("newInvoiceBtn").addEventListener("click", openModal);
+  document.getElementById("modalClose").addEventListener("click", closeModal);
+  document.getElementById("cancelBtn").addEventListener("click", closeModal);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const client = document.getElementById("fClient").value.trim();
+    const project = document.getElementById("fProject").value.trim();
+    const amount = parseFloat(document.getElementById("fAmount").value);
+    const issued = document.getElementById("fIssued").value;
+    const due = document.getElementById("fDue").value;
+    const status = document.getElementById("fStatus").value;
+
+    if (!client || !project || !(amount > 0) || !issued || !due) {
+      formError.style.display = "block";
+      return;
+    }
+
+    const inv = {
+      id: nextId(), client, project, amount, issued, due, status,
+      paidOn: status === "paid" ? iso(YEAR, TODAY.getMonth() + 1, TODAY.getDate()) : null,
+    };
+    invoices.unshift(inv);
+    flashId = inv.id;
+    closeModal();
+    toast(`<b>${inv.id}</b> created for ${esc(client)} — ${fmt(amount)}`);
+    render();
+  });
+
+  // reset demo
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    invoices = seed();
+    filter = "all";
+    document.querySelectorAll(".chip").forEach(c => c.classList.toggle("active", c.dataset.filter === "all"));
+    toast("Demo data restored");
+    render();
+  });
+
+  // ---------------- toast ----------------
+  let toastTimer;
+  function toast(html) {
+    const el = document.getElementById("toast");
+    el.innerHTML = html;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 3200);
+  }
+
+  // go
+  render();
+})();
+</script>
+</body>
+</html>

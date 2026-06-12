@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FieldOps — Dispatch Board (Prototype)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @keyframes pulseRed { 0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.55);} 50%{box-shadow:0 0 0 7px rgba(220,38,38,0);} }
+  .pulse-red { animation: pulseRed 1.4s ease-out infinite; }
+  .drag-over { outline: 3px dashed #2563eb; outline-offset: -3px; background:#eff6ff !important; }
+  .skeleton { background: linear-gradient(90deg,#e2e8f0 25%,#f1f5f9 50%,#e2e8f0 75%); background-size:200% 100%; animation: shimmer 1.1s infinite; }
+  @keyframes shimmer { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-900 min-h-screen">
+
+<script>
+/* ============================================================
+   ALL DATA LIVES HERE — hardcoded, mutated in memory, no backend
+   ============================================================ */
+const TECHS = [
+  { id: 't1', name: 'Marcus Webb',   status: 'on job',    zone: 'N' },
+  { id: 't2', name: 'Dana Ortiz',    status: 'available', zone: 'S' },
+  { id: 't3', name: 'Pete Kowalski', status: 'driving',   zone: 'E' },
+  { id: 't4', name: 'Sam Reyes',     status: 'available', zone: 'W' },
+  { id: 't5', name: 'Jo Lindqvist',  status: 'on job',    zone: 'N' },
+  { id: 't6', name: 'Alvin Cho',     status: 'off',       zone: 'S' },
+];
+
+let JOBS = [
+  { id: 'J-1041', customer: 'Harriet Boone', phone: '(555) 201-8841',
+    address: '1418 Larkspur Ave', zone: 'N', equipment: 'furnace',
+    issue: 'No heat since last night, pilot won’t stay lit. Elderly resident.',
+    priority: 'emergency', status: 'new', assigned_tech: null,
+    created_at: '7:42 AM', time_on_site: '', parts_used: '', needs_followup: false,
+    history: [ { status: 'new', at: '7:42 AM' } ] },
+
+  { id: 'J-1042', customer: 'Greater Metropolitan Property Management LLC, Building C — attn: facilities desk, after-hours gate code 4417, park behind loading dock',
+    phone: '(555) 318-0042',
+    address: '9000-9400 Industrial Corridor Pkwy, Suite 220B, rear mechanical mezzanine, accessible via Building C freight elevator only', zone: 'E', equipment: 'AC',
+    issue: 'Rooftop unit 3 short-cycling. Tenant on floor 2 reports intermittent cooling. Previous tech note from March: contactor pitted, recommended replacement, owner declined at the time. Re-quote if same fault. Also check economizer damper — stuck open last visit.',
+    priority: 'today', status: 'new', assigned_tech: null,
+    created_at: '8:05 AM', time_on_site: '', parts_used: '', needs_followup: false,
+    history: [ { status: 'new', at: '8:05 AM' } ] },
+
+  { id: 'J-1043', customer: 'Ray Delgado', phone: '(555) 992-1107',
+    address: '77 Cobble Hill Rd', zone: 'W', equipment: 'water heater',
+    issue: 'Water heater leaking from relief valve.',
+    priority: 'today', status: 'new', assigned_tech: null,
+    created_at: '8:31 AM', time_on_site: '', parts_used: '', needs_followup: false,
+    history: [ { status: 'new', at: '8:31 AM' } ] },
+
+  { id: 'J-1044', customer: 'Minh Tran', phone: '(555) 414-7720',
+    address: '2203 Birchwood Ct', zone: 'S', equipment: 'heat pump',
+    issue: 'Annual maintenance, customer requests afternoon.',
+    priority: 'scheduled', status: 'new', assigned_tech: null,
+    created_at: '8:50 AM', time_on_site: '', parts_used: '', needs_followup: false,
+    history: [ { status: 'new', at: '8:50 AM' } ] },
+
+  { id: 'J-1037', customer: 'Lena Marsh', phone: '(555) 728-3356',
+    address: '510 Fenwick Ln', zone: 'N', equipment: 'AC',
+    issue: 'AC blowing warm, suspected capacitor.',
+    priority: 'today', status: 'en route', assigned_tech: 't1',
+    created_at: '7:05 AM', time_on_site: '', parts_used: '', needs_followup: false,
+    history: [ { status: 'new', at: '7:05 AM' }, { status: 'assigned', at: '7:12 AM' }, { status: 'en route', at: '7:58 AM' } ] },
+
+  { id: 'J-1038', customer: 'Crestview Dental', phone: '(555) 606-2210',
+    address: '88 Crestview Plaza', zone: 'N', equipment: 'furnace',
+    issue: 'Burning smell from supply vents on startup.',
+    priority: 'emergency', status: 'on site', assigned_tech: 't5',
+    created_at: '7:15 AM', time_on_site: '', parts_used: '', needs_followup: false,
+    history: [ { status: 'new', at: '7:15 AM' }, { status: 'assigned', at: '7:18 AM' }, { status: 'en route', at: '7:25 AM' }, { status: 'on site', at: '7:51 AM' } ] },
+
+  { id: 'J-1039', customer: 'Otis Greenfield', phone: '(555) 883-9914',
+    address: '34 Pemberton St', zone: 'S', equipment: 'water heater',
+    issue: 'No hot water, electric unit, breaker keeps tripping.',
+    priority: 'today', status: 'assigned', assigned_tech: 't2',
+    created_at: '7:20 AM', time_on_site: '', parts_used: '', needs_followup: false,
+    history: [ { status: 'new', at: '7:20 AM' }, { status: 'assigned', at: '7:31 AM' } ] },
+
+  { id: 'J-1040', customer: 'Priya Natarajan', phone: '(555) 530-6671',
+    address: '961 Alder Way', zone: 'E', equipment: 'AC',
+    issue: 'Condenser fan not spinning, hums then stops.',
+    priority: 'today', status: 'assigned', assigned_tech: 't3',
+    created_at: '7:33 AM', time_on_site: '', parts_used: '', needs_followup: false,
+    history: [ { status: 'new', at: '7:33 AM' }, { status: 'assigned', at: '7:40 AM' } ] },
+
+  { id: 'J-1035', customer: 'Bea Holloway', phone: '(555) 217-4458',
+    address: '12 Quincy Ter', zone: 'W', equipment: 'furnace',
+    issue: 'Thermostat dead after power outage.',
+    priority: 'today', status: 'done', assigned_tech: 't4',
+    created_at: '6:48 AM', time_on_site: '45m',
+    parts_used: 'Honeywell T4 thermostat, 2x AA batteries, 3A fuse',
+    needs_followup: true,
+    history: [ { status: 'new', at: '6:48 AM' }, { status: 'assigned', at: '6:55 AM' }, { status: 'en route', at: '7:10 AM' }, { status: 'on site', at: '7:35 AM' }, { status: 'done', at: '8:20 AM' } ] },
+
+  { id: 'J-1033', customer: 'Stan & Vera Kowalczyk', phone: '(555) 119-2280',
+    address: '450 Maple Run', zone: 'S', equipment: 'heat pump',
+    issue: 'Outdoor unit iced over.',
+    priority: 'emergency', status: 'closed', assigned_tech: 't2',
+    created_at: '6:30 AM', time_on_site: '1h 20m',
+    parts_used: 'Defrost control board',
+    needs_followup: false,
+    history: [ { status: 'new', at: '6:30 AM' }, { status: 'assigned', at: '6:34 AM' }, { status: 'en route', at: '6:40 AM' }, { status: 'on site', at: '7:02 AM' }, { status: 'done', at: '8:22 AM' }, { status: 'closed', at: '8:30 AM' } ] },
+
+  { id: 'J-1034', customer: 'Felix Arroyo', phone: '(555) 745-0098',
+    address: '209 Galloway Dr', zone: 'E', equipment: 'AC',
+    issue: 'Refrigerant top-up, scheduled.',
+    priority: 'scheduled', status: 'closed', assigned_tech: 't3',
+    created_at: '6:35 AM', time_on_site: '35m',
+    parts_used: 'None — 2 lbs R-410A',
+    needs_followup: false,
+    history: [ { status: 'new', at: '6:35 AM' }, { status: 'assigned', at: '6:41 AM' }, { status: 'en route', at: '6:50 AM' }, { status: 'on site', at: '7:15 AM' }, { status: 'done', at: '7:50 AM' }, { status: 'closed', at: '8:02 AM' } ] },
+];
+
+const INITIAL_JOBS = JSON.parse(JSON.stringify(JOBS)); // for demo reset
+let view = 'queue';            // queue | board | eod
+let queueSort = 'priority';    // priority | oldest
+let openJobId = null;          // detail modal
+let loading = false;
+let fakeClock = 9.0;           // fake "now" for new timestamps
+
+const PRIO_RANK = { emergency: 0, today: 1, scheduled: 2 };
+const STATUS_FLOW = { assigned: 'en route', 'en route': 'on site' };
+function now() { fakeClock += 0.07; const h = Math.floor(fakeClock); const m = String(Math.round((fakeClock - h) * 60)).padStart(2,'0'); return h + ':' + m + ' AM'; }
+function tech(id) { return TECHS.find(t => t.id === id); }
+function job(id) { return JOBS.find(j => j.id === id); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+
+<!-- ============ HEADER / TABS ============ -->
+<header class="bg-slate-900 text-white sticky top-0 z-30 shadow-lg">
+  <div class="max-w-screen-2xl mx-auto px-4 py-3 flex items-center gap-6">
+    <div class="flex items-center gap-2">
+      <span class="text-xl">🛠️</span>
+      <h1 class="font-bold text-lg tracking-tight">FieldOps <span class="text-slate-400 font-normal text-sm">dispatch</span></h1>
+    </div>
+    <nav id="tabs" class="flex gap-1"></nav>
+    <div class="ml-auto text-sm text-slate-400">Tue · Metro area · <span class="text-slate-200">Dispatcher: Carla</span></div>
+  </div>
+</header>
+
+<main id="main" class="max-w-screen-2xl mx-auto px-4 py-5"></main>
+
+<!-- detail modal -->
+<div id="modal" class="hidden fixed inset-0 z-40 bg-slate-900/50 flex items-start justify-center p-6 overflow-y-auto" onclick="if(event.target===this) closeDetail()">
+  <div id="modalCard" class="bg-white rounded-xl shadow-2xl w-full max-w-2xl"></div>
+</div>
+
+<!-- toast -->
+<div id="toast" class="hidden fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-red-600 text-white px-5 py-3 rounded-lg shadow-xl font-medium"></div>
+
+<!-- demo states panel -->
+<div class="fixed bottom-4 right-4 z-30 bg-white border border-slate-300 rounded-xl shadow-xl p-3 w-56">
+  <div class="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Demo states</div>
+  <div class="flex flex-col gap-1.5 text-sm">
+    <button onclick="demoEmpty()" class="text-left px-2 py-1.5 rounded hover:bg-slate-100">😴 Slow afternoon (empty queue)</button>
+    <button onclick="demoLoading()" class="text-left px-2 py-1.5 rounded hover:bg-slate-100">⏳ Simulate loading</button>
+    <button onclick="toast('Couldn’t reach the server — assignment not saved. Retry.')" class="text-left px-2 py-1.5 rounded hover:bg-slate-100">❌ Trigger error toast</button>
+    <button onclick="openDetail('J-1042')" class="text-left px-2 py-1.5 rounded hover:bg-slate-100">📏 Open the overflow job</button>
+    <button onclick="demoReset()" class="text-left px-2 py-1.5 rounded hover:bg-slate-100 text-blue-700 font-medium">↺ Reset demo data</button>
+  </div>
+</div>
+
+<script>
+/* ============ shared bits ============ */
+function prioBadge(p) {
+  if (p === 'emergency') return '<span class="text-[11px] font-bold uppercase tracking-wide bg-red-600 text-white px-1.5 py-0.5 rounded">Emergency</span>';
+  if (p === 'today')     return '<span class="text-[11px] font-bold uppercase tracking-wide bg-amber-400 text-amber-950 px-1.5 py-0.5 rounded">Today</span>';
+  return '<span class="text-[11px] font-bold uppercase tracking-wide bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">Scheduled</span>';
+}
+function statusPill(s) {
+  const map = { 'new':'bg-slate-200 text-slate-700', 'assigned':'bg-blue-100 text-blue-800', 'en route':'bg-indigo-100 text-indigo-800', 'on site':'bg-violet-100 text-violet-800', 'done':'bg-emerald-100 text-emerald-800', 'closed':'bg-slate-800 text-white' };
+  return '<span class="text-xs font-semibold px-2 py-0.5 rounded-full ' + map[s] + '">' + s + '</span>';
+}
+function techStatusPill(s) {
+  const map = { 'available':'bg-emerald-100 text-emerald-800', 'on job':'bg-violet-100 text-violet-800', 'driving':'bg-indigo-100 text-indigo-800', 'off':'bg-slate-200 text-slate-500' };
+  return '<span class="text-[11px] font-semibold px-1.5 py-0.5 rounded-full ' + map[s] + '">' + s + '</span>';
+}
+const EQUIP_ICON = { furnace: '🔥', AC: '❄️', 'heat pump': '♻️', 'water heater': '🚿' };
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.remove('hidden');
+  clearTimeout(t._tm); t._tm = setTimeout(() => t.classList.add('hidden'), 3200);
+}
+
+function assignJob(jobId, techId) {
+  const j = job(jobId), t = tech(techId);
+  if (!t) return;
+  if (t.status === 'off') { toast(t.name + ' is off shift — can’t assign ' + jobId + '.'); render(); return; }
+  j.assigned_tech = techId;
+  if (j.status === 'new') { j.status = 'assigned'; j.history.push({ status: 'assigned', at: now() }); }
+  render();
+}
+
+/* ============ TABS ============ */
+function renderTabs() {
+  const unassigned = JOBS.filter(j => j.status === 'new');
+  const hasEmergency = unassigned.some(j => j.priority === 'emergency');
+  const badge = unassigned.length
+    ? '<span class="ml-1.5 text-xs font-bold px-1.5 py-0.5 rounded-full ' + (hasEmergency ? 'bg-red-600 text-white pulse-red' : 'bg-slate-600 text-white') + '">' + unassigned.length + '</span>'
+    : '';
+  const tabs = [ ['queue','Intake Queue' + badge], ['board','Dispatch Board'], ['eod','End of Day'] ];
+  document.getElementById('tabs').innerHTML = tabs.map(([k, label]) =>
+    '<button onclick="view=\'' + k + '\';render()" class="px-3 py-1.5 rounded-md text-sm font-medium ' +
+    (view === k ? 'bg-white text-slate-900' : 'text-slate-300 hover:bg-slate-700') + '">' + label + '</button>'
+  ).join('');
+}
+
+/* ============ SCREEN 1: INTAKE QUEUE ============ */
+function renderQueue() {
+  const list = JOBS.filter(j => j.status === 'new');
+  list.sort((a, b) => queueSort === 'priority'
+    ? (PRIO_RANK[a.priority] - PRIO_RANK[b.priority]) || a.created_at.localeCompare(b.created_at)
+    : a.created_at.localeCompare(b.created_at));
+  const emCount = list.filter(j => j.priority === 'emergency').length;
+
+  let html = '<div class="flex items-center gap-3 mb-4">' +
+    '<h2 class="text-xl font-bold">Intake Queue</h2>' +
+    '<span class="text-sm text-slate-500">' + list.length + ' unassigned</span>' +
+    '<div class="ml-auto flex items-center gap-2 text-sm">' +
+      '<span class="text-slate-500">Sort:</span>' +
+      '<button onclick="queueSort=\'priority\';render()" class="px-2 py-1 rounded ' + (queueSort==='priority'?'bg-slate-900 text-white':'bg-white border') + '">Priority</button>' +
+      '<button onclick="queueSort=\'oldest\';render()" class="px-2 py-1 rounded ' + (queueSort==='oldest'?'bg-slate-900 text-white':'bg-white border') + '">Oldest first</button>' +
+    '</div></div>';
+
+  if (emCount) {
+    html += '<div class="pulse-red bg-red-600 text-white rounded-lg px-4 py-3 mb-4 flex items-center gap-3 font-semibold">' +
+      '<span class="text-xl">🚨</span> ' + emCount + ' EMERGENCY job' + (emCount>1?'s':'') + ' waiting unassigned — assign now.</div>';
+  }
+
+  if (!list.length) {
+    html += '<div class="bg-white border-2 border-dashed border-slate-300 rounded-xl py-20 text-center">' +
+      '<div class="text-5xl mb-3">🍃</div>' +
+      '<div class="text-lg font-semibold text-slate-600">Queue is clear</div>' +
+      '<div class="text-sm text-slate-400 mt-1">No unassigned jobs. New calls and web requests will land here.</div></div>';
+  } else {
+    html += '<div class="flex flex-col gap-2">' + list.map(j => {
+      const emergency = j.priority === 'emergency';
+      const opts = TECHS.map(t => '<option value="' + t.id + '">' + esc(t.name) + ' (' + t.zone + ', ' + t.status + ')' + '</option>').join('');
+      return '<div draggable="true" ondragstart="dragJob(event,\'' + j.id + '\')" class="bg-white rounded-lg border ' +
+        (emergency ? 'border-red-500 border-l-4 pulse-red' : 'border-slate-200 border-l-4 ' + (j.priority==='today'?'border-l-amber-400':'border-l-slate-300')) +
+        ' px-4 py-3 flex items-center gap-4 cursor-grab hover:shadow-md">' +
+        '<div class="min-w-0 flex-1 cursor-pointer" onclick="openDetail(\'' + j.id + '\')">' +
+          '<div class="flex items-center gap-2 flex-wrap">' + prioBadge(j.priority) +
+            '<span class="font-semibold truncate max-w-md" title="' + esc(j.customer) + '">' + esc(j.customer) + '</span>' +
+            '<span class="text-xs text-slate-400 font-mono shrink-0">' + j.id + ' · ' + j.created_at + '</span></div>' +
+          '<div class="text-sm text-slate-600 truncate mt-0.5">' + EQUIP_ICON[j.equipment] + ' ' + j.equipment + ' — ' + esc(j.issue) + '</div>' +
+          '<div class="text-xs text-slate-400 truncate">' + esc(j.address) + ' · zone ' + j.zone + '</div></div>' +
+        '<div class="shrink-0 flex items-center gap-2">' +
+          '<select id="as_' + j.id + '" class="border rounded-md text-sm px-2 py-1.5 bg-slate-50"><option value="">Pick tech…</option>' + opts + '</select>' +
+          '<button onclick="var s=document.getElementById(\'as_' + j.id + '\');if(s.value)assignJob(\'' + j.id + '\',s.value)" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-3 py-1.5 rounded-md">Assign</button>' +
+        '</div></div>';
+    }).join('') + '</div>' +
+    '<p class="text-xs text-slate-400 mt-3">Tip: you can also drag a card onto a tech column on the Dispatch Board.</p>';
+  }
+  return html;
+}
+
+/* ============ SCREEN 2: DISPATCH BOARD ============ */
+function renderBoard() {
+  const unassigned = JOBS.filter(j => j.status === 'new');
+  let html = '<div class="flex items-center gap-3 mb-4"><h2 class="text-xl font-bold">Dispatch Board</h2>' +
+    '<span class="text-sm text-slate-500">drag cards between columns to (re)assign</span></div>';
+
+  html += '<div class="flex gap-3 overflow-x-auto pb-4 items-start">';
+
+  // unassigned lane
+  html += '<div ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ondragleave="this.classList.remove(\'drag-over\')" ondrop="dropUnassign(event,this)" class="bg-slate-200/70 rounded-xl p-3 w-64 shrink-0">' +
+    '<div class="flex items-center justify-between mb-2"><span class="font-bold text-sm">Unassigned</span>' +
+    (unassigned.some(j=>j.priority==='emergency') ? '<span class="pulse-red bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded-full">🚨 ' + unassigned.length + '</span>' : '<span class="text-xs text-slate-500">' + unassigned.length + '</span>') +
+    '</div><div class="flex flex-col gap-2 min-h-[60px]">' +
+    (unassigned.length ? unassigned.map(jobCard).join('') : '<div class="text-xs text-slate-400 text-center py-4">nothing waiting</div>') +
+    '</div></div>';
+
+  // tech columns
+  html += TECHS.map(t => {
+    const jobs = JOBS.filter(j => j.assigned_tech === t.id && j.status !== 'closed');
+    const load = jobs.length;
+    const off = t.status === 'off';
+    return '<div ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ondragleave="this.classList.remove(\'drag-over\')" ondrop="dropAssign(event,this,\'' + t.id + '\')" class="rounded-xl p-3 w-64 shrink-0 ' + (off ? 'bg-slate-100 opacity-60' : 'bg-white border border-slate-200 shadow-sm') + '">' +
+      '<div class="mb-2">' +
+        '<div class="flex items-center justify-between"><span class="font-bold text-sm truncate">' + esc(t.name) + '</span>' + techStatusPill(t.status) + '</div>' +
+        '<div class="text-xs text-slate-500 mt-0.5">zone ' + t.zone + ' · ' + load + ' job' + (load===1?'':'s') + ' today</div>' +
+      '</div><div class="flex flex-col gap-2 min-h-[60px]">' +
+      (jobs.length ? jobs.map(jobCard).join('') : '<div class="text-xs text-slate-400 text-center py-4">' + (off ? 'off shift' : 'no jobs') + '</div>') +
+      '</div></div>';
+  }).join('');
+
+  html += '</div>';
+  return html;
+}
+
+function jobCard(j) {
+  const emergency = j.priority === 'emergency';
+  return '<div draggable="true" ondragstart="dragJob(event,\'' + j.id + '\')" onclick="openDetail(\'' + j.id + '\')" class="rounded-lg border px-3 py-2 cursor-pointer hover:shadow-md bg-white ' +
+    (emergency ? 'border-red-500 border-l-4 bg-red-50' : 'border-slate-200 border-l-4 ' + (j.priority==='today'?'border-l-amber-400':'border-l-slate-300')) + '">' +
+    '<div class="flex items-center gap-1.5">' + (emergency ? '<span class="text-red-600 text-xs font-bold">🚨</span>' : '') +
+      '<span class="text-sm font-semibold truncate" title="' + esc(j.customer) + '">' + esc(j.customer) + '</span></div>' +
+    '<div class="text-xs text-slate-500 truncate">' + EQUIP_ICON[j.equipment] + ' ' + j.equipment + ' · ' + esc(j.address) + '</div>' +
+    '<div class="flex items-center justify-between mt-1.5">' + statusPill(j.status) + '<span class="text-[10px] text-slate-400 font-mono">' + j.id + '</span></div></div>';
+}
+
+function dragJob(ev, id) { ev.dataTransfer.setData('text/plain', id); }
+function dropAssign(ev, el, techId) { ev.preventDefault(); el.classList.remove('drag-over'); assignJob(ev.dataTransfer.getData('text/plain'), techId); }
+function dropUnassign(ev, el) {
+  ev.preventDefault(); el.classList.remove('drag-over');
+  const j = job(ev.dataTransfer.getData('text/plain'));
+  if (!j) return;
+  j.assigned_tech = null;
+  if (j.status !== 'new') { j.status = 'new'; j.history.push({ status: 'new', at: now() + ' (bounced to queue)' }); }
+  render();
+}
+
+/* ============ SCREEN 3: JOB DETAIL (modal) ============ */
+function openDetail(id) { openJobId = id; renderDetail(); document.getElementById('modal').classList.remove('hidden'); }
+function closeDetail() { openJobId = null; document.getElementById('modal').classList.add('hidden'); }
+
+function renderDetail() {
+  const j = job(openJobId); if (!j) return;
+  const t = tech(j.assigned_tech);
+  const emergency = j.priority === 'emergency';
+  let html = '<div class="px-6 py-4 border-b flex items-start gap-3 ' + (emergency ? 'bg-red-600 text-white rounded-t-xl' : '') + '">' +
+    '<div class="min-w-0"><div class="flex items-center gap-2 flex-wrap">' + (emergency ? '<span class="text-xl">🚨</span>' : '') +
+      '<h3 class="text-lg font-bold break-words">' + esc(j.customer) + '</h3></div>' +
+      '<div class="text-sm ' + (emergency ? 'text-red-100' : 'text-slate-500') + ' font-mono">' + j.id + ' · created ' + j.created_at + '</div></div>' +
+    '<button onclick="closeDetail()" class="ml-auto text-2xl leading-none ' + (emergency ? 'text-white/80 hover:text-white' : 'text-slate-400 hover:text-slate-700') + '">&times;</button></div>';
+
+  html += '<div class="px-6 py-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm">' +
+    field('Priority', prioBadge(j.priority)) +
+    field('Status', statusPill(j.status)) +
+    field('Phone', esc(j.phone)) +
+    field('Zone', j.zone + ' metro') +
+    field('Equipment', EQUIP_ICON[j.equipment] + ' ' + j.equipment) +
+    field('Assigned tech', t ? esc(t.name) + ' ' + techStatusPill(t.status) : '<span class="text-red-600 font-semibold">unassigned</span>') +
+    '<div class="col-span-2">' + field('Address', '<span class="break-words">' + esc(j.address) + '</span>') + '</div>' +
+    '<div class="col-span-2">' + field('Issue', '<span class="break-words">' + esc(j.issue) + '</span>') + '</div></div>';
+
+  // status history
+  html += '<div class="px-6 pb-4"><div class="text-xs font-bold uppercase tracking-wide text-slate-400 mb-2">Status history</div>' +
+    '<div class="flex flex-col gap-1">' + j.history.map(h =>
+      '<div class="flex items-center gap-2 text-sm"><span class="w-2 h-2 rounded-full bg-slate-400 shrink-0"></span>' + statusPill(h.status) + '<span class="text-slate-400 text-xs">' + h.at + '</span></div>'
+    ).join('') + '</div></div>';
+
+  // actions by status
+  html += '<div class="px-6 py-4 border-t bg-slate-50 rounded-b-xl">';
+  if (j.status === 'new') {
+    const opts = TECHS.map(x => '<option value="' + x.id + '">' + esc(x.name) + ' (' + x.zone + ', ' + x.status + ')</option>').join('');
+    html += '<div class="flex items-center gap-2"><select id="dt_assign" class="border rounded-md text-sm px-2 py-1.5 bg-white flex-1"><option value="">Assign to tech…</option>' + opts + '</select>' +
+      '<button onclick="var s=document.getElementById(\'dt_assign\');if(s.value){assignJob(\'' + j.id + '\',s.value);renderDetail();}" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-md">Assign</button></div>';
+  } else if (j.status === 'assigned' || j.status === 'en route') {
+    const next = STATUS_FLOW[j.status];
+    html += '<button onclick="advance(\'' + j.id + '\',\'' + next + '\')" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-md">Mark ' + next + ' →</button>' +
+      '<span class="text-xs text-slate-400 ml-3">(simulates the tech’s phone update)</span>';
+  } else if (j.status === 'on site') {
+    html += '<div class="text-xs font-bold uppercase tracking-wide text-slate-400 mb-2">Tech close-out (simulated from tech’s phone)</div>' +
+      '<div class="flex flex-col gap-2">' +
+      '<textarea id="co_parts" rows="2" placeholder="Parts used (free text)" class="border rounded-md text-sm px-2 py-1.5 w-full">' + esc(j.parts_used) + '</textarea>' +
+      '<div class="flex items-center gap-3 flex-wrap">' +
+        '<input id="co_time" placeholder="Time on site, e.g. 1h 15m" value="' + esc(j.time_on_site) + '" class="border rounded-md text-sm px-2 py-1.5 w-44">' +
+        '<label class="flex items-center gap-1.5 text-sm"><input id="co_fu" type="checkbox" ' + (j.needs_followup ? 'checked' : '') + '> needs follow-up</label>' +
+        '<button onclick="submitCloseout(\'' + j.id + '\')" class="ml-auto bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md">Mark done ✓</button>' +
+      '</div></div>';
+  } else if (j.status === 'done') {
+    html += '<div class="text-xs font-bold uppercase tracking-wide text-slate-400 mb-2">Close-out submitted — dispatcher review</div>' +
+      '<div class="bg-white border rounded-lg p-3 text-sm mb-3">' +
+        '<div><span class="text-slate-400">Parts used:</span> ' + (esc(j.parts_used) || '<i class="text-slate-400">none listed</i>') + '</div>' +
+        '<div class="mt-1"><span class="text-slate-400">Time on site:</span> ' + (esc(j.time_on_site) || '<i class="text-slate-400">—</i>') +
+        (j.needs_followup ? ' · <span class="text-amber-700 font-semibold">⚑ needs follow-up</span>' : '') + '</div></div>' +
+      '<div class="flex gap-2">' +
+        '<button onclick="closeJob(\'' + j.id + '\')" class="bg-slate-900 hover:bg-slate-700 text-white text-sm font-semibold px-4 py-2 rounded-md">Close job ✓</button>' +
+        '<button onclick="bounceJob(\'' + j.id + '\')" class="bg-white border border-slate-300 hover:bg-slate-100 text-sm font-semibold px-4 py-2 rounded-md">Bounce back to tech</button></div>';
+  } else { // closed
+    html += '<div class="text-sm text-slate-500">✅ Job closed.' +
+      ' Parts: ' + (esc(j.parts_used) || '—') + ' · Time on site: ' + (esc(j.time_on_site) || '—') +
+      (j.needs_followup ? ' · <span class="text-amber-700 font-semibold">⚑ follow-up created</span>' : '') + '</div>';
+  }
+  html += '</div>';
+
+  document.getElementById('modalCard').innerHTML = html;
+}
+function field(label, val) {
+  return '<div><div class="text-xs font-bold uppercase tracking-wide text-slate-400">' + label + '</div><div class="mt-0.5">' + val + '</div></div>';
+}
+function advance(id, next) { const j = job(id); j.status = next; j.history.push({ status: next, at: now() }); render(); renderDetail(); }
+function submitCloseout(id) {
+  const j = job(id);
+  j.parts_used = document.getElementById('co_parts').value;
+  j.time_on_site = document.getElementById('co_time').value;
+  j.needs_followup = document.getElementById('co_fu').checked;
+  j.status = 'done'; j.history.push({ status: 'done', at: now() });
+  render(); renderDetail();
+}
+function closeJob(id) { const j = job(id); j.status = 'closed'; j.history.push({ status: 'closed', at: now() }); render(); renderDetail(); }
+function bounceJob(id) { const j = job(id); j.status = 'on site'; j.history.push({ status: 'on site', at: now() + ' (bounced back by dispatcher)' }); render(); renderDetail(); }
+
+/* ============ SCREEN 4: END OF DAY SUMMARY ============ */
+function renderEOD() {
+  const closed = JOBS.filter(j => j.status === 'closed');
+  const awaiting = JOBS.filter(j => j.status === 'done');
+  const open = JOBS.filter(j => !['closed'].includes(j.status));
+  const emergenciesHandled = JOBS.filter(j => j.priority === 'emergency' && (j.status === 'closed' || j.status === 'done')).length;
+  const emergenciesOpen = JOBS.filter(j => j.priority === 'emergency' && !['closed','done'].includes(j.status)).length;
+  const followups = JOBS.filter(j => j.needs_followup && (j.status === 'closed' || j.status === 'done'));
+
+  let html = '<h2 class="text-xl font-bold mb-4">End-of-Day Summary <span class="text-sm text-slate-400 font-normal">— Tuesday</span></h2>';
+
+  html += '<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">' +
+    stat(closed.length, 'jobs closed', 'bg-slate-900 text-white') +
+    stat(emergenciesHandled, 'emergencies handled', emergenciesOpen ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white') +
+    stat(followups.length, 'follow-ups created', 'bg-amber-400 text-amber-950') +
+    stat(open.length, 'still open', 'bg-white border border-slate-200') +
+  '</div>';
+
+  if (emergenciesOpen) {
+    html += '<div class="pulse-red bg-red-600 text-white rounded-lg px-4 py-3 mb-5 font-semibold">🚨 ' + emergenciesOpen + ' emergency job' + (emergenciesOpen>1?'s':'') + ' still open — do not go home yet.</div>';
+  }
+
+  html += '<div class="grid md:grid-cols-2 gap-5">';
+
+  // closed list
+  html += '<div class="bg-white rounded-xl border border-slate-200 p-4"><div class="font-bold mb-3">✅ Closed today</div>' +
+    (closed.length ? '<div class="flex flex-col gap-2">' + closed.map(j =>
+      '<div onclick="openDetail(\'' + j.id + '\')" class="flex items-center gap-2 text-sm border-b last:border-0 pb-2 last:pb-0 cursor-pointer hover:bg-slate-50 rounded px-1">' +
+      prioBadge(j.priority) + '<span class="font-medium truncate">' + esc(j.customer) + '</span>' +
+      '<span class="ml-auto text-xs text-slate-400 shrink-0">' + (tech(j.assigned_tech)?.name || '—') + ' · ' + (j.time_on_site || '—') + '</span></div>'
+    ).join('') + '</div>' : '<div class="text-sm text-slate-400 py-6 text-center">Nothing closed yet.</div>') + '</div>';
+
+  // follow-ups + awaiting review
+  html += '<div class="flex flex-col gap-5">' +
+    '<div class="bg-white rounded-xl border border-slate-200 p-4"><div class="font-bold mb-3">⚑ Follow-ups created</div>' +
+    (followups.length ? '<div class="flex flex-col gap-2">' + followups.map(j =>
+      '<div onclick="openDetail(\'' + j.id + '\')" class="text-sm cursor-pointer hover:bg-slate-50 rounded px-1"><span class="font-medium">' + esc(j.customer) + '</span>' +
+      '<span class="text-slate-400"> — ' + esc(j.parts_used || j.issue) + '</span></div>'
+    ).join('') + '</div>' : '<div class="text-sm text-slate-400 py-4 text-center">No follow-ups today.</div>') + '</div>' +
+
+    '<div class="bg-white rounded-xl border border-slate-200 p-4"><div class="font-bold mb-3">🕐 Done — awaiting dispatcher review</div>' +
+    (awaiting.length ? '<div class="flex flex-col gap-2">' + awaiting.map(j =>
+      '<div onclick="openDetail(\'' + j.id + '\')" class="flex items-center gap-2 text-sm cursor-pointer hover:bg-slate-50 rounded px-1">' +
+      prioBadge(j.priority) + '<span class="font-medium truncate">' + esc(j.customer) + '</span>' +
+      '<span class="ml-auto text-xs text-blue-600 font-semibold shrink-0">review →</span></div>'
+    ).join('') + '</div>' : '<div class="text-sm text-slate-400 py-4 text-center">Review queue is clear.</div>') + '</div>' +
+  '</div></div>';
+
+  // per-tech
+  html += '<div class="bg-white rounded-xl border border-slate-200 p-4 mt-5"><div class="font-bold mb-3">Techs</div>' +
+    '<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">' + TECHS.map(t => {
+      const doneCt = JOBS.filter(j => j.assigned_tech === t.id && (j.status === 'closed' || j.status === 'done')).length;
+      const openCt = JOBS.filter(j => j.assigned_tech === t.id && !['closed','done'].includes(j.status)).length;
+      return '<div class="border rounded-lg p-2.5"><div class="font-semibold text-sm truncate">' + esc(t.name) + '</div>' +
+        '<div class="mt-1">' + techStatusPill(t.status) + '</div>' +
+        '<div class="text-xs text-slate-500 mt-1.5">' + doneCt + ' done · ' + openCt + ' open</div></div>';
+    }).join('') + '</div></div>';
+
+  return html;
+}
+function stat(n, label, cls) {
+  return '<div class="rounded-xl p-4 ' + cls + '"><div class="text-3xl font-bold">' + n + '</div><div class="text-sm opacity-80">' + label + '</div></div>';
+}
+
+/* ============ demo states ============ */
+function demoEmpty() { JOBS = JOBS.filter(j => j.status !== 'new'); view = 'queue'; render(); }
+function demoLoading() {
+  loading = true; render();
+  setTimeout(() => { loading = false; render(); }, 1200);
+}
+function demoReset() { JOBS = JSON.parse(JSON.stringify(INITIAL_JOBS)); closeDetail(); render(); toast.dismiss; document.getElementById('toast').classList.add('hidden'); render(); }
+
+/* ============ root render ============ */
+function render() {
+  renderTabs();
+  const main = document.getElementById('main');
+  if (loading) {
+    main.innerHTML = '<div class="flex flex-col gap-3 mt-2">' +
+      '<div class="skeleton h-8 w-64 rounded-lg"></div>' +
+      '<div class="skeleton h-20 rounded-xl"></div><div class="skeleton h-20 rounded-xl"></div><div class="skeleton h-20 rounded-xl"></div>' +
+      '<div class="text-sm text-slate-400 text-center mt-2">Loading board…</div></div>';
+    return;
+  }
+  main.innerHTML = view === 'queue' ? renderQueue() : view === 'board' ? renderBoard() : renderEOD();
+}
+render();
+</script>
+</body>
+</html>
