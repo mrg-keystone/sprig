@@ -1,0 +1,1270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>isolate — redesign prototype</title>
+<style>
+/* ============================================================
+   isolate — UX redesign prototype (THROWAWAY, single file)
+   Identity: evolved paper / terracotta / monospace.
+   Shell: persistent navigator + stage + tabbed dock.
+   ============================================================ */
+:root{
+  --ink:#17150f; --ink-2:#6b6453; --ink-3:#9b927c;
+  --paper:#f3eee2; --paper-2:#ece5d4;
+  --surface:#fffdf8; --surface-2:#faf6ec;
+  --line:#e4ddcc; --line-2:#d6ccb4;
+  --accent:#c2410c; --accent-2:#9a3412; --accent-soft:#f7e7dd;
+  --ok:#15803d; --ok-soft:#e7f3ea;
+  --fail:#b91c1c; --fail-soft:#fdeceb;
+  --warn:#b45309;
+  --island:#7c3aed; --page:#a16207;
+  --r:8px; --r-sm:6px; --r-lg:12px;
+  --mono: ui-monospace,"SF Mono","JetBrains Mono","Menlo",monospace;
+  --shadow: 0 1px 2px rgba(23,21,15,.06), 0 8px 24px -12px rgba(23,21,15,.18);
+  --shadow-lg: 0 12px 40px -12px rgba(23,21,15,.32);
+  --sb-w: 250px; --dock-h: 280px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; color:var(--ink); background:var(--paper);
+  font-family:var(--mono); font-size:13px; line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:inherit}
+::selection{background:var(--accent-soft)}
+.muted{color:var(--ink-2)} .faint{color:var(--ink-3)}
+
+/* scrollbars — subtle */
+*::-webkit-scrollbar{width:9px;height:9px}
+*::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:99px;border:2px solid transparent;background-clip:content-box}
+*::-webkit-scrollbar-thumb:hover{background:var(--ink-3)}
+
+/* ---------- shell grid ---------- */
+#app{height:100vh;display:grid;grid-template-rows:auto 1fr;overflow:hidden}
+
+.topbar{
+  display:flex;align-items:center;gap:14px;
+  padding:0 14px;height:48px;
+  background:var(--surface);border-bottom:1px solid var(--line);
+  z-index:30;
+}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:-.02em}
+.brand .logo{width:22px;height:22px;border-radius:6px;background:var(--accent);
+  display:grid;place-items:center;color:#fff;font-size:13px;box-shadow:inset 0 -2px 4px rgba(0,0,0,.18)}
+.brand .ver{font-size:10px;color:var(--ink-3);font-weight:500;letter-spacing:.04em;
+  border:1px solid var(--line);border-radius:99px;padding:1px 6px}
+.topbar .kbd-search{
+  margin-left:6px;display:flex;align-items:center;gap:8px;width:240px;
+  padding:5px 9px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--surface-2);color:var(--ink-3);transition:border-color .12s,background .12s}
+.topbar .kbd-search:hover{border-color:var(--line-2);background:#fff}
+.topbar .kbd-search .k{margin-left:auto;font-size:10px;border:1px solid var(--line);border-radius:4px;
+  padding:1px 5px;background:#fff;color:var(--ink-2)}
+.topbar .spacer{flex:1}
+.tbtn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:#fff;
+  border-radius:var(--r);padding:6px 11px;font-size:12px;transition:border-color .12s,color .12s}
+.tbtn:hover{border-color:var(--accent);color:var(--accent)}
+.tbtn.solid{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tbtn.solid:hover{background:var(--accent-2);color:#fff}
+.tbtn .dot{width:7px;height:7px;border-radius:99px;background:var(--ok)}
+
+.body{display:grid;grid-template-columns:var(--sb-w) 1fr;min-height:0;position:relative}
+
+/* ---------- sidebar / navigator ---------- */
+.sidebar{
+  background:var(--surface);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0;position:relative}
+.sb-search{padding:10px;border-bottom:1px solid var(--line)}
+.sb-search input{
+  width:100%;font:inherit;font-size:12px;padding:7px 10px;border:1px solid var(--line);
+  border-radius:var(--r);background:var(--surface-2);color:var(--ink)}
+.sb-search input::placeholder{color:var(--ink-3)}
+.sb-search input:focus{outline:none;border-color:var(--accent);background:#fff;
+  box-shadow:0 0 0 3px var(--accent-soft)}
+.sb-scroll{overflow:auto;flex:1;padding:6px 6px 24px}
+.sb-section{margin-top:10px}
+.sb-section:first-child{margin-top:4px}
+.sb-section__h{font-size:9.5px;text-transform:uppercase;letter-spacing:.16em;color:var(--page);
+  padding:4px 8px;font-weight:700;display:flex;align-items:center;gap:6px}
+.sb-section__h.is-comp{color:var(--accent)}
+.sb-cat{margin:1px 0}
+.sb-cat__h{display:flex;align-items:center;gap:6px;width:100%;text-align:left;background:none;border:0;
+  padding:5px 8px;border-radius:var(--r-sm);font-size:12px;font-weight:600;color:var(--ink)}
+.sb-cat__h:hover{background:var(--surface-2)}
+.sb-cat__caret{transition:transform .15s;color:var(--ink-3);font-size:9px;width:9px}
+.sb-cat.collapsed .sb-cat__caret{transform:rotate(-90deg)}
+.sb-cat__count{margin-left:auto;font-size:10px;color:var(--ink-3)}
+.sb-cat.collapsed .sb-cases{display:none}
+.sb-comp{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);
+  padding:6px 8px 2px 22px;font-weight:600}
+.sb-cases{padding-left:0}
+.sb-case{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:0;
+  padding:5px 8px 5px 24px;border-radius:var(--r-sm);font-size:12px;color:var(--ink-2);position:relative}
+.sb-case:hover{background:var(--surface-2);color:var(--ink)}
+.sb-case.active{background:var(--accent-soft);color:var(--accent-2);font-weight:600}
+.sb-case.active::before{content:"";position:absolute;left:6px;top:7px;bottom:7px;width:2.5px;
+  border-radius:99px;background:var(--accent)}
+.sb-case__label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.sb-case__status{width:7px;height:7px;border-radius:99px;flex:none;background:var(--line-2)}
+.sb-case__status.pass{background:var(--ok)} .sb-case__status.fail{background:var(--fail)}
+.sb-case__status.run{background:var(--accent);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.35}}
+.sb-empty{padding:24px 14px;color:var(--ink-3);text-align:center;font-size:12px;line-height:1.6}
+.sb-resize{position:absolute;top:0;right:-3px;width:6px;height:100%;cursor:col-resize;z-index:5}
+
+/* ---------- main / stage ---------- */
+.main{display:grid;grid-template-rows:auto auto 1fr var(--dock-h);min-height:0;background:var(--paper)}
+.main.dock-collapsed{grid-template-rows:auto auto 1fr 38px}
+
+.stage-head{
+  display:flex;align-items:center;gap:12px;padding:9px 14px;
+  background:var(--surface);border-bottom:1px solid var(--line);min-height:46px}
+.crumb{display:flex;align-items:center;gap:7px;font-size:12px;min-width:0}
+.crumb .seg{color:var(--ink-3)}
+.crumb .sep{color:var(--ink-3);opacity:.6}
+.crumb .cur{font-weight:700;color:var(--ink);letter-spacing:-.01em}
+.kind{font-size:9px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;
+  padding:2px 7px;border-radius:99px;border:1px solid var(--line);color:var(--ink-2)}
+.kind.island{color:var(--island);border-color:color-mix(in srgb,var(--island) 35%,var(--line))}
+.kind.page{color:var(--page);border-color:color-mix(in srgb,var(--page) 35%,var(--line))}
+.kind.component{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 30%,var(--line))}
+.stage-tools{margin-left:auto;display:flex;align-items:center;gap:8px}
+.seg-group{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:#fff}
+.seg-group button{border:0;background:none;padding:5px 9px;font-size:11px;color:var(--ink-2);border-right:1px solid var(--line)}
+.seg-group button:last-child{border-right:0}
+.seg-group button:hover{background:var(--surface-2)}
+.seg-group button.on{background:var(--accent-soft);color:var(--accent-2);font-weight:600}
+.tool-ico{display:inline-flex;align-items:center;justify-content:center;width:30px;height:28px;
+  border:1px solid var(--line);border-radius:var(--r);background:#fff;font-size:13px;color:var(--ink-2)}
+.tool-ico:hover{border-color:var(--accent);color:var(--accent)}
+.tool-ico.on{background:var(--accent-soft);color:var(--accent-2);border-color:color-mix(in srgb,var(--accent) 30%,var(--line))}
+input[type=color].swatch{width:30px;height:28px;padding:0;border:1px solid var(--line);border-radius:var(--r);background:none;cursor:pointer}
+input[type=color].swatch::-webkit-color-swatch-wrapper{padding:2px}
+input[type=color].swatch::-webkit-color-swatch{border:0;border-radius:4px}
+
+/* config-problems banner */
+.banner{display:flex;align-items:flex-start;gap:10px;padding:9px 14px;background:var(--fail-soft);
+  border-bottom:1px solid color-mix(in srgb,var(--fail) 35%,var(--line));font-size:12px}
+.banner .x{margin-left:auto;border:0;background:none;color:var(--fail);font-size:15px;line-height:1}
+.banner b{color:var(--fail)}
+.banner code{background:#fff;border:1px solid var(--line);border-radius:4px;padding:0 4px}
+.banner.hidden{display:none}
+
+/* the stage */
+.stage-wrap{position:relative;overflow:auto;display:grid;place-items:center;padding:34px 28px}
+.stage-wrap.grid{background-image:radial-gradient(var(--line-2) 1px,transparent 1px);background-size:18px 18px}
+.stage-canvas{
+  background:var(--canvas-bg,#ffffff);border-radius:var(--r-lg);box-shadow:var(--shadow);
+  border:1px solid var(--line);padding:40px;min-width:120px;position:relative;
+  transition:width .18s ease, transform .18s ease}
+.stage-tag{position:absolute;top:-22px;left:0;font-size:10px;color:var(--ink-3);letter-spacing:.04em}
+.stage-tag b{color:var(--ink-2);font-weight:600}
+
+/* ---------- dock ---------- */
+.dock{display:flex;flex-direction:column;min-height:0;background:var(--surface);
+  border-top:1px solid var(--line);position:relative}
+.dock-resize{position:absolute;top:-3px;left:0;width:100%;height:6px;cursor:row-resize;z-index:6}
+.dock-resize::after{content:"";position:absolute;top:2px;left:50%;transform:translateX(-50%);
+  width:34px;height:3px;border-radius:99px;background:var(--line-2)}
+.dock-tabs{display:flex;align-items:center;gap:2px;padding:0 10px;border-bottom:1px solid var(--line);
+  background:var(--surface-2)}
+.dock-tab{position:relative;border:0;background:none;padding:9px 13px;font-size:12px;color:var(--ink-2);
+  font-weight:600;display:flex;align-items:center;gap:7px}
+.dock-tab:hover{color:var(--ink)}
+.dock-tab.on{color:var(--accent-2)}
+.dock-tab.on::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;
+  background:var(--accent);border-radius:99px}
+.dock-tab .badge{font-size:10px;font-weight:700;border-radius:99px;padding:1px 6px;background:var(--line);color:var(--ink-2)}
+.dock-tab .badge.pass{background:var(--ok-soft);color:var(--ok)}
+.dock-tab .badge.fail{background:var(--fail-soft);color:var(--fail)}
+.dock-tab .badge.accent{background:var(--accent-soft);color:var(--accent-2)}
+.dock-collapse{margin-left:auto;border:0;background:none;color:var(--ink-3);padding:8px 6px;font-size:14px}
+.dock-collapse:hover{color:var(--ink)}
+.dock-body{flex:1;overflow:auto;min-height:0}
+.main.dock-collapsed .dock-body{display:none}
+.main.dock-collapsed .dock-resize{display:none}
+
+/* ---- controls panel ---- */
+.ctrls{padding:14px 16px;display:flex;flex-direction:column;gap:14px;max-width:680px}
+.ctrl-group{border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);padding:11px 13px}
+.ctrl-group__h{font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+.ctrl-group__h .pill{font-size:9px;color:var(--ink-3);border:1px solid var(--line);border-radius:99px;
+  padding:1px 6px;text-transform:none;letter-spacing:0;font-weight:500;background:#fff}
+.ctrl-row{display:grid;grid-template-columns:120px 1fr;gap:12px;align-items:center;padding:5px 0}
+.ctrl-row label{font-size:12px;color:var(--ink-2)}
+.ctrl-row .sig{font-size:9px;color:var(--island);border:1px solid color-mix(in srgb,var(--island) 30%,var(--line));
+  border-radius:4px;padding:0 4px;margin-left:5px}
+.ci{font:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:var(--r-sm);
+  background:#fff;width:100%;color:var(--ink)}
+.ci:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.crange{display:flex;align-items:center;gap:10px}
+.crange input[type=range]{flex:1;accent-color:var(--accent)}
+.crange .val{min-width:2.5ch;text-align:right;color:var(--ink-2);font-variant-numeric:tabular-nums}
+input[type=checkbox].cbox{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+.ctrl-note{font-size:11px;color:var(--ink-3);display:flex;gap:7px;align-items:flex-start}
+.ctrl-empty{padding:24px;color:var(--ink-3);text-align:center}
+
+/* ---- console / event log ---- */
+.con-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line);
+  position:sticky;top:0;background:var(--surface);z-index:2}
+.con-filter{font:inherit;font-size:12px;width:150px;padding:5px 9px;border:1px solid var(--line);
+  border-radius:var(--r-sm);background:var(--surface-2)}
+.con-filter:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.con-types{display:flex;gap:5px;flex-wrap:wrap}
+.con-type{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:2px 9px;background:#fff;color:var(--ink-2)}
+.con-type.off{opacity:.4;text-decoration:line-through}
+.con-type:hover{border-color:var(--accent)}
+.con-clear{margin-left:auto;font-size:11px;border:1px solid var(--line);border-radius:var(--r-sm);
+  background:#fff;padding:4px 10px;color:var(--ink-2)}
+.con-clear:hover{border-color:var(--accent);color:var(--accent)}
+.con-count{font-size:11px;color:var(--ink-3)}
+.con-list{padding:4px 0}
+.con-row{display:grid;grid-template-columns:78px 150px 80px 1fr;gap:12px;padding:5px 14px;font-size:12px;
+  border-bottom:1px dotted var(--line);align-items:baseline;animation:fadein .18s ease}
+.con-row:hover{background:var(--surface-2)}
+@keyframes fadein{from{opacity:0;transform:translateY(-2px)}}
+.con-time{color:var(--ink-3);font-variant-numeric:tabular-nums;font-size:11px}
+.con-src{color:var(--accent);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.con-type-c{color:var(--ink);font-weight:600}
+.con-detail{color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.con-empty{padding:30px;text-align:center;color:var(--ink-3)}
+
+/* ---- tests panel ---- */
+.tests{padding:14px 16px;display:flex;flex-direction:column;gap:10px;max-width:760px}
+.tests-bar{display:flex;align-items:center;gap:10px}
+.run-btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--accent);background:var(--accent);
+  color:#fff;border-radius:var(--r);padding:6px 13px;font-size:12px;font-weight:600}
+.run-btn:hover{background:var(--accent-2)}
+.run-btn:disabled{opacity:.6;cursor:default}
+.run-btn.ghost{background:#fff;color:var(--accent)}
+.tests-summary{font-size:12px;color:var(--ink-2)}
+.tests-summary .ok{color:var(--ok);font-weight:700} .tests-summary .bad{color:var(--fail);font-weight:700}
+.spec-file{border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.spec-file__h{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface-2);
+  font-size:12px;font-weight:600;border-bottom:1px solid var(--line)}
+.spec-file__h .path{color:var(--ink-2)}
+.spec{display:flex;align-items:center;gap:9px;padding:7px 12px;font-size:12px;border-bottom:1px dotted var(--line)}
+.spec:last-child{border-bottom:0}
+.spec .ico{width:15px;text-align:center}
+.spec .ico.pass{color:var(--ok)} .spec .ico.fail{color:var(--fail)} .spec .ico.run{color:var(--accent);animation:pulse 1s infinite}
+.spec .ico.idle{color:var(--ink-3)}
+.spec .name{flex:1;color:var(--ink)}
+.spec .ms{color:var(--ink-3);font-size:11px;font-variant-numeric:tabular-nums}
+.spec-err{background:var(--fail-soft);padding:10px 14px;font-size:11px;color:var(--ink);white-space:pre-wrap;
+  border-top:1px solid color-mix(in srgb,var(--fail) 25%,var(--line));line-height:1.6}
+.spec-err .lbl{color:var(--fail);font-weight:700}
+.tests-empty{padding:30px;text-align:center;color:var(--ink-3)}
+
+/* error / render-failure card (on stage) */
+.err-card{max-width:460px;border:1px dashed var(--fail);border-radius:var(--r-lg);background:var(--fail-soft);
+  padding:20px 22px;font-size:12px}
+.err-card h3{margin:0 0 14px;color:var(--fail);font-size:14px}
+.err-card .row{display:grid;grid-template-columns:96px 1fr;gap:10px;padding:4px 0}
+.err-card .row .k{color:var(--ink-3);font-size:10px;text-transform:uppercase;letter-spacing:.08em}
+.err-card .row code{word-break:break-all}
+.err-card .hint{margin-top:14px;color:var(--ink-2);font-size:11px;border-top:1px dotted var(--line-2);padding-top:12px}
+
+/* stub placeholder (mocked sub-component) */
+.iso-stub{display:inline-flex;align-items:center;padding:7px 12px;font-size:11px;color:#9a6b00;
+  background:repeating-linear-gradient(45deg,#fdf6e3,#fdf6e3 6px,#faedcc 6px,#faedcc 12px);
+  border:1px dashed #d9b441;border-radius:6px}
+
+/* ---------- command palette ---------- */
+.palette-back{position:fixed;inset:0;background:rgba(23,21,15,.34);backdrop-filter:blur(3px);
+  display:grid;place-items:start center;padding-top:14vh;z-index:60}
+.palette-back.hidden{display:none}
+.palette{width:min(560px,92vw);background:var(--surface);border:1px solid var(--line-2);
+  border-radius:var(--r-lg);box-shadow:var(--shadow-lg);overflow:hidden}
+.palette input{width:100%;border:0;border-bottom:1px solid var(--line);background:none;
+  padding:15px 18px;font:inherit;font-size:14px;color:var(--ink)}
+.palette input:focus{outline:none}
+.palette-list{max-height:46vh;overflow:auto;padding:6px}
+.pal-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r-sm);font-size:13px}
+.pal-item .crumbs{color:var(--ink-3);font-size:11px}
+.pal-item.sel{background:var(--accent-soft)}
+.pal-item .pk{margin-left:auto;font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3)}
+.pal-empty{padding:24px;text-align:center;color:var(--ink-3)}
+.pal-foot{display:flex;gap:14px;padding:9px 16px;border-top:1px solid var(--line);font-size:11px;color:var(--ink-3);background:var(--surface-2)}
+.pal-foot .k{border:1px solid var(--line);border-radius:4px;padding:0 5px;background:#fff;color:var(--ink-2)}
+
+/* ---------- toasts ---------- */
+.toasts{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:9px;z-index:70;width:340px}
+.toast{display:flex;gap:11px;align-items:flex-start;background:var(--surface);border:1px solid var(--line-2);
+  border-left:3px solid var(--fail);border-radius:var(--r);box-shadow:var(--shadow-lg);padding:11px 13px;
+  font-size:12px;animation:slidein .22s ease}
+.toast.ok{border-left-color:var(--ok)} .toast.info{border-left-color:var(--accent)}
+.toast .tt{font-weight:700;margin-bottom:2px}
+.toast .tx{color:var(--ink-2);line-height:1.5}
+.toast .x{margin-left:auto;border:0;background:none;color:var(--ink-3);font-size:15px;line-height:1}
+@keyframes slidein{from{opacity:0;transform:translateX(16px)}}
+
+/* ---------- loading overlay ---------- */
+.loading{position:absolute;inset:0;background:color-mix(in srgb,var(--paper) 86%,transparent);
+  backdrop-filter:blur(2px);display:grid;place-items:center;z-index:25}
+.loading.hidden{display:none}
+.loading .box{display:flex;flex-direction:column;align-items:center;gap:16px;color:var(--ink-2)}
+.spinner{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:99px;
+  animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading .steps{font-size:12px;text-align:center;line-height:1.8}
+.loading .steps .done{color:var(--ok)}
+
+/* ---------- demo states dock (prototype-only) ---------- */
+.demo{position:fixed;left:14px;bottom:14px;z-index:80}
+.demo-toggle{display:flex;align-items:center;gap:8px;border:1px dashed var(--line-2);background:var(--surface);
+  border-radius:99px;padding:7px 13px;font-size:11px;color:var(--ink-2);box-shadow:var(--shadow)}
+.demo-toggle:hover{border-color:var(--accent);color:var(--accent)}
+.demo-menu{position:absolute;left:0;bottom:44px;width:248px;background:var(--surface);border:1px solid var(--line-2);
+  border-radius:var(--r);box-shadow:var(--shadow-lg);padding:7px;display:none}
+.demo-menu.open{display:block}
+.demo-menu .h{font-size:9px;text-transform:uppercase;letter-spacing:.14em;color:var(--ink-3);padding:6px 8px 4px}
+.demo-menu button{display:flex;width:100%;text-align:left;gap:9px;align-items:center;border:0;background:none;
+  padding:8px 9px;border-radius:var(--r-sm);font-size:12px;color:var(--ink)}
+.demo-menu button:hover{background:var(--surface-2)}
+.demo-menu button .e{width:16px;text-align:center}
+.demo-menu .sep{height:1px;background:var(--line);margin:5px 2px}
+
+/* ---------- demo component visuals (the things on the stage) ---------- */
+.demo-btn{font:inherit;font-size:13px;font-weight:600;border-radius:var(--r);padding:9px 18px;border:1px solid transparent;
+  transition:filter .12s,transform .05s;max-width:520px;white-space:normal;word-break:break-word}
+.demo-btn:active{transform:translateY(1px)}
+.demo-btn:disabled{opacity:.45;cursor:not-allowed}
+.demo-btn.primary{background:var(--accent);color:#fff}
+.demo-btn.primary:hover:not(:disabled){filter:brightness(1.07)}
+.demo-btn.ghost{background:#fff;color:var(--accent);border-color:var(--accent)}
+.demo-btn.danger{background:var(--fail);color:#fff}
+.demo-btn.sm{font-size:11px;padding:6px 12px} .demo-btn.lg{font-size:15px;padding:12px 24px}
+.demo-fab{width:54px;height:54px;border-radius:99px;border:0;background:var(--accent);color:#fff;font-size:22px;
+  display:grid;place-items:center;box-shadow:var(--shadow-lg)}
+.demo-fab:disabled{opacity:.4}
+.demo-counter{display:flex;align-items:center;gap:18px}
+.demo-counter .n{font-size:34px;font-weight:700;min-width:60px;text-align:center;font-variant-numeric:tabular-nums}
+.demo-counter button{width:38px;height:38px;border-radius:var(--r);border:1px solid var(--line);background:#fff;font-size:18px}
+.demo-counter button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.demo-counter button:disabled{opacity:.4}
+.demo-input{display:flex;flex-direction:column;gap:6px;width:260px}
+.demo-input label{font-size:11px;color:var(--ink-2);font-weight:600}
+.demo-input input{font:inherit;font-size:13px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r);background:#fff}
+.demo-input input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.demo-input.err input{border-color:var(--fail);box-shadow:0 0 0 3px var(--fail-soft)}
+.demo-input .msg{font-size:11px;color:var(--fail)}
+.demo-badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;border-radius:99px;
+  padding:4px 11px;border:1px solid}
+.demo-badge.neutral{background:#fff;color:var(--ink-2);border-color:var(--line-2)}
+.demo-badge.success{background:var(--ok-soft);color:var(--ok);border-color:color-mix(in srgb,var(--ok) 30%,var(--line))}
+.demo-badge.warn{background:#fdf3e3;color:var(--warn);border-color:color-mix(in srgb,var(--warn) 30%,var(--line))}
+.demo-badge.danger{background:var(--fail-soft);color:var(--fail);border-color:color-mix(in srgb,var(--fail) 30%,var(--line))}
+.demo-login{width:300px;display:flex;flex-direction:column;gap:14px}
+.demo-login h2{margin:0;font-size:18px;letter-spacing:-.01em}
+.demo-login .field{display:flex;flex-direction:column;gap:5px}
+.demo-login label{font-size:11px;color:var(--ink-2);font-weight:600}
+.demo-login input{font:inherit;font-size:13px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r);background:#fff}
+.demo-login input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.demo-login .actions{display:flex;gap:9px;margin-top:4px}
+/* pulse board (overflow demo) */
+.demo-pulse{width:560px;max-width:100%}
+.demo-pulse h2{margin:0 0 14px;font-size:18px}
+.pulse-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.pulse-col h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-2);margin:0 0 8px;
+  display:flex;gap:7px;align-items:center}
+.pulse-col h3 .c{background:var(--paper-2);border-radius:99px;padding:0 7px;font-size:10px}
+.pulse-card{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:9px;margin-bottom:8px}
+.pulse-card .t{font-size:12px;margin-bottom:7px}
+.pulse-card .m{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--ink-3)}
+.pulse-card .av{width:18px;height:18px;border-radius:99px;background:var(--accent-soft);color:var(--accent-2);
+  display:grid;place-items:center;font-size:9px;font-weight:700}
+.pri{font-size:9px;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+.pri.high{color:var(--fail)} .pri.med{color:var(--warn)} .pri.low{color:var(--ink-3)}
+
+@media (max-width:760px){
+  .body{grid-template-columns:1fr}
+  .sidebar{position:absolute;z-index:40;height:100%;width:240px;box-shadow:var(--shadow-lg)}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- top bar -->
+  <header class="topbar">
+    <div class="brand"><span class="logo">◧</span><span>isolate</span><span class="ver">v0.4</span></div>
+    <button class="kbd-search" data-act="open-palette">
+      <span>⌕</span><span>Jump to a case…</span><span class="k">⌘K</span>
+    </button>
+    <div class="spacer"></div>
+    <button class="tbtn" data-act="run-all"><span class="dot"></span>Run all tests</button>
+    <button class="tbtn solid" data-act="open-palette">＋ Add case</button>
+  </header>
+
+  <div class="body">
+    <!-- navigator -->
+    <nav class="sidebar">
+      <div class="sb-search">
+        <input id="sbSearch" placeholder="Filter components…  ( / )" autocomplete="off" />
+      </div>
+      <div class="sb-scroll" id="sbScroll"></div>
+      <div class="sb-resize" data-resize="sb"></div>
+    </nav>
+
+    <!-- main -->
+    <main class="main" id="main">
+      <div class="stage-head" id="stageHead"></div>
+      <div class="banner hidden" id="banner"></div>
+      <div class="stage-wrap" id="stageWrap">
+        <div class="stage-canvas" id="stage"></div>
+        <div class="loading hidden" id="loading">
+          <div class="box">
+            <div class="spinner"></div>
+            <div class="steps" id="loadSteps"></div>
+          </div>
+        </div>
+      </div>
+
+      <section class="dock" id="dock">
+        <div class="dock-resize" data-resize="dock"></div>
+        <div class="dock-tabs" id="dockTabs"></div>
+        <div class="dock-body" id="dockBody"></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- command palette -->
+<div class="palette-back hidden" id="paletteBack">
+  <div class="palette">
+    <input id="paletteInput" placeholder="Jump to a case — type a component, category, or case name…" autocomplete="off" />
+    <div class="palette-list" id="paletteList"></div>
+    <div class="pal-foot">
+      <span><span class="k">↑↓</span> navigate</span>
+      <span><span class="k">↵</span> open</span>
+      <span><span class="k">esc</span> close</span>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<!-- demo-states (prototype only) -->
+<div class="demo">
+  <button class="demo-toggle" data-act="toggle-demo">◐ demo states</button>
+  <div class="demo-menu" id="demoMenu">
+    <div class="h">prototype-only — the unglamorous states</div>
+    <button data-demo="reset"><span class="e">↺</span> Reset to normal</button>
+    <div class="sep"></div>
+    <button data-demo="empty"><span class="e">∅</span> Empty — no components yet</button>
+    <button data-demo="loading"><span class="e">◴</span> Loading — discover &amp; build</button>
+    <button data-demo="error"><span class="e">✕</span> Error toast — build failed</button>
+    <button data-demo="render-fail"><span class="e">⚠</span> Render failure card</button>
+    <button data-demo="problems"><span class="e">⚑</span> Config-problems banner</button>
+    <button data-demo="overflow"><span class="e">↔</span> Overflow — long content</button>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   HARDCODED DATA  (all at top, per prototype rules)
+   ============================================================ */
+const AVATARS = [["Maya Chen","MC"],["Nico Farah","NF"],["Lena Klein","LK"],["Sam Weber","SW"],["Ines Adler","IA"]];
+
+// Each case is fully self-contained. renderer => which fake component draws.
+const CASES = [
+  // ---- components / buttons ----
+  { id:"button-primary", target:"component", section:"Components", category:"buttons", component:"Button",
+    label:"Primary", kind:"component", renderer:"button",
+    controls:[
+      {key:"label",type:"text",value:"Click me",label:"label"},
+      {key:"variant",type:"select",options:["primary","ghost","danger"],value:"primary",label:"variant"},
+      {key:"size",type:"select",options:["sm","md","lg"],value:"md",label:"size"},
+      {key:"disabled",type:"boolean",value:false,label:"disabled"},
+    ],
+    tests:[{file:"tests/button.spec.ts",specs:[{name:"renders the label"},{name:"fires click when enabled"},{name:"no click when disabled"}]}] },
+  { id:"button-disabled", target:"component", section:"Components", category:"buttons", component:"Button",
+    label:"Disabled", kind:"component", renderer:"button",
+    controls:[
+      {key:"label",type:"text",value:"Can't touch this",label:"label"},
+      {key:"variant",type:"select",options:["primary","ghost","danger"],value:"primary",label:"variant"},
+      {key:"size",type:"select",options:["sm","md","lg"],value:"md",label:"size"},
+      {key:"disabled",type:"boolean",value:true,label:"disabled"},
+    ],
+    tests:[{file:"tests/button.spec.ts",specs:[{name:"renders the label"},{name:"no click when disabled"}]}] },
+  { id:"floatbutton-primary", target:"component", section:"Components", category:"buttons", component:"FloatButton",
+    label:"Primary", kind:"component", renderer:"fab",
+    controls:[
+      {key:"icon",type:"select",options:["＋","✕","↑","★","✎"],value:"＋",label:"icon"},
+      {key:"disabled",type:"boolean",value:false,label:"disabled"},
+    ],
+    tests:[{file:"tests/float-button.spec.ts",specs:[{name:"renders the icon"},{name:"fires click"}]}] },
+
+  // ---- components / forms ----
+  { id:"input-default", target:"component", section:"Components", category:"forms", component:"Input",
+    label:"Default", kind:"component", renderer:"input",
+    controls:[
+      {key:"placeholder",type:"text",value:"you@example.com",label:"placeholder"},
+      {key:"labelText",type:"text",value:"Email",label:"label"},
+      {key:"invalid",type:"boolean",value:false,label:"invalid"},
+      {key:"disabled",type:"boolean",value:false,label:"disabled"},
+    ],
+    tests:[{file:"tests/input.spec.ts",specs:[{name:"emits input on type"},{name:"shows error styling when invalid"}]}] },
+  { id:"input-error", target:"component", section:"Components", category:"forms", component:"Input",
+    label:"With error", kind:"component", renderer:"input",
+    controls:[
+      {key:"placeholder",type:"text",value:"you@example.com",label:"placeholder"},
+      {key:"labelText",type:"text",value:"Email",label:"label"},
+      {key:"invalid",type:"boolean",value:true,label:"invalid"},
+      {key:"disabled",type:"boolean",value:false,label:"disabled"},
+    ],
+    tests:[{file:"tests/input.spec.ts",specs:[{name:"shows error styling when invalid"}]}] },
+
+  // ---- components / feedback ----
+  { id:"badge-tones", target:"component", section:"Components", category:"feedback", component:"Badge",
+    label:"Tones", kind:"component", renderer:"badge",
+    controls:[
+      {key:"label",type:"text",value:"shipped",label:"label"},
+      {key:"tone",type:"select",options:["neutral","success","warn","danger"],value:"success",label:"tone"},
+    ],
+    tests:[] },
+
+  // ---- components / counters (island) ----
+  { id:"counter-zero", target:"component", section:"Components", category:"counters", component:"Counter",
+    label:"Starts at zero", kind:"island", renderer:"counter",
+    controls:[
+      {key:"count",type:"range",min:0,max:20,step:1,value:0,label:"count",signal:true},
+      {key:"step",type:"number",value:1,label:"step"},
+      {key:"disabled",type:"boolean",value:false,label:"disabled"},
+    ],
+    tests:[{file:"tests/events.spec.ts",specs:[{name:"increments on +"},{name:"emits change event"}]}] },
+  { id:"counter-three", target:"component", section:"Components", category:"counters", component:"Counter",
+    label:"Starts at three", kind:"island", renderer:"counter",
+    controls:[
+      {key:"count",type:"range",min:0,max:20,step:1,value:3,label:"count",signal:true},
+      {key:"step",type:"number",value:1,label:"step"},
+      {key:"disabled",type:"boolean",value:false,label:"disabled"},
+    ],
+    // this one FAILS on run — to demonstrate failure UX
+    tests:[{file:"tests/events.spec.ts",specs:[
+      {name:"increments on +"},
+      {name:"emits change with detail '4'", fail:true,
+       error:"Expected event detail to contain '4'\n  Received: 'count: 3'\n\n  at tests/events.spec.ts:18:14\n  — the + button never hydrated before .click() (use waitHydrated)"},
+    ]}] },
+  { id:"counter-stubbed", target:"component", section:"Components", category:"counters", component:"Counter",
+    label:"Buttons stubbed", kind:"island", renderer:"counter", stub:true,
+    controls:[
+      {key:"count",type:"range",min:0,max:20,step:1,value:5,label:"count",signal:true},
+    ],
+    tests:[] },
+
+  // ---- pages / auth ----
+  { id:"login-default", target:"page", section:"Pages", category:"auth", component:"Login",
+    label:"Default", kind:"page", renderer:"login",
+    controls:[
+      {key:"heading",type:"text",value:"Welcome back",label:"heading",group:"Login"},
+      {key:"submit.label",type:"text",value:"Sign in",label:"label",group:"Button #submit"},
+      {key:"submit.disabled",type:"boolean",value:false,label:"disabled",group:"Button #submit"},
+      {key:"cancel.disabled",type:"boolean",value:false,label:"disabled",group:"Button #cancel"},
+    ],
+    tests:[
+      {file:"tests/login.spec.ts",specs:[{name:"renders both fields"},{name:"submit fires when filled"}]},
+      {file:"tests/events-stream.spec.ts",specs:[{name:"Sign in emits click on #submit"}]},
+    ] },
+
+  // ---- pages / dashboards (overflow demo) ----
+  { id:"pulse-board", target:"page", section:"Pages", category:"dashboards", component:"Pulse",
+    label:"Board — this sprint", kind:"page", renderer:"pulse",
+    controls:[
+      {key:"heading",type:"text",value:"Board — this sprint",label:"heading"},
+      {key:"density",type:"select",options:["comfy","compact"],value:"comfy",label:"density"},
+    ],
+    tests:[{file:"tests/board.spec.ts",specs:[{name:"renders three columns"},{name:"shuffle reorders cards"}]}] },
+
+  // ---- a deliberately broken one (render-failure card) ----
+  { id:"avatar-broken", target:"component", section:"Components", category:"misc", component:"Avatar",
+    label:"Default", kind:"component", renderer:"error", controls:[], tests:[] },
+];
+
+/* ============================================================
+   STATE  (mutated in memory, then re-render)
+   ============================================================ */
+const state = {
+  mode:"app",                 // app | empty | loading
+  activeId:"button-primary",
+  search:"",
+  collapsed:{},               // category -> bool
+  dock:{tab:"controls", collapsed:false},
+  viewport:"fit",             // fit | 360 | 768 | 1024 | full
+  zoom:1,
+  bg:"#ffffff",
+  grid:false,
+  values:{},                  // caseId -> {key:value}  (live control edits)
+  events:[],                  // console events for the active stage
+  conFilter:{q:"", hidden:{}},
+  tests:{},                   // caseId -> {status, specs:[{...,state}]}
+  counters:{},                // caseId -> live count
+  palette:{open:false, q:"", sel:0},
+  bannerShown:false,
+  demoOpen:false,
+  forceRenderError:false,
+};
+CASES.forEach(c=>{ state.tests[c.id] = {status:"idle"}; });
+
+/* helpers */
+const $ = (s,r=document)=>r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+const activeCase = ()=> CASES.find(c=>c.id===state.activeId);
+function cval(c,key){
+  const v = state.values[c.id];
+  if(v && key in v) return v[key];
+  const def = (c.controls||[]).find(x=>x.key===key);
+  return def ? def.value : undefined;
+}
+function setVal(c,key,val){ (state.values[c.id] ||= {})[key]=val; }
+function nowStr(){
+  const d=new Date();
+  const p=(n,l=2)=>String(n).padStart(l,"0");
+  return p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds())+"."+p(d.getMilliseconds(),3);
+}
+
+/* ============================================================
+   EVENTS (console)
+   ============================================================ */
+function pushEvent(source,type,detail){
+  const ev={time:nowStr(),source,type,detail:detail??""};
+  state.events.push(ev);
+  // live-append if console visible
+  if(state.dock.tab==="console" && !state.dock.collapsed){
+    const list=$("#conList"); if(list && passesFilter(ev)){
+      list.insertAdjacentHTML("beforeend", conRow(ev));
+      const wrap=$("#dockBody"); wrap.scrollTop=wrap.scrollHeight;
+    }
+    const cnt=$("#conCount"); if(cnt) cnt.textContent = visibleEvents().length+" / "+state.events.length+" events";
+  }
+  updateDockTabBadges();
+}
+function passesFilter(ev){
+  if(state.conFilter.hidden[ev.type]) return false;
+  const q=state.conFilter.q.trim().toLowerCase();
+  if(!q) return true;
+  return (ev.source+" "+ev.type+" "+ev.detail).toLowerCase().includes(q);
+}
+const visibleEvents = ()=> state.events.filter(passesFilter);
+
+/* ============================================================
+   RENDER: SIDEBAR
+   ============================================================ */
+function matchSearch(c){
+  const q=state.search.trim().toLowerCase();
+  if(!q) return true;
+  return (c.category+" "+c.component+" "+c.label).toLowerCase().includes(q);
+}
+function renderSidebar(){
+  const scroll=$("#sbScroll");
+  if(state.mode==="empty"){
+    scroll.innerHTML=`<div class="sb-empty">No components yet.<br><br>Drop an <b>isolate/</b> folder next to any component to see it here.</div>`;
+    return;
+  }
+  const shown = CASES.filter(matchSearch);
+  if(!shown.length){ scroll.innerHTML=`<div class="sb-empty">No cases match “${esc(state.search)}”.</div>`; return; }
+  const sections=["Components","Pages"];
+  let html="";
+  for(const sec of sections){
+    const inSec = shown.filter(c=>c.section===sec);
+    if(!inSec.length) continue;
+    html+=`<div class="sb-section"><div class="sb-section__h ${sec==="Components"?"is-comp":""}">${sec}</div>`;
+    const cats=[...new Set(inSec.map(c=>c.category))].sort();
+    for(const cat of cats){
+      const inCat=inSec.filter(c=>c.category===cat);
+      const collapsed = state.collapsed[sec+"/"+cat] && !state.search;
+      html+=`<div class="sb-cat ${collapsed?"collapsed":""}">
+        <button class="sb-cat__h" data-cat="${sec}/${cat}">
+          <span class="sb-cat__caret">▾</span><span>${esc(cat)}</span>
+          <span class="sb-cat__count">${inCat.length}</span>
+        </button>
+        <div class="sb-cases">`;
+      // group by component within the category
+      const comps=[...new Set(inCat.map(c=>c.component))];
+      for(const comp of comps){
+        const cs=inCat.filter(c=>c.component===comp);
+        if(comps.length>1 || cs.length>1) html+=`<div class="sb-comp">${esc(comp)}</div>`;
+        for(const c of cs){
+          const st=state.tests[c.id].status;
+          const dot = st==="running"?"run": st==="pass"?"pass": st==="fail"?"fail":"";
+          html+=`<button class="sb-case ${c.id===state.activeId?"active":""}" data-case="${c.id}">
+            <span class="sb-case__status ${dot}"></span>
+            <span class="sb-case__label">${esc(c.label)}</span>
+          </button>`;
+        }
+      }
+      html+=`</div></div>`;
+    }
+    html+=`</div>`;
+  }
+  scroll.innerHTML=html;
+}
+
+/* ============================================================
+   RENDER: STAGE HEADER
+   ============================================================ */
+function renderStageHead(){
+  const c=activeCase();
+  if(!c || state.mode==="empty"){ $("#stageHead").innerHTML=`<div class="crumb"><span class="cur faint">nothing selected</span></div>`; return; }
+  const vp = ["fit","360","768","1024","full"];
+  const vpLabel={fit:"Fit","360":"360","768":"768","1024":"1024",full:"Full"};
+  $("#stageHead").innerHTML=`
+    <div class="crumb">
+      <span class="seg">${esc(c.category)}</span><span class="sep">›</span>
+      <span class="seg">${esc(c.component)}</span><span class="sep">›</span>
+      <span class="cur">${esc(c.label)}</span>
+      <span class="kind ${c.kind}" style="margin-left:6px">${c.kind}</span>
+    </div>
+    <div class="stage-tools">
+      <div class="seg-group" id="vpGroup">
+        ${vp.map(v=>`<button data-vp="${v}" class="${state.viewport===v?"on":""}">${vpLabel[v]}</button>`).join("")}
+      </div>
+      <div class="seg-group">
+        <button data-zoom="-">−</button>
+        <button style="min-width:46px" data-zoom="reset">${Math.round(state.zoom*100)}%</button>
+        <button data-zoom="+">＋</button>
+      </div>
+      <input type="color" class="swatch" id="bgPick" value="${state.bg}" title="stage background" />
+      <button class="tool-ico ${state.grid?"on":""}" data-act="toggle-grid" title="toggle grid">▦</button>
+      <button class="tool-ico" data-act="run-active" title="run this case's tests">↻</button>
+    </div>`;
+}
+
+/* ============================================================
+   RENDER: STAGE  (the component itself — controls feed in here)
+   ============================================================ */
+function renderStage(){
+  const wrap=$("#stageWrap"), stage=$("#stage");
+  // viewport sizing
+  const widths={fit:"auto","360":"360px","768":"768px","1024":"1024px",full:"100%"};
+  stage.style.width = widths[state.viewport];
+  stage.style.transform = `scale(${state.zoom})`;
+  stage.style.transformOrigin="top center";
+  stage.style.setProperty("--canvas-bg", state.bg);
+  wrap.classList.toggle("grid", state.grid);
+
+  const c=activeCase();
+  if(!c || state.mode==="empty"){
+    stage.style.boxShadow="none"; stage.style.border="0"; stage.style.background="transparent";
+    stage.innerHTML=`<div class="err-card" style="border-style:solid;border-color:var(--line-2);background:var(--surface)">
+      <h3 style="color:var(--ink)">No case selected</h3>
+      <p class="muted">Pick a component from the navigator, or drop an <code>isolate/</code> folder next to one to get started.</p>
+    </div>`;
+    return;
+  }
+  stage.style.boxShadow=""; stage.style.border=""; stage.style.background="";
+
+  const tag = `<div class="stage-tag"><b>${state.viewport==="fit"?"auto":widths[state.viewport]}</b> · ${Math.round(state.zoom*100)}%</div>`;
+  stage.innerHTML = tag + renderComponent(c);
+}
+
+function renderComponent(c){
+  if(state.forceRenderError || c.renderer==="error"){
+    return `<div class="err-card">
+      <h3>⚠ Couldn't render &lt;${esc(c.component)}&gt;</h3>
+      <div class="row"><span class="k">file</span><code>components/avatar/Avatar.tsx</code></div>
+      <div class="row"><span class="k">expected</span><code>default export, or a named export “Avatar”</code></div>
+      <div class="row"><span class="k">found</span><code>AvatarGroup, avatarUrl</code></div>
+      <div class="hint">Rename the export to <code>Avatar</code> (or make it the default). The preview can't resolve a component to mount.</div>
+    </div>`;
+  }
+  switch(c.renderer){
+    case "button": {
+      const label=cval(c,"label"), variant=cval(c,"variant"), size=cval(c,"size"), disabled=cval(c,"disabled");
+      return `<button class="demo-btn ${variant} ${size}" ${disabled?"disabled":""}
+        data-act="ev" data-src="button" data-type="click" data-detail="${esc(label)}">${esc(label)}</button>`;
+    }
+    case "fab": {
+      const icon=cval(c,"icon"), disabled=cval(c,"disabled");
+      return `<button class="demo-fab" ${disabled?"disabled":""}
+        data-act="ev" data-src="button.fab" data-type="click" data-detail="${esc(icon)}">${esc(icon)}</button>`;
+    }
+    case "counter": {
+      const disabled=cval(c,"disabled"); const step=Number(cval(c,"step")||1);
+      const n = state.counters[c.id] ?? Number(cval(c,"count")||0);
+      const stub = c.stub;
+      const btn=(label,delta,id)=> stub
+        ? `<span class="iso-stub">&lt;Button ${label}&gt;</span>`
+        : `<button ${disabled?"disabled":""} id="${id}" data-act="counter" data-case="${c.id}" data-delta="${delta}">${label}</button>`;
+      return `<div class="demo-counter">
+        ${btn("−",-step,"decrement")}
+        <span class="n">${n}</span>
+        ${btn("+",step,"increment")}
+      </div>`;
+    }
+    case "input": {
+      const ph=cval(c,"placeholder"), lab=cval(c,"labelText"), invalid=cval(c,"invalid"), disabled=cval(c,"disabled");
+      return `<div class="demo-input ${invalid?"err":""}">
+        <label>${esc(lab)}</label>
+        <input placeholder="${esc(ph)}" ${disabled?"disabled":""} ${invalid?'value="not-an-email"':""}
+          data-act="ev-input" data-src="input#email" />
+        ${invalid?`<span class="msg">Enter a valid email address.</span>`:""}
+      </div>`;
+    }
+    case "badge": {
+      const label=cval(c,"label"), tone=cval(c,"tone");
+      const map={neutral:"●",success:"✓",warn:"!",danger:"✕"};
+      return `<span class="demo-badge ${tone}">${map[tone]} ${esc(label)}</span>`;
+    }
+    case "login": {
+      const heading=cval(c,"heading"), sLabel=cval(c,"submit.label"), sDis=cval(c,"submit.disabled"), cDis=cval(c,"cancel.disabled");
+      return `<form class="demo-login" data-act="ev" data-src="form#login" data-type="submit" data-detail="login form" onsubmit="return false">
+        <h2>${esc(heading)}</h2>
+        <div class="field"><label>Email</label><input data-act="ev-input" data-src="input#email" placeholder="you@example.com"/></div>
+        <div class="field"><label>Password</label><input type="password" data-act="ev-input" data-src="input#password" placeholder="••••••••"/></div>
+        <div class="actions">
+          <button type="button" class="demo-btn primary" ${sDis?"disabled":""}
+            data-act="ev" data-src="button#submit" data-type="click" data-detail="${esc(sLabel)}">${esc(sLabel)}</button>
+          <button type="button" class="demo-btn ghost" ${cDis?"disabled":""}
+            data-act="ev" data-src="button#cancel" data-type="click" data-detail="Cancel">Cancel</button>
+        </div>
+      </form>`;
+    }
+    case "pulse": {
+      const heading=cval(c,"heading"), compact=cval(c,"density")==="compact";
+      const cols=[["To do",5],["In progress",12],["Done",6]];
+      const titles=["Draft API rate limits","Polish export pipeline (v1)","Test invite emails","Audit keyboard shortcuts",
+        "Spec activity digest","Fix churn report","Review dark mode","Ship onboarding flow","Migrate design tokens",
+        "Refactor empty states","Draft search ranking","Ship settings page"];
+      const pris=["high","med","low"]; let ti=0;
+      const card=()=>{ const t=titles[ti%titles.length]; const a=AVATARS[ti%AVATARS.length]; const p=pris[ti%3]; ti++;
+        return `<div class="pulse-card" style="${compact?"padding:6px":""}">
+          <div class="t">${esc(t)}</div>
+          <div class="m"><span class="pri ${p}">${p}</span><span class="av">${a[1]}</span><span>${a[0]}</span></div>
+        </div>`; };
+      return `<div class="demo-pulse">
+        <h2>${esc(heading)}</h2>
+        <div class="pulse-cols">
+          ${cols.map(([name,n])=>`<div class="pulse-col">
+            <h3>${name}<span class="c">${n}</span></h3>
+            ${Array.from({length:n}).map(card).join("")}
+          </div>`).join("")}
+        </div>
+      </div>`;
+    }
+    default: return `<div class="muted">no renderer</div>`;
+  }
+}
+
+/* ============================================================
+   RENDER: DOCK  (tabs + body)
+   ============================================================ */
+function dockTabBadge(tab){
+  const c=activeCase();
+  if(tab==="controls"){ const n=(c?.controls||[]).length; return n?`<span class="badge">${n}</span>`:""; }
+  if(tab==="console"){ const n=state.events.length; return n?`<span class="badge accent">${n}</span>`:""; }
+  if(tab==="tests"){
+    const t=c?state.tests[c.id]:null;
+    if(!c||!c.tests.length) return "";
+    if(t.status==="running") return `<span class="badge accent">…</span>`;
+    if(t.status==="pass") return `<span class="badge pass">✓${countSpecs(c)}</span>`;
+    if(t.status==="fail"){ const f=failCount(c); return `<span class="badge fail">✗${f}</span>`; }
+    return `<span class="badge">${countSpecs(c)}</span>`;
+  }
+}
+const countSpecs = c => c.tests.reduce((a,f)=>a+f.specs.length,0);
+const failCount = c => c.tests.reduce((a,f)=>a+f.specs.filter(s=>s.fail).length,0);
+
+function updateDockTabBadges(){
+  document.querySelectorAll(".dock-tab").forEach(btn=>{
+    const tab=btn.dataset.tab; const cur=btn.querySelector(".badge");
+    if(cur) cur.remove();
+    btn.insertAdjacentHTML("beforeend", dockTabBadge(tab));
+  });
+}
+
+function renderDockTabs(){
+  const tabs=["controls","console","tests"];
+  const label={controls:"Controls",console:"Console",tests:"Tests"};
+  $("#dockTabs").innerHTML = tabs.map(t=>
+    `<button class="dock-tab ${state.dock.tab===t&&!state.dock.collapsed?"on":""}" data-tab="${t}">
+      ${label[t]} ${dockTabBadge(t)}
+    </button>`).join("")
+    + `<button class="dock-collapse" data-act="toggle-dock" title="collapse panel">${state.dock.collapsed?"▴":"▾"}</button>`;
+}
+
+function renderDockBody(){
+  if(state.dock.collapsed){ $("#dockBody").innerHTML=""; return; }
+  const tab=state.dock.tab;
+  if(tab==="controls") return renderControls();
+  if(tab==="console")  return renderConsole();
+  if(tab==="tests")    return renderTests();
+}
+
+/* ---- controls ---- */
+function renderControls(){
+  const c=activeCase();
+  const body=$("#dockBody");
+  if(!c || !(c.controls||[]).length){ body.innerHTML=`<div class="ctrl-empty">No editable props for this case.</div>`; return; }
+  // group controls
+  const groups={};
+  for(const ctl of c.controls){ const g=ctl.group||"Component"; (groups[g] ||= []).push(ctl); }
+  let html=`<div class="ctrls">`;
+  for(const g in groups){
+    const isSub = g!=="Component";
+    html+=`<div class="ctrl-group"><div class="ctrl-group__h">${esc(g==="Component"?c.component:g)}
+      ${isSub?`<span class="pill">per-instance</span>`:""}</div>`;
+    for(const ctl of groups[g]){
+      const v=cval(c,ctl.key);
+      html+=`<div class="ctrl-row"><label>${esc(ctl.label||ctl.key)}${ctl.signal?`<span class="sig">signal</span>`:""}</label><div>`;
+      if(ctl.type==="boolean")
+        html+=`<input type="checkbox" class="cbox" data-ctl="${ctl.key}" ${v?"checked":""}/>`;
+      else if(ctl.type==="number")
+        html+=`<input type="number" class="ci" data-ctl="${ctl.key}" value="${v}"/>`;
+      else if(ctl.type==="text")
+        html+=`<input type="text" class="ci" data-ctl="${ctl.key}" value="${esc(v)}"/>`;
+      else if(ctl.type==="select")
+        html+=`<select class="ci" data-ctl="${ctl.key}">${ctl.options.map(o=>`<option ${o===v?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
+      else if(ctl.type==="range")
+        html+=`<div class="crange"><input type="range" data-ctl="${ctl.key}" min="${ctl.min}" max="${ctl.max}" step="${ctl.step}" value="${v}"/><span class="val" id="rv-${ctl.key}">${v}</span></div>`;
+      else if(ctl.type==="color")
+        html+=`<input type="color" class="swatch" data-ctl="${ctl.key}" value="${v}"/>`;
+      html+=`</div></div>`;
+    }
+    html+=`</div>`;
+  }
+  html+=`<div class="ctrl-note">↻ <span>Editing any control remounts the stage — a component's internal <code>useState</code> resets, signals survive.</span></div>`;
+  html+=`</div>`;
+  body.innerHTML=html;
+}
+
+/* ---- console ---- */
+function conRow(ev){
+  return `<div class="con-row">
+    <span class="con-time">${ev.time}</span>
+    <span class="con-src" title="${esc(ev.source)}">${esc(ev.source)}</span>
+    <span class="con-type-c">${esc(ev.type)}</span>
+    <span class="con-detail" title="${esc(ev.detail)}">${esc(ev.detail)}</span>
+  </div>`;
+}
+function renderConsole(){
+  const body=$("#dockBody");
+  const types=[...new Set(state.events.map(e=>e.type))];
+  const vis=visibleEvents();
+  body.innerHTML=`
+    <div class="con-head">
+      <input class="con-filter" id="conFilter" placeholder="filter… (text / regex)" value="${esc(state.conFilter.q)}"/>
+      <div class="con-types">
+        ${types.map(t=>`<button class="con-type ${state.conFilter.hidden[t]?"off":""}" data-contype="${esc(t)}">${esc(t)}</button>`).join("")}
+      </div>
+      <span class="con-count" id="conCount">${vis.length} / ${state.events.length} events</span>
+      ${state.events.length?`<button class="con-clear" data-act="con-clear">clear</button>`:""}
+    </div>
+    <div class="con-list" id="conList">
+      ${vis.length ? vis.map(conRow).join("")
+        : `<div class="con-empty">${state.events.length?"Nothing matches the filter.":"No events yet — interact with the component on the stage."}</div>`}
+    </div>`;
+}
+
+/* ---- tests ---- */
+function renderTests(){
+  const c=activeCase(); const body=$("#dockBody");
+  if(!c || !c.tests.length){ body.innerHTML=`<div class="tests-empty">No tests for this case.<br><br>Add <code>cases/${esc(c?.label||"…")}/tests/*.spec.ts</code> and they'll run here.</div>`; return; }
+  const t=state.tests[c.id];
+  const running = t.status==="running";
+  let summary="";
+  if(t.status==="pass") summary=`<span class="ok">✓ ${countSpecs(c)} passed</span>`;
+  else if(t.status==="fail") summary=`<span class="bad">✗ ${failCount(c)} failed</span> · <span class="ok">${countSpecs(c)-failCount(c)} passed</span>`;
+  else if(running) summary=`running…`;
+  else summary=`${countSpecs(c)} test(s) · not run yet`;
+
+  let html=`<div class="tests"><div class="tests-bar">
+    <button class="run-btn" data-act="run-active" ${running?"disabled":""}>${running?"⟳ running…":"▸ Run tests"}</button>
+    <span class="tests-summary">${summary}</span>
+  </div>`;
+  for(const f of c.tests){
+    html+=`<div class="spec-file"><div class="spec-file__h">◇ <span class="path">${esc(f.file)}</span></div>`;
+    for(const s of f.specs){
+      let stt = "idle", ico="○", ms="";
+      if(running){ stt="run"; ico="⟳"; }
+      else if(t.status==="pass"||t.status==="fail"){
+        if(s.fail){ stt="fail"; ico="✕"; } else { stt="pass"; ico="✓"; }
+        ms = s._ms ? s._ms+"ms" : "";
+      }
+      html+=`<div class="spec"><span class="ico ${stt}">${ico}</span><span class="name">${esc(s.name)}</span><span class="ms">${ms}</span></div>`;
+      if(!running && s.fail && s.error){
+        html+=`<div class="spec-err"><span class="lbl">✕ assertion failed</span>\n${esc(s.error)}</div>`;
+      }
+    }
+    html+=`</div>`;
+  }
+  html+=`</div>`;
+  body.innerHTML=html;
+}
+
+/* ============================================================
+   RUN TESTS  (fake async)
+   ============================================================ */
+function runActive(){ runTests(state.activeId); }
+function runTests(id){
+  const c=CASES.find(x=>x.id===id); if(!c||!c.tests.length) return;
+  state.tests[id]={status:"running"};
+  if(id===state.activeId && state.dock.tab==="tests" && !state.dock.collapsed) renderTests();
+  renderSidebar(); updateDockTabBadges();
+  setTimeout(()=>{
+    let anyFail=false;
+    c.tests.forEach(f=>f.specs.forEach(s=>{ s._ms = 40+Math.floor(Math.abs(Math.sin(s.name.length*1.7))*420); if(s.fail) anyFail=true; }));
+    state.tests[id]={status: anyFail?"fail":"pass"};
+    renderSidebar(); updateDockTabBadges();
+    if(id===state.activeId && state.dock.tab==="tests" && !state.dock.collapsed) renderTests();
+    if(anyFail) toast("fail","Tests failed", `${c.category} › ${c.component} › ${c.label} — ${failCount(c)} failing`);
+    else toast("ok","Tests passed", `${c.category} › ${c.component} › ${c.label} — ${countSpecs(c)}/${countSpecs(c)} green`);
+  }, 850);
+}
+function runAll(){
+  const withTests=CASES.filter(c=>c.tests.length);
+  toast("info","Running all tests", `${withTests.length} cases queued…`);
+  withTests.forEach((c,i)=> setTimeout(()=>runTests(c.id), i*260));
+}
+
+/* ============================================================
+   TOASTS
+   ============================================================ */
+function toast(kind,title,text){
+  const el=document.createElement("div");
+  el.className="toast "+(kind==="ok"?"ok":kind==="info"?"info":"");
+  el.innerHTML=`<div><div class="tt">${kind==="fail"?"✕":kind==="ok"?"✓":"●"} ${esc(title)}</div><div class="tx">${esc(text)}</div></div>
+    <button class="x" data-act="close-toast">×</button>`;
+  $("#toasts").appendChild(el);
+  setTimeout(()=>{ el.style.opacity="0"; el.style.transition="opacity .3s"; setTimeout(()=>el.remove(),300); }, 4200);
+}
+
+/* ============================================================
+   COMMAND PALETTE
+   ============================================================ */
+function openPalette(){ state.palette={open:true,q:"",sel:0}; renderPalette(); $("#paletteBack").classList.remove("hidden");
+  setTimeout(()=>{ const i=$("#paletteInput"); i.value=""; i.focus(); },10); }
+function closePalette(){ state.palette.open=false; $("#paletteBack").classList.add("hidden"); }
+function paletteMatches(){
+  const q=state.palette.q.trim().toLowerCase();
+  return CASES.filter(c=> !q || (c.category+" "+c.component+" "+c.label).toLowerCase().includes(q));
+}
+function renderPalette(){
+  const list=$("#paletteList"); const items=paletteMatches();
+  if(state.palette.sel>=items.length) state.palette.sel=Math.max(0,items.length-1);
+  list.innerHTML = items.length ? items.map((c,i)=>
+    `<div class="pal-item ${i===state.palette.sel?"sel":""}" data-pal="${c.id}">
+      <span class="kind ${c.kind}" style="font-size:8px">${c.kind}</span>
+      <span>${esc(c.component)} › ${esc(c.label)}</span>
+      <span class="crumbs">${esc(c.section)} / ${esc(c.category)}</span>
+      ${i===state.palette.sel?`<span class="pk">↵</span>`:""}
+    </div>`).join("")
+    : `<div class="pal-empty">No cases match “${esc(state.palette.q)}”.</div>`;
+}
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+function setActive(id){
+  if(state.mode==="empty") state.mode="app";
+  state.activeId=id;
+  state.events=[];                 // fresh stage = fresh event stream
+  state.conFilter={q:"",hidden:{}};
+  state.counters={};
+  state.forceRenderError=false;
+  renderSidebar(); renderStageHead(); renderStage(); renderDockTabs(); renderDockBody();
+}
+
+/* ============================================================
+   DEMO STATES (prototype-only)
+   ============================================================ */
+function demo(which){
+  state.demoOpen=false; $("#demoMenu").classList.remove("open");
+  if(which==="reset"){
+    state.mode="app"; state.forceRenderError=false; state.bannerShown=false;
+    $("#banner").classList.add("hidden"); $("#loading").classList.add("hidden");
+    setActive("button-primary"); toast("info","Reset","Back to normal."); return;
+  }
+  if(which==="empty"){
+    state.mode="empty"; renderSidebar(); renderStageHead(); renderStage(); renderDockTabs(); renderDockBody();
+    toast("info","Empty state","No isolate/ folders discovered."); return;
+  }
+  if(which==="loading"){
+    $("#loading").classList.remove("hidden");
+    const steps=["Scanning components/ islands/ pages/…","Found 11 cases across 6 categories ✓","Linking source dirs…","Building Fresh preview app…"];
+    let i=0; const el=$("#loadSteps");
+    el.innerHTML=steps[0];
+    const tick=setInterval(()=>{ i++; if(i>=steps.length){ clearInterval(tick); return; }
+      el.innerHTML=steps.slice(0,i).map(s=>`<div class="done">${esc(s)}</div>`).join("")+`<div>${esc(steps[i])}</div>`;
+    },500);
+    setTimeout(()=>{ clearInterval(tick); $("#loading").classList.add("hidden"); toast("ok","Ready","Preview app built in 2.1s"); }, 2200);
+    return;
+  }
+  if(which==="error"){ toast("fail","Build failed","pages/login: `Login` is not exported from Login.tsx"); return; }
+  if(which==="render-fail"){
+    setActive("button-primary"); state.forceRenderError=true; renderStage();
+    toast("fail","Render failure","The stage shows a loud error card instead of a blank preview."); return;
+  }
+  if(which==="problems"){
+    state.bannerShown=true;
+    $("#banner").classList.remove("hidden");
+    $("#banner").innerHTML=`<span>⚑</span><div><b>2 config problems</b> — these previews are broken.
+      <div style="margin-top:5px;color:var(--ink-2)"><code>components/avatar/isolate/fixture.json</code> — unexpected token at line 4</div>
+      <div style="color:var(--ink-2)"><code>pages/login/Login.tsx</code> — export “Login” not found (found: default)</div></div>
+      <button class="x" data-act="close-banner">×</button>`;
+    return;
+  }
+  if(which==="overflow"){
+    // jump to button, set a monstrous label + push a giant console event
+    setActive("button-primary");
+    setVal(activeCase(),"label","Save changes and notify all 14 collaborators on this workspace before the sync window closes at 5pm — really long button label that should wrap or clip gracefully");
+    setVal(activeCase(),"size","lg");
+    renderStage();
+    pushEvent("button","click","Save changes and notify all 14 collaborators "+("x".repeat(180)));
+    state.dock.tab="console"; renderDockTabs(); renderConsole();
+    toast("info","Overflow","Long label wraps; long console detail clips with ellipsis (hover for full)."); return;
+  }
+}
+
+/* ============================================================
+   EVENT WIRING (delegated)
+   ============================================================ */
+document.addEventListener("click",(e)=>{
+  const t=e.target.closest("[data-act],[data-case],[data-cat],[data-tab],[data-vp],[data-zoom],[data-contype],[data-pal],[data-demo],[data-counter],[data-resize]");
+  if(!t) return;
+
+  // sidebar: case
+  if(t.dataset.case){ setActive(t.dataset.case); return; }
+  // sidebar: category collapse
+  if(t.dataset.cat){ state.collapsed[t.dataset.cat]=!state.collapsed[t.dataset.cat]; renderSidebar(); return; }
+  // dock tabs
+  if(t.dataset.tab){ state.dock.tab=t.dataset.tab; state.dock.collapsed=false; $("#main").classList.remove("dock-collapsed");
+    renderDockTabs(); renderDockBody(); return; }
+  // viewport
+  if(t.dataset.vp){ state.viewport=t.dataset.vp; renderStageHead(); renderStage(); return; }
+  // zoom
+  if(t.dataset.zoom){ const z=t.dataset.zoom; if(z==="+")state.zoom=Math.min(2,state.zoom+0.25); else if(z==="-")state.zoom=Math.max(0.5,state.zoom-0.25); else state.zoom=1; renderStageHead(); renderStage(); return; }
+  // console type filter
+  if(t.dataset.contype){ const ty=t.dataset.contype; state.conFilter.hidden[ty]=!state.conFilter.hidden[ty]; renderConsole(); return; }
+  // palette pick
+  if(t.dataset.pal){ setActive(t.dataset.pal); closePalette(); return; }
+  // demo menu
+  if(t.dataset.demo){ demo(t.dataset.demo); return; }
+
+  const act=t.dataset.act;
+  if(act==="ev"){ // generic stage event
+    if(t.disabled) return;
+    pushEvent(t.dataset.src, t.dataset.type, t.dataset.detail);
+    return;
+  }
+  if(act==="counter"){
+    const c=CASES.find(x=>x.id===t.dataset.case);
+    const cur = state.counters[c.id] ?? Number(cval(c,"count")||0);
+    const next = cur + Number(t.dataset.delta);
+    state.counters[c.id]=next;
+    setVal(c,"count",next);
+    pushEvent("button#"+(Number(t.dataset.delta)>0?"increment":"decrement"),"click", "count: "+next);
+    renderStage();
+    if(state.dock.tab==="controls" && !state.dock.collapsed) renderControls();
+    return;
+  }
+  switch(act){
+    case "open-palette": openPalette(); break;
+    case "toggle-grid": state.grid=!state.grid; renderStageHead(); renderStage(); break;
+    case "run-active": runActive(); if(state.dock.tab!=="tests"){state.dock.tab="tests";renderDockTabs();renderDockBody();} break;
+    case "run-all": runAll(); break;
+    case "toggle-dock":
+      state.dock.collapsed=!state.dock.collapsed;
+      $("#main").classList.toggle("dock-collapsed",state.dock.collapsed);
+      renderDockTabs(); renderDockBody(); break;
+    case "con-clear": state.events=[]; state.conFilter={q:"",hidden:{}}; renderConsole(); updateDockTabBadges(); break;
+    case "toggle-demo": state.demoOpen=!state.demoOpen; $("#demoMenu").classList.toggle("open",state.demoOpen); break;
+    case "close-toast": t.closest(".toast").remove(); break;
+    case "close-banner": $("#banner").classList.add("hidden"); state.bannerShown=false; break;
+  }
+});
+
+// input events (controls + stage inputs + filters + searches)
+document.addEventListener("input",(e)=>{
+  const t=e.target;
+  // control widgets
+  if(t.dataset.ctl){
+    const c=activeCase(); const key=t.dataset.ctl;
+    let v = t.type==="checkbox" ? t.checked : t.value;
+    if(t.type==="number") v=Number(v);
+    setVal(c,key,v);
+    if(key==="count") state.counters[c.id]=Number(v); // signal keeps live count in sync
+    const rv=$("#rv-"+CSS.escape(key)); if(rv) rv.textContent=v;
+    renderStage();           // edit remounts the stage (mirrors real isolate)
+    return;
+  }
+  // stage input fields -> input event
+  if(t.dataset.act==="ev-input"){ pushEvent(t.dataset.src,"input", JSON.stringify(t.value).slice(0,40)); return; }
+  // console filter
+  if(t.id==="conFilter"){ state.conFilter.q=t.value;
+    const list=$("#conList"); const vis=visibleEvents();
+    list.innerHTML = vis.length ? vis.map(conRow).join("") : `<div class="con-empty">Nothing matches the filter.</div>`;
+    $("#conCount").textContent = vis.length+" / "+state.events.length+" events"; return; }
+  // sidebar search
+  if(t.id==="sbSearch"){ state.search=t.value; renderSidebar(); return; }
+  // palette search
+  if(t.id==="paletteInput"){ state.palette.q=t.value; state.palette.sel=0; renderPalette(); return; }
+});
+
+// keyboard
+document.addEventListener("keydown",(e)=>{
+  const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  // palette
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==="k"){ e.preventDefault(); state.palette.open?closePalette():openPalette(); return; }
+  if(state.palette.open){
+    const items=paletteMatches();
+    if(e.key==="Escape"){ closePalette(); }
+    else if(e.key==="ArrowDown"){ e.preventDefault(); state.palette.sel=Math.min(items.length-1,state.palette.sel+1); renderPalette(); scrollSel(); }
+    else if(e.key==="ArrowUp"){ e.preventDefault(); state.palette.sel=Math.max(0,state.palette.sel-1); renderPalette(); scrollSel(); }
+    else if(e.key==="Enter"){ const c=items[state.palette.sel]; if(c){ setActive(c.id); closePalette(); } }
+    return;
+  }
+  if(inField){ if(e.key==="Escape") document.activeElement.blur(); return; }
+  if(e.key==="/"){ e.preventDefault(); $("#sbSearch").focus(); return; }
+  if(e.key==="1"){ state.dock.tab="controls"; state.dock.collapsed=false; $("#main").classList.remove("dock-collapsed"); renderDockTabs(); renderDockBody(); }
+  if(e.key==="2"){ state.dock.tab="console"; state.dock.collapsed=false; $("#main").classList.remove("dock-collapsed"); renderDockTabs(); renderDockBody(); }
+  if(e.key==="3"){ state.dock.tab="tests"; state.dock.collapsed=false; $("#main").classList.remove("dock-collapsed"); renderDockTabs(); renderDockBody(); }
+  if(e.key.toLowerCase()==="r"){ runActive(); state.dock.tab="tests"; renderDockTabs(); renderDockBody(); }
+  if(e.key==="g"){ state.grid=!state.grid; renderStageHead(); renderStage(); }
+});
+function scrollSel(){ const el=$(".pal-item.sel"); if(el) el.scrollIntoView({block:"nearest"}); }
+
+// background color picker (delegated change)
+document.addEventListener("change",(e)=>{
+  if(e.target.id==="bgPick"){ state.bg=e.target.value; renderStage(); }
+});
+
+/* ---- resizers ---- */
+(function(){
+  let drag=null;
+  document.addEventListener("pointerdown",(e)=>{
+    const h=e.target.closest("[data-resize]"); if(!h) return;
+    drag={kind:h.dataset.resize, x:e.clientX, y:e.clientY,
+      sb:parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sb-w")),
+      dock:parseInt(getComputedStyle(document.documentElement).getPropertyValue("--dock-h"))};
+    e.preventDefault();
+  });
+  window.addEventListener("pointermove",(e)=>{
+    if(!drag) return;
+    if(drag.kind==="sb"){ const w=Math.min(420,Math.max(180,drag.sb+(e.clientX-drag.x))); document.documentElement.style.setProperty("--sb-w",w+"px"); }
+    if(drag.kind==="dock"){ const h=Math.min(560,Math.max(120,drag.dock-(e.clientY-drag.y))); document.documentElement.style.setProperty("--dock-h",h+"px"); }
+  });
+  window.addEventListener("pointerup",()=>drag=null);
+})();
+
+// close demo menu on outside click
+document.addEventListener("click",(e)=>{ if(!e.target.closest(".demo")){ state.demoOpen=false; $("#demoMenu").classList.remove("open"); } }, true);
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+function boot(){
+  renderSidebar(); renderStageHead(); renderStage(); renderDockTabs(); renderDockBody();
+  // seed one passing run so the sidebar shows a green dot somewhere
+  state.tests["login-default"]={status:"pass"};
+  CASES.find(c=>c.id==="login-default").tests.forEach(f=>f.specs.forEach(s=>s._ms=120));
+  renderSidebar(); updateDockTabBadges();
+}
+boot();
+</script>
+</body>
+</html>
