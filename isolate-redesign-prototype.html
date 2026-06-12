@@ -122,7 +122,7 @@ a{color:inherit}
 
 .stage-head{
   display:flex;align-items:center;gap:12px;padding:9px 14px;
-  background:var(--surface);border-bottom:1px solid var(--line);min-height:46px}
+  background:var(--surface);border-bottom:1px solid var(--line);min-height:46px;grid-row:1}
 .crumb{display:flex;align-items:center;gap:7px;font-size:12px;min-width:0}
 .crumb .seg{color:var(--ink-3)}
 .crumb .sep{color:var(--ink-3);opacity:.6}
@@ -148,14 +148,14 @@ input[type=color].swatch::-webkit-color-swatch{border:0;border-radius:4px}
 
 /* config-problems banner */
 .banner{display:flex;align-items:flex-start;gap:10px;padding:9px 14px;background:var(--fail-soft);
-  border-bottom:1px solid color-mix(in srgb,var(--fail) 35%,var(--line));font-size:12px}
+  border-bottom:1px solid color-mix(in srgb,var(--fail) 35%,var(--line));font-size:12px;grid-row:2}
 .banner .x{margin-left:auto;border:0;background:none;color:var(--fail);font-size:15px;line-height:1}
 .banner b{color:var(--fail)}
 .banner code{background:#fff;border:1px solid var(--line);border-radius:4px;padding:0 4px}
 .banner.hidden{display:none}
 
 /* the stage */
-.stage-wrap{position:relative;overflow:auto;display:grid;place-items:center;padding:34px 28px}
+.stage-wrap{position:relative;overflow:auto;display:grid;place-items:center;padding:34px 28px;grid-row:3}
 .stage-wrap.grid{background-image:radial-gradient(var(--line-2) 1px,transparent 1px);background-size:18px 18px}
 .stage-canvas{
   background:var(--canvas-bg,#ffffff);border-radius:var(--r-lg);box-shadow:var(--shadow);
@@ -166,7 +166,7 @@ input[type=color].swatch::-webkit-color-swatch{border:0;border-radius:4px}
 
 /* ---------- dock ---------- */
 .dock{display:flex;flex-direction:column;min-height:0;background:var(--surface);
-  border-top:1px solid var(--line);position:relative}
+  border-top:1px solid var(--line);position:relative;grid-row:4}
 .dock-resize{position:absolute;top:-3px;left:0;width:100%;height:6px;cursor:row-resize;z-index:6}
 .dock-resize::after{content:"";position:absolute;top:2px;left:50%;transform:translateX(-50%);
   width:34px;height:3px;border-radius:99px;background:var(--line-2)}
@@ -184,12 +184,13 @@ input[type=color].swatch::-webkit-color-swatch{border:0;border-radius:4px}
 .dock-tab .badge.accent{background:var(--accent-soft);color:var(--accent-2)}
 .dock-collapse{margin-left:auto;border:0;background:none;color:var(--ink-3);padding:8px 6px;font-size:14px}
 .dock-collapse:hover{color:var(--ink)}
-.dock-body{flex:1;overflow:auto;min-height:0}
+.dock-body{flex:1;overflow:auto;min-height:0;display:flex;flex-direction:column}
 .main.dock-collapsed .dock-body{display:none}
 .main.dock-collapsed .dock-resize{display:none}
 
 /* ---- controls panel ---- */
-.ctrls{padding:14px 16px;display:flex;flex-direction:column;gap:14px;max-width:680px}
+.ctrls{display:flex;flex-direction:column;flex:1;min-height:0}
+.ctrls-body{padding:14px 16px;display:flex;flex-direction:column;gap:14px;max-width:680px;flex:1;min-height:0;overflow:auto}
 .ctrl-group{border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);padding:11px 13px}
 .ctrl-group__h{font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--accent);
   text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:7px}
@@ -206,7 +207,8 @@ input[type=color].swatch::-webkit-color-swatch{border:0;border-radius:4px}
 .crange input[type=range]{flex:1;accent-color:var(--accent)}
 .crange .val{min-width:2.5ch;text-align:right;color:var(--ink-2);font-variant-numeric:tabular-nums}
 input[type=checkbox].cbox{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
-.ctrl-note{font-size:11px;color:var(--ink-3);display:flex;gap:7px;align-items:flex-start}
+.ctrl-note{flex:none;padding:11px 16px;border-top:1px solid var(--line);background:var(--surface-2);
+  font-size:11px;color:var(--ink-3);display:flex;gap:7px;align-items:flex-start}
 .ctrl-empty{padding:24px;color:var(--ink-3);text-align:center}
 
 /* ---- console / event log ---- */
@@ -903,7 +905,7 @@ function renderControls(){
   // group controls
   const groups={};
   for(const ctl of c.controls){ const g=ctl.group||"Component"; (groups[g] ||= []).push(ctl); }
-  let html=`<div class="ctrls">`;
+  let html=`<div class="ctrls"><div class="ctrls-body">`;
   for(const g in groups){
     const isSub = g!=="Component";
     html+=`<div class="ctrl-group"><div class="ctrl-group__h">${esc(g==="Component"?c.component:g)}
@@ -927,8 +929,9 @@ function renderControls(){
     }
     html+=`</div>`;
   }
+  html+=`</div>`; // .ctrls-body
   html+=`<div class="ctrl-note">↻ <span>Editing any control remounts the stage — a component's internal <code>useState</code> resets, signals survive.</span></div>`;
-  html+=`</div>`;
+  html+=`</div>`; // .ctrls
   body.innerHTML=html;
 }
 

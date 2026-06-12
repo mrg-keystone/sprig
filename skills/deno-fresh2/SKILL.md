@@ -342,6 +342,105 @@ before authoring an `isolate/` folder — `fixture.json`/case JSON have non-obvi
 the stage). It complements `playwright-and-dev-loop.md`: that drives whole user
 journeys; `isolate` exercises a single component's surface.
 
+## Rebuild from a ui-breakdown — components green before pages
+
+A `ui-breakdown/` (from the **ui-breakdown** skill) is built to be rebuilt
+**mechanically**: per-component specs whose **Events** sections are the
+validation spec, `isolate/` proposals (`fixture.json` + `cases/`), `screenshots/`,
+and an `index.md` with the build order + usage matrix. ui-breakdown only *specs*
+the validation; **deno-fresh2 materializes and runs it.** Follow `index.md`'s
+order and hold the gate.
+
+**Order (from `index.md`):** design tokens → **shared components** (dependency
+order — primitives like button/badge/avatar before composites like card/modal
+that embed them) → **page-local components** → **page compositions**. Build
+bottom-up so every page is assembled from parts that already pass.
+
+**Per component — loop until green:**
+
+1. **Scaffold** it at its isolate root from the spec's Classification:
+   `static`→`components/<name>/`, `island`→`islands/<name>/`,
+   `page-composition`→`pages/<name>/` (file is `PascalCase(folder).tsx`).
+2. **Drop in** the proposed `isolate/` folder (`fixture.json` + `cases/`) as-is,
+   adjusting only where the real component API forces it.
+3. **Write the tests from the Events section** — lift each `capture(page)`
+   predicate sketch into `cases/<name>/tests/*.spec.ts`, mapping each predicate
+   to the case whose state triggers it. This is the step ui-breakdown left to
+   you (it specs; you materialize).
+4. **Run both checks:** `isolate dev` → diff the rendered case against its
+   `screenshots/` (visual); `isolate test` → run the predicates (behavioral).
+   Iterate the component until **both** pass for **every** case.
+
+A component is **done only when its cases diff clean and `isolate test` is
+green.** Never build on a red component.
+
+**The gate:** finish **all shared components green** before starting any page.
+For each page, build its **page-local components green** first; only once *every*
+component that page uses passes do you build the **page composition** — wire the
+real layout and data, then make the **page-level** cases/tests pass. A page is
+never assembled on top of an unproven part.
+
+Once a page's components are green, wire its data to the backend (next section)
+and run the gap audit.
+
+## Wire to a rune/keep backend — and propose what's missing
+
+When the build has a backend, deno-fresh2 takes a **second input** beside the
+`ui-breakdown/` spec: the **rune server directory**, where the `.rune` files and
+their generated keep backend live. Point the skill at both; absent explicit
+paths, auto-detect a sibling `ui-breakdown/` and the nearest dir holding
+`*.rune` + `bootstrap/`. **Read `references/rune-backend.md` before wiring** — it
+carries the catalog, in-process embedding, and the suggested-`.rune` skeleton;
+this is just the shape.
+
+1. **Type loaders off the real DTOs — don't redeclare them.** The callable
+   surface is the runes' `[ENT]` endpoints (the generated
+   `entrypoints/<surface>/mod.ts` `@Endpoint` controllers). Import the generated
+   `dto/*.ts` (via each module's `mod-root.ts`) so handlers share the exact
+   class-validator contracts the backend asserts — the frontend data-model stops
+   being a hand-copy. *(A rune with no `[ENT]` has no HTTP edge; there's nothing
+   to call.)*
+2. **Call it in-process.** keep ships an in-process backend client and Fresh
+   embedding — an SSR loader calls `api.backend.fetch("/orders")` during render,
+   no listen, no token (the **keep skill's** deployment reference covers
+   `embed`/`withBasePath`; don't re-derive it).
+3. **The rune DTO wins.** ui-breakdown's isolate fixtures carry fake, UI-shaped
+   data; the rune DTO carries the real shape. Re-type each fixture against its
+   DTO and **surface every mismatch loudly** — a fixture field the DTO lacks (or
+   vice-versa) is the exact seam where frontend and backend silently drift.
+
+### Gap audit → suggested runes (the last step of the build)
+
+A backend is often **thinner than the UI** — the mock implies operations no
+`[ENT]` covers. The frontend build is where you find out, because it's where you
+try to call them. So once the app is wired, diff **UI-needed operations**
+(ui-breakdown's per-component Events sections + the data-model) against the
+**rune endpoint catalog**. Every operation with no home is a gap. For each gap:
+
+- **Write a suggested spec** to `<git-root>/spec/suggested/<name>.rune`
+  (`git rev-parse --show-toplevel`; create `spec/suggested/` if absent): DTOs
+  from the shared data-model, the `[REQ]`/`[ENT]` inferred from the UI
+  interaction, validation/faults **inferred-and-flagged** ("verify during
+  build"). Skeleton in `references/rune-backend.md`.
+- **Stub the call so the app still runs.** Back the Fresh loader/action with the
+  isolate fixture's data and leave
+  `// TODO(suggested-rune): spec/suggested/<name>.rune — <what it must do>`. The
+  page must not crash — deno-fresh2's "actually run it before done" bar applies
+  to gaps too.
+- **Index it** in `spec/suggested/README.md`: which UI feature needs it, why
+  it's missing, how to promote (review → move the spec into the server dir →
+  `rune sync`).
+
+**Suggestions are review-only — never `rune sync` them yourself.**
+`spec/suggested/` is an inbox a human/rune session promotes; a frontend build
+must never silently grow the backend.
+
+**No server dir at all is the same code path:** every UI operation is a gap, so
+the audit emits a *complete* suggested backend — you can deliberately build
+frontend-first and let deno-fresh2 propose the whole rune spec. (Backend
+endpoints with no UI caller are the inverse: note them in the index, generate
+nothing.)
+
 ## Decision matrix — load the right reference
 
 Before working in an unfamiliar area, read the matching `references/` file(s):
@@ -368,6 +467,7 @@ Before working in an unfamiliar area, read the matching `references/` file(s):
 | Writing tests (server-side, fast) | `testing.md` |
 | User stories + browser/e2e tests, dev-loop staleness | `playwright-and-dev-loop.md` |
 | Preview / test one component, island, or page in isolation | `isolate.md` |
+| Wire to a rune/keep backend / propose missing endpoints | `rune-backend.md` |
 | Coming from Fresh 1 | `migration-guide.md` first |
 | Stuck / weird error | `advanced/troubleshooting.md`, `advanced/api-reference.md` |
 | Recipes (redirects, proxy, streaming, content negotiation, cookies) | `examples/common-patterns.md` |

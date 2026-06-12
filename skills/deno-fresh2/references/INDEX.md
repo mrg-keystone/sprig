@@ -29,6 +29,7 @@
 | Adding security headers | `plugins/{csp,csrf,cors,ip-filter,trailing-slashes}.md` |
 | Writing tests | `testing.md` |
 | Preview / test one component in isolation | `isolate.md` |
+| Wire to a rune/keep backend / propose missing endpoints | `rune-backend.md` |
 | Coming from Fresh 1 | `migration-guide.md` first, then everything |
 | Stuck / weird error | `advanced/troubleshooting.md`, `advanced/api-reference.md` |
 
@@ -84,6 +85,7 @@
 ### Testing
 - [Testing](testing.md) — unit/integration patterns
 - [isolate](isolate.md) — standalone component/island/page previews with live controls, an event log, and a one-click Playwright runner (bundled tool at `isolate/`)
+- [rune backend](rune-backend.md) — consume a rune/keep backend (shared DTOs, in-process calls) and run the gap audit: emit suggested `.rune` specs + stub-and-TODO for operations the UI needs but the backend lacks
 
 ## Tier 3 — Reference only (load on demand)
 
