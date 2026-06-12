@@ -13,7 +13,10 @@ Deno.test("projectRoot(): no --root → the current directory", () => {
 });
 
 Deno.test("projectRoot(): --root <path> → resolve(path)", () => {
-  assertEquals(projectRoot(["--root", "fixture"]), resolve("fixture"));
+  assertEquals(
+    projectRoot(["--root", "fixtures/fresh-app"]),
+    resolve("fixtures/fresh-app"),
+  );
   assertEquals(
     projectRoot(["dev", "--root", "../elsewhere"]),
     resolve("../elsewhere"),

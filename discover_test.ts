@@ -1,7 +1,8 @@
-// Unit tests for discovery + route generation — fast, no browser. The fixture/
-// project is the input; we assert the structured ComponentEntry[] directly.
-// (Browser behavior — controls, event log, the test bridge — is covered by the
-// Playwright specs run via `isolate test --root fixture`.)
+// Unit tests for discovery + route generation — fast, no browser. The
+// fixtures/fresh-app/ project is the input; we assert the structured
+// ComponentEntry[] directly. (Browser behavior — controls, event log, the test
+// bridge — is covered by the Playwright specs run via
+// `isolate test --root fixtures/fresh-app`.)
 import { assert, assertEquals } from "jsr:@std/assert@^1";
 import { fromFileUrl } from "jsr:@std/path@^1";
 import {
@@ -12,7 +13,7 @@ import {
   parseControlDefs,
 } from "./discover.ts";
 
-const ROOT = fromFileUrl(new URL("./fixture", import.meta.url));
+const ROOT = fromFileUrl(new URL("./fixtures/fresh-app", import.meta.url));
 const { entries, problems } = await discover(ROOT);
 const by = (label: string): ComponentEntry => {
   const e = entries.find((x) => x.label === label);
@@ -111,7 +112,7 @@ Deno.test("tests are collected per case", () => {
 
 // --- config problems: surfaced up front, not swallowed -----------------------
 
-Deno.test("the bundled fixture is clean — no config problems", () => {
+Deno.test("the bundled fresh-app fixture is clean — no config problems", () => {
   assertEquals(problems, []);
 });
 

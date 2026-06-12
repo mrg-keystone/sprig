@@ -5,15 +5,15 @@
   "exports": "./main.ts",
   "tasks": {
     "isolate": "deno run -A main.ts",
-    "dev": "deno run -A main.ts dev --root fixture",
-    "list": "deno run -A main.ts list --root fixture",
+    "dev": "deno run -A main.ts dev --root fixtures/fresh-app",
+    "list": "deno run -A main.ts list --root fixtures/fresh-app",
     "test": "deno test -A",
-    "e2e": "deno run -A main.ts test --root fixture",
+    "e2e": "deno run -A main.ts test --root fixtures/fresh-app",
     "install": "deno run -A install.ts"
   },
   "publish": {
     "exclude": [
-      "fixture",
+      "fixtures",
       ".playwright-mcp",
       "isolate-*.png",
       "*_test.ts",

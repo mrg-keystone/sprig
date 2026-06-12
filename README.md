@@ -306,10 +306,10 @@ specs get full autocomplete and the event shape is checked at compile time.
 
 ```sh
 git clone https://github.com/mrg-keystone/isolate && cd isolate
-deno task list   # discover the bundled fixture's components
+deno task list   # discover the bundled fixture app's components (fixtures/fresh-app)
 deno task dev    # preview them
 deno task test   # unit tests
-deno task e2e    # the fixture's Playwright suite
+deno task e2e    # the fixture app's Playwright suite
 ```
 
 `deno task install` links the bundled Fresh 2 skill into `~/.claude/skills` and
