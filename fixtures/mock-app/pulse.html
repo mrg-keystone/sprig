@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulse — team tasks</title>
+<!--
+  ui-breakdown fixture: a self-contained mock app. All data is mocked inline
+  (see MOCK DATA below) — the mock data IS the implied backend schema.
+  Pages: #/dashboard, #/tasks, #/settings (hash routing).
+  Includes: shared components (topbar, button, badge, avatar, card, toast),
+  page-local components (stat card, activity feed, task row, settings form),
+  states (loading skeleton, empty, disabled), and animations — mostly
+  compositor-friendly, plus ONE deliberate jank trap (the task-details
+  expander animates `height`, a layout property) for jank lints to catch.
+-->
+<style>
+  /* ---------- design tokens ---------- */
+  :root {
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --ink: #1a1d23;
+    --ink-2: #5c6470;
+    --ink-3: #9aa1ac;
+    --accent: #4f46e5;
+    --accent-soft: #eef2ff;
+    --green: #16a34a;
+    --amber: #d97706;
+    --red: #dc2626;
+    --line: #e5e7eb;
+    --r-sm: 8px;
+    --r-md: 12px;
+    --r-lg: 16px;
+    --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px;
+    --shadow-1: 0 1px 2px rgba(16, 24, 40, .06);
+    --shadow-2: 0 8px 24px rgba(16, 24, 40, .10);
+    --font: -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
+    --ease-snap: cubic-bezier(.2, .8, .2, 1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--font); min-height: 100vh; }
+  button { font: inherit; cursor: pointer; }
+
+  /* ---------- shared: topbar ---------- */
+  .topbar {
+    display: flex; align-items: center; gap: var(--s-5);
+    padding: var(--s-3) var(--s-6); background: var(--surface);
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10;
+  }
+  .logo { display: flex; align-items: center; gap: var(--s-2); font-weight: 700; font-size: 17px; }
+  .logo-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+    animation: pulse 2.4s var(--ease-snap) infinite; }
+  @keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .55; } }
+  .nav { display: flex; gap: var(--s-1); margin-right: auto; }
+  .nav a {
+    padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); text-decoration: none;
+    color: var(--ink-2); font-size: 14px; font-weight: 500;
+    transition: background .15s, color .15s;
+  }
+  .nav a:hover { background: var(--bg); color: var(--ink); }
+  .nav a.active { background: var(--accent-soft); color: var(--accent); }
+
+  /* ---------- shared: avatar ---------- */
+  .avatar {
+    width: 30px; height: 30px; border-radius: 50%; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent-soft); color: var(--accent);
+    font-size: 12px; font-weight: 700; letter-spacing: .02em;
+  }
+
+  /* ---------- shared: button ---------- */
+  .btn {
+    border: 1px solid transparent; border-radius: var(--r-sm);
+    padding: var(--s-2) var(--s-4); font-size: 14px; font-weight: 600;
+    transition: transform .12s var(--ease-snap), box-shadow .12s, background .15s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { box-shadow: var(--shadow-2); }
+  .btn-ghost { background: transparent; color: var(--ink-2); border-color: var(--line); }
+  .btn-ghost:hover { background: var(--bg); color: var(--ink); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  /* ---------- shared: badge ---------- */
+  .badge {
+    font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px;
+  }
+  .badge.high { background: #fee2e2; color: var(--red); }
+  .badge.med  { background: #fef3c7; color: var(--amber); }
+  .badge.low  { background: #dcfce7; color: var(--green); }
+
+  /* ---------- shared: card ---------- */
+  .card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-lg); box-shadow: var(--shadow-1);
+    transition: transform .16s var(--ease-snap), box-shadow .16s;
+  }
+  .card.lift:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); }
+
+  /* ---------- shared: toast ---------- */
+  .toast {
+    position: fixed; left: 50%; bottom: var(--s-6); z-index: 50;
+    background: var(--ink); color: #fff; font-size: 14px; font-weight: 500;
+    padding: var(--s-3) var(--s-5); border-radius: var(--r-md); box-shadow: var(--shadow-2);
+    transform: translate(-50%, 16px); opacity: 0;
+    transition: transform .26s var(--ease-snap), opacity .26s;
+  }
+  .toast.show { transform: translate(-50%, 0); opacity: 1; }
+
+  /* ---------- views ---------- */
+  .view { display: none; max-width: 880px; margin: 0 auto; padding: var(--s-6); }
+  .view.active { display: block; animation: view-in .24s var(--ease-snap); }
+  @keyframes view-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .view h1 { font-size: 22px; margin-bottom: var(--s-5); }
+
+  /* ---------- dashboard ---------- */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-4); margin-bottom: var(--s-5); }
+  .stat { padding: var(--s-4); }
+  .stat .num { font-size: 28px; font-weight: 700; }
+  .stat .label { font-size: 13px; color: var(--ink-2); margin-top: var(--s-1); }
+  .stat .bar { height: 4px; border-radius: 2px; background: var(--line); margin-top: var(--s-3); overflow: hidden; }
+  .stat .bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px;
+    transform-origin: left; animation: grow .6s var(--ease-snap) backwards; }
+  @keyframes grow { from { transform: scaleX(0); } }
+  .feed { padding: var(--s-2) 0; }
+  .feed h2 { font-size: 15px; padding: var(--s-3) var(--s-4); color: var(--ink-2); }
+  .feed-item { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4);
+    border-top: 1px solid var(--line); font-size: 14px; }
+  .feed-item time { margin-left: auto; color: var(--ink-3); font-size: 12px; flex: none; }
+  .skeleton .feed-item { color: transparent; }
+  .skeleton .sk { height: 14px; border-radius: 7px; flex: 1;
+    background: linear-gradient(90deg, var(--line) 25%, #f1f2f4 50%, var(--line) 75%);
+    background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+  @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+  /* ---------- tasks ---------- */
+  .task-toolbar { display: flex; gap: var(--s-2); margin-bottom: var(--s-4); align-items: center; }
+  .chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px;
+    padding: 6px 14px; font-size: 13px; font-weight: 600; color: var(--ink-2);
+    transition: background .15s, color .15s, border-color .15s; }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .add-row { display: flex; gap: var(--s-2); margin-left: auto; }
+  .add-row input { border: 1px solid var(--line); border-radius: var(--r-sm);
+    padding: var(--s-2) var(--s-3); font: inherit; font-size: 14px; width: 220px; }
+  .add-row input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  .task-list { overflow: hidden; }
+  .task { border-top: 1px solid var(--line); }
+  .task:first-child { border-top: 0; }
+  .task-main { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4); }
+  .task-main input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+  .task .title { font-size: 14px; font-weight: 500; transition: opacity .25s, text-decoration-color .25s;
+    text-decoration: line-through transparent; }
+  .task.done .title { opacity: .45; text-decoration-color: var(--ink-3); }
+  .task .due { margin-left: auto; font-size: 12px; color: var(--ink-3); flex: none; }
+  .task .due.overdue { color: var(--red); font-weight: 600; }
+  .expander { background: none; border: 0; color: var(--ink-3); font-size: 12px; padding: var(--s-1); }
+  /* JANK TRAP — intentionally animates `height` (a layout property) instead of
+     transform/opacity, so motion/jank lints have a real finding in this fixture. */
+  .task-details { height: 0; overflow: hidden; transition: height .3s ease; }
+  .task-details-inner { padding: 0 var(--s-4) var(--s-3) 44px; font-size: 13px; color: var(--ink-2); }
+  .empty { padding: var(--s-6); text-align: center; color: var(--ink-3); font-size: 14px; }
+
+  /* ---------- settings ---------- */
+  .form { padding: var(--s-5); display: grid; gap: var(--s-4); max-width: 460px; }
+  .field { display: grid; gap: var(--s-1); }
+  .field label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .field input, .field select { border: 1px solid var(--line); border-radius: var(--r-sm);
+    padding: var(--s-2) var(--s-3); font: inherit; font-size: 14px; background: var(--surface); }
+  .field input:focus, .field select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  .switch-row { display: flex; align-items: center; justify-content: space-between; }
+  .switch { position: relative; width: 40px; height: 22px; border-radius: 999px; border: 0;
+    background: var(--line); transition: background .2s; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+    border-radius: 50%; background: #fff; box-shadow: var(--shadow-1);
+    transition: transform .2s var(--ease-snap); }
+  .switch[aria-checked="true"] { background: var(--accent); }
+  .switch[aria-checked="true"]::after { transform: translateX(18px); }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo"><span class="logo-dot"></span> Pulse</div>
+  <nav class="nav">
+    <a href="#/dashboard" data-nav="dashboard">Dashboard</a>
+    <a href="#/tasks" data-nav="tasks">Tasks</a>
+    <a href="#/settings" data-nav="settings">Settings</a>
+  </nav>
+  <span class="avatar" title="Maya Chen">MC</span>
+</header>
+
+<main>
+  <section class="view" data-view="dashboard">
+    <h1>Good morning, Maya</h1>
+    <div class="stats" id="stats"></div>
+    <div class="card feed" id="feed"><h2>Recent activity</h2></div>
+  </section>
+
+  <section class="view" data-view="tasks">
+    <h1>Tasks</h1>
+    <div class="task-toolbar">
+      <button class="chip active" data-filter="all">All</button>
+      <button class="chip" data-filter="open">Open</button>
+      <button class="chip" data-filter="done">Done</button>
+      <form class="add-row" id="add-form">
+        <input id="add-input" placeholder="Add a task…" aria-label="New task title">
+        <button class="btn btn-primary" type="submit">Add</button>
+      </form>
+    </div>
+    <div class="card task-list" id="task-list"></div>
+  </section>
+
+  <section class="view" data-view="settings">
+    <h1>Settings</h1>
+    <div class="card form" id="settings-form">
+      <div class="field"><label for="f-name">Name</label><input id="f-name" value="Maya Chen"></div>
+      <div class="field"><label for="f-email">Email</label><input id="f-email" type="email" value="maya@pulse.app"></div>
+      <div class="field"><label for="f-role">Team</label>
+        <select id="f-role"><option>Design</option><option>Engineering</option><option>Product</option></select>
+      </div>
+      <div class="switch-row">
+        <label class="field" style="gap:2px"><span style="font-size:13px;font-weight:600;color:var(--ink-2)">Email notifications</span>
+          <span style="font-size:12px;color:var(--ink-3)">Daily digest of activity</span></label>
+        <button class="switch" id="f-notify" role="switch" aria-checked="true" aria-label="Email notifications"></button>
+      </div>
+      <div><button class="btn btn-primary" id="save-btn" disabled>Save changes</button></div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+/* ================= MOCK DATA =================
+   This is the implied backend schema. Working backwards from this UI, these
+   objects become the data model, and each render function below names an
+   endpoint the real app will need (list tasks, mutate status, activity feed,
+   user profile). */
+const USERS = [
+  { id: "u1", name: "Maya Chen",  team: "Design" },
+  { id: "u2", name: "Diego Ruiz", team: "Engineering" },
+  { id: "u3", name: "Sam Patel",  team: "Product" },
+];
+let TASKS = [
+  { id: "t1", title: "Ship onboarding flow",        assignee: "u1", priority: "high", due: "2026-06-13", status: "open", notes: "Blocked on copy review from Sam." },
+  { id: "t2", title: "Fix mobile nav overlap",      assignee: "u2", priority: "high", due: "2026-06-11", status: "open", notes: "Repros only on iOS Safari." },
+  { id: "t3", title: "Draft Q3 roadmap",            assignee: "u3", priority: "med",  due: "2026-06-20", status: "open", notes: "" },
+  { id: "t4", title: "Refresh empty states",        assignee: "u1", priority: "low",  due: "2026-06-25", status: "done", notes: "" },
+  { id: "t5", title: "Upgrade billing webhooks",    assignee: "u2", priority: "med",  due: "2026-06-18", status: "open", notes: "Coordinate with finance before deploy." },
+  { id: "t6", title: "User interviews — round 2",   assignee: "u3", priority: "low",  due: "2026-06-16", status: "done", notes: "" },
+];
+const ACTIVITY = [
+  { id: "a1", user: "u2", text: "completed “Fix flaky deploy”",        when: "12m" },
+  { id: "a2", user: "u1", text: "commented on “Ship onboarding flow”", when: "1h"  },
+  { id: "a3", user: "u3", text: "created “Draft Q3 roadmap”",          when: "3h"  },
+  { id: "a4", user: "u1", text: "completed “Refresh empty states”",    when: "1d"  },
+];
+const TODAY = "2026-06-12";
+
+/* ================= shared component helpers ================= */
+const userById = (id) => USERS.find((u) => u.id === id);
+const initials = (name) => name.split(" ").map((w) => w[0]).join("");
+const avatar = (user) => `<span class="avatar" title="${user.name}">${initials(user.name)}</span>`;
+const badge = (priority) => `<span class="badge ${priority}">${priority}</span>`;
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+/* ================= dashboard ================= */
+function renderStats() {
+  const open = TASKS.filter((t) => t.status === "open").length;
+  const done = TASKS.filter((t) => t.status === "done").length;
+  const overdue = TASKS.filter((t) => t.status === "open" && t.due < TODAY).length;
+  const cells = [
+    { num: open, label: "Open", pct: open / TASKS.length },
+    { num: done, label: "Done", pct: done / TASKS.length },
+    { num: overdue, label: "Overdue", pct: overdue / Math.max(open, 1) },
+    { num: USERS.length, label: "Teammates", pct: 1 },
+  ];
+  document.getElementById("stats").innerHTML = cells.map((c, i) => `
+    <div class="card lift stat">
+      <div class="num">${c.num}</div><div class="label">${c.label}</div>
+      <div class="bar"><i style="transform:scaleX(${c.pct});animation-delay:${i * 60}ms"></i></div>
+    </div>`).join("");
+}
+
+let feedLoaded = false;
+function renderFeed() {
+  const el = document.getElementById("feed");
+  if (!feedLoaded) {
+    // loading state: skeleton rows, then the data (mocked latency)
+    el.classList.add("skeleton");
+    el.innerHTML = "<h2>Recent activity</h2>" +
+      ACTIVITY.map(() => `<div class="feed-item"><span class="avatar"></span><span class="sk"></span></div>`).join("");
+    setTimeout(() => { feedLoaded = true; renderFeed(); }, 700);
+    return;
+  }
+  el.classList.remove("skeleton");
+  el.innerHTML = "<h2>Recent activity</h2>" + ACTIVITY.map((a) => {
+    const u = userById(a.user);
+    return `<div class="feed-item">${avatar(u)}<span><b>${u.name.split(" ")[0]}</b> ${a.text}</span><time>${a.when} ago</time></div>`;
+  }).join("");
+}
+
+/* ================= tasks ================= */
+let filter = "all";
+function renderTasks() {
+  const list = document.getElementById("task-list");
+  const shown = TASKS.filter((t) => filter === "all" || t.status === filter);
+  if (!shown.length) {
+    list.innerHTML = `<div class="empty">Nothing here — enjoy the calm.</div>`;
+    return;
+  }
+  list.innerHTML = shown.map((t) => {
+    const u = userById(t.assignee);
+    const overdue = t.status === "open" && t.due < TODAY;
+    return `
+    <div class="task ${t.status === "done" ? "done" : ""}" data-id="${t.id}">
+      <div class="task-main">
+        <input type="checkbox" ${t.status === "done" ? "checked" : ""} aria-label="Done">
+        <span class="title">${t.title}</span>
+        ${badge(t.priority)} ${avatar(u)}
+        <span class="due ${overdue ? "overdue" : ""}">${overdue ? "overdue · " : ""}${t.due.slice(5)}</span>
+        <button class="expander" aria-label="Details">▾</button>
+      </div>
+      <div class="task-details"><div class="task-details-inner">${t.notes || "No notes."}</div></div>
+    </div>`;
+  }).join("");
+}
+
+document.getElementById("task-list").addEventListener("click", (e) => {
+  const row = e.target.closest(".task");
+  if (!row) return;
+  const task = TASKS.find((t) => t.id === row.dataset.id);
+  if (e.target.matches("input[type=checkbox]")) {
+    task.status = e.target.checked ? "done" : "open";
+    row.classList.toggle("done", e.target.checked);
+    renderStats();
+    if (e.target.checked) toast(`Completed “${task.title}”`);
+  }
+  if (e.target.matches(".expander")) {
+    const d = row.querySelector(".task-details");
+    const open = d.style.height && d.style.height !== "0px";
+    d.style.height = open ? "0px" : d.querySelector(".task-details-inner").offsetHeight + "px";
+    e.target.textContent = open ? "▾" : "▴";
+  }
+});
+
+document.querySelectorAll(".chip").forEach((chip) =>
+  chip.addEventListener("click", () => {
+    document.querySelector(".chip.active").classList.remove("active");
+    chip.classList.add("active");
+    filter = chip.dataset.filter;
+    renderTasks();
+  })
+);
+
+document.getElementById("add-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = document.getElementById("add-input");
+  const title = input.value.trim();
+  if (!title) return;
+  TASKS.unshift({ id: "t" + (TASKS.length + 1), title, assignee: "u1",
+    priority: "med", due: "2026-06-26", status: "open", notes: "" });
+  input.value = "";
+  renderTasks(); renderStats();
+  toast("Task added");
+});
+
+/* ================= settings ================= */
+const saveBtn = document.getElementById("save-btn");
+document.getElementById("settings-form").addEventListener("input", () => saveBtn.disabled = false);
+document.getElementById("f-notify").addEventListener("click", (e) => {
+  const on = e.target.getAttribute("aria-checked") === "true";
+  e.target.setAttribute("aria-checked", String(!on));
+  saveBtn.disabled = false;
+});
+saveBtn.addEventListener("click", () => { saveBtn.disabled = true; toast("Settings saved"); });
+
+/* ================= hash router ================= */
+function route() {
+  const page = (location.hash.replace("#/", "") || "dashboard");
+  document.querySelectorAll(".view").forEach((v) =>
+    v.classList.toggle("active", v.dataset.view === page));
+  document.querySelectorAll("[data-nav]").forEach((a) =>
+    a.classList.toggle("active", a.dataset.nav === page));
+  if (page === "dashboard") { renderStats(); renderFeed(); }
+  if (page === "tasks") renderTasks();
+}
+addEventListener("hashchange", route);
+route();
+</script>
+</body>
+</html>
