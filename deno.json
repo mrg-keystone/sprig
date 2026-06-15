@@ -1,6 +1,6 @@
 {
   "name": "@mrg-keystone/isolate",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "license": "MIT",
   "exports": "./main.ts",
   "tasks": {
