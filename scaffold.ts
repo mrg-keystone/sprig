@@ -167,8 +167,8 @@ export default defineConfig({
 `,
   );
 
-  // 4. Stylesheet + the shared controls component.
-  await write(`${appDir}/assets/styles.css`, STYLES);
+  // 4. Stylesheet (gallery/controls + the v0.4 shell) + the shared controls component.
+  await write(`${appDir}/assets/styles.css`, STYLES + SHELL_STYLES);
   await write(`${appDir}/controls.tsx`, CONTROLS_LIB);
 
   // 5. Playwright config — testDir at the host root, baseURL injected per run.
@@ -192,6 +192,7 @@ export default defineConfig({
   await rmrf(`${appDir}/routes`);
   await write(`${appDir}/routes/_app.tsx`, APP_SHELL);
   await write(`${appDir}/routes/(_islands)/RunTests.tsx`, RUN_ISLAND);
+  await write(`${appDir}/routes/(_islands)/Shell.tsx`, SHELL_LIB);
   await write(
     `${appDir}/routes/api/run.ts`,
     runEndpoint(runner, `${appDir}/playwright.config.ts`, hostRoot),
@@ -227,9 +228,10 @@ export default defineConfig({
         JSON.stringify(flatProblems, null, 2)
       } as const;\n`,
   );
-  // Shared gallery component + index routes: / (all), /components, /pages.
+  // Shared gallery component + index routes. / is the v0.4 persistent shell
+  // (navigator + stage); /components and /pages keep the flat gallery as fallback.
   await write(`${appDir}/gallery.tsx`, GALLERY_LIB);
-  await write(`${appDir}/routes/index.tsx`, galleryRoute("../gallery.tsx"));
+  await write(`${appDir}/routes/index.tsx`, shellRoute());
   const targets = new Set(entries.map((e) => e.target));
   if (targets.has("component")) {
     await write(
@@ -360,7 +362,7 @@ const CONFIG = ${JSON.stringify(config)};
 export default function Route() {
   return (
     <div class="ctrl-page">
-      <a class="iso-back" href="/">← all components</a>
+      <a class="iso-back" href="/" target="_top">← all components</a>
       <Preview config={CONFIG} />
     </div>
   );
@@ -893,6 +895,57 @@ export function Controls(props: { Component: any; name?: string; config: any; de
     subState.value = { ...subState.value, [key]: { ...subState.value[key], [k]: v } };
     stageBump.value += 1;
   };
+
+  // --- v0.4 shell bridge -----------------------------------------------------
+  // When this preview is iframed by the shell, its panel + log are hidden (CSS,
+  // via data-embed) and the parent dock drives controls/console instead. Post the
+  // control surface + every stage event UP; apply control edits sent DOWN. The
+  // (hidden) in-iframe Controls is still the single source of truth for the stage.
+  const isEmbed = typeof window !== "undefined" && window.parent !== window;
+  const buildInstances = () =>
+    instances.value.map((inst) => ({
+      key: inst.key,
+      name: inst.name,
+      id: inst.id,
+      controls: Object.keys(subDefs[inst.name] || {}).map((k) => ({
+        scope: "sub",
+        instKey: inst.key,
+        key: k,
+        def: subDefs[inst.name][k],
+        value: (subState.value[inst.key] || {})[k],
+      })),
+    }));
+  useEffect(() => {
+    if (!isEmbed) return;
+    const post = (msg: any) => {
+      try { window.parent.postMessage({ source: "isolate-stage", ...msg }, "*"); } catch (_e) { /* ignore */ }
+    };
+    const surface = () => {
+      const controls: any[] = [];
+      for (const k of Object.keys(state.value)) controls.push({ scope: "prop", key: k, def: defs[k] || null, value: state.value[k] });
+      for (const k of Object.keys(sigs)) controls.push({ scope: "signal", key: k, def: defs[k] || null, value: sigs[k].value });
+      return { name: props.name || "component", background: props.background || "#ffffff", html: html.value, controls, instances: buildInstances() };
+    };
+    const onMsg = (e: any) => {
+      const d = e.data;
+      if (!d || d.target !== "isolate-stage") return;
+      if (d.type === "set") {
+        if (d.scope === "prop") set(d.key, d.value);
+        else if (d.scope === "signal" && sigs[d.key]) sigs[d.key].value = d.value;
+        else if (d.scope === "html") html.value = d.value;
+        else if (d.scope === "sub") setInst(d.instKey, d.key, d.value);
+      } else if (d.type === "request") post({ type: "ready", ...surface() });
+    };
+    window.addEventListener("message", onMsg);
+    const sub = events$.subscribe((evt) => post({ type: "event", payload: evt }));
+    post({ type: "ready", ...surface() });
+    return () => { window.removeEventListener("message", onMsg); sub.unsubscribe(); };
+  }, []);
+  useEffect(() => {
+    if (!isEmbed) return;
+    try { window.parent.postMessage({ source: "isolate-stage", type: "instances", instances: buildInstances() }, "*"); } catch (_e) { /* ignore */ }
+  }, [instances.value]);
+
   const propKeys = Object.keys(s);
   const sigKeys = Object.keys(sigs);
   const insts = instances.value;
@@ -1019,6 +1072,15 @@ const APP_SHELL =
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>isolate</title>
+        {/* When this page is iframed by the v0.4 shell stage, mark it embed so the
+            preview shows component-only (panel/log/back hidden, driven via the
+            parent dock). Runs before paint, so there's no flash. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{if(window.parent!==window)document.documentElement.setAttribute('data-embed','')}catch(e){}",
+          }}
+        />
       </head>
       <body>
         <Component />
@@ -1112,6 +1174,819 @@ export function Gallery({ only }: { only?: "component" | "page" }) {
       })}
     </main>
   );
+}
+`;
+
+/** A thin index route that renders the persistent shell island. */
+function shellRoute(): string {
+  return `import Shell from "./(_islands)/Shell.tsx";
+
+export default function Route() {
+  return <Shell />;
+}
+`;
+}
+
+// The v0.4 persistent shell: top bar + navigator + a stage that IFRAMES each
+// case's existing preview route, plus a ⌘K command palette and toasts. It reuses
+// the proven per-case routes untouched — it's chrome around them, not a rebuild.
+// (The separated controls/console/tests dock is the next increment; it needs the
+// controls.tsx postMessage bridge so the stage can render component-only.)
+const SHELL_LIB = `import { useSignal } from "@preact/signals";
+import { useEffect, useRef } from "preact/hooks";
+import { cases, problems } from "../../manifest.ts";
+
+const SECTIONS = [
+  { label: "Components", target: "component" },
+  { label: "Pages", target: "page" },
+];
+
+function groupBy(arr, keyFn) {
+  const m = {};
+  for (const x of arr) (m[keyFn(x)] = m[keyFn(x)] || []).push(x);
+  return m;
+}
+
+export default function Shell() {
+  const all = cases;
+  const active = useSignal(all.length ? all[0].route : "");
+  const search = useSignal("");
+  const collapsed = useSignal({});
+  const palOpen = useSignal(false);
+  const palQ = useSignal("");
+  const palSel = useSignal(0);
+  const toasts = useSignal([]);
+  const bannerOpen = useSignal(problems.length > 0);
+  const running = useSignal(false);
+  const seq = useRef(0);
+  const evSeq = useRef(0);
+  const palInput = useRef(null);
+  const frame = useRef(null);
+
+  // dock + stage tools + the stage bridge (filled by postMessage from the iframe)
+  const dockTab = useSignal("controls");
+  const dockOpen = useSignal(true);
+  const dockH = useSignal(280);
+  const caseStatus = useSignal({});  // route -> "pass" | "fail" | "running"
+  const vp = useSignal("fit");
+  const zoom = useSignal(1);
+  const grid = useSignal(false);
+  const bg = useSignal("#ffffff");
+  const kbd = useSignal(false);      // emulated mobile keyboard on/off
+  const kbdMode = useSignal("ios");  // "ios" (overlay) | "android" (resize)
+  const surface = useSignal(null);   // { name, background, html, controls, instances }
+  const events = useSignal([]);      // bridged stage events
+  const conQ = useSignal("");
+  const conHidden = useSignal({});
+  const tests = useSignal({ status: "idle", results: [], error: null });
+
+  const toast = (tone, title, text) => {
+    const id = ++seq.current;
+    toasts.value = [...toasts.value, { id, tone, title, text }];
+    setTimeout(() => { toasts.value = toasts.value.filter((t) => t.id !== id); }, 5000);
+  };
+  const activeCase = () => all.find((c) => c.route === active.value);
+  const reset = () => { surface.value = null; events.value = []; tests.value = { status: "idle", results: [], error: null }; };
+  const go = (route) => { if (route !== active.value) reset(); active.value = route; location.hash = route; palOpen.value = false; };
+
+  useEffect(() => {
+    const fromHash = () => {
+      const h = decodeURIComponent(location.hash.replace(/^#/, ""));
+      if (h && h !== active.value && all.some((c) => c.route === h)) { reset(); active.value = h; }
+    };
+    fromHash();
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        palOpen.value = true; palQ.value = ""; palSel.value = 0;
+      } else if (e.key === "Escape") palOpen.value = false;
+    };
+    addEventListener("hashchange", fromHash);
+    addEventListener("keydown", onKey);
+    return () => { removeEventListener("hashchange", fromHash); removeEventListener("keydown", onKey); };
+  }, []);
+
+  useEffect(() => {
+    if (palOpen.value && palInput.current) palInput.current.focus();
+  }, [palOpen.value]);
+
+  const q = search.value.trim().toLowerCase();
+  const matches = (c) => !q || (c.category + " " + c.component + " " + c.label).toLowerCase().includes(q);
+  const shown = all.filter(matches);
+
+  const pq = palQ.value.trim().toLowerCase();
+  const palItems = (!pq
+    ? all
+    : all.filter((c) => (c.component + " " + c.category + " " + c.label).toLowerCase().includes(pq))
+  ).slice(0, 50);
+
+  // Run one case's specs and reflect the verdict on its navigator dot.
+  const runCase = async (c) => {
+    if (!c.testFiles.length) return null;
+    caseStatus.value = { ...caseStatus.value, [c.route]: "running" };
+    try {
+      const res = await fetch("/api/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tests: c.testFiles }) });
+      const j = await res.json();
+      const results = j.results || [];
+      const pass = j.ok && results.length > 0 && results.every((r) => r.ok);
+      caseStatus.value = { ...caseStatus.value, [c.route]: pass ? "pass" : "fail" };
+      return { pass, results, error: (!j.ok && !results.length) ? (j.error || "run failed") : null };
+    } catch (e) {
+      caseStatus.value = { ...caseStatus.value, [c.route]: "fail" };
+      return { pass: false, results: [], error: String((e && e.message) || e) };
+    }
+  };
+  const runAll = async () => {
+    const withTests = all.filter((c) => c.testFiles.length);
+    if (!withTests.length) { toast("info", "No tests", "No spec files were discovered."); return; }
+    running.value = true;
+    let passed = 0;
+    for (const c of withTests) { const r = await runCase(c); if (r && r.pass) passed++; }
+    running.value = false;
+    if (passed === withTests.length) toast("ok", "All cases passed", passed + "/" + withTests.length + " cases green.");
+    else toast("fail", "Some cases failed", passed + "/" + withTests.length + " cases passed.");
+  };
+
+  // Drag the dock taller/shorter.
+  const startDockResize = (e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = dockH.value;
+    const onMove = (ev) => { dockH.value = Math.max(120, Math.min(window.innerHeight - 160, startH + (startY - ev.clientY))); };
+    const onUp = () => { removeEventListener("pointermove", onMove); removeEventListener("pointerup", onUp); };
+    addEventListener("pointermove", onMove);
+    addEventListener("pointerup", onUp);
+  };
+
+  // Receive the stage's control surface + events from the iframe (the bridge in
+  // controls.tsx posts them up when embedded).
+  useEffect(() => {
+    const onMsg = (e) => {
+      const d = e.data;
+      if (!d || d.source !== "isolate-stage") return;
+      if (d.type === "ready") {
+        surface.value = { name: d.name, background: d.background, html: d.html, controls: d.controls || [], instances: d.instances || [] };
+        if (d.background) bg.value = d.background;
+      } else if (d.type === "instances") {
+        if (surface.value) surface.value = { ...surface.value, instances: d.instances || [] };
+      } else if (d.type === "event") {
+        events.value = [{ id: ++evSeq.current, ...d.payload }, ...events.value].slice(0, 300);
+      }
+    };
+    addEventListener("message", onMsg);
+    return () => removeEventListener("message", onMsg);
+  }, []);
+
+  const sendSet = (msg) => {
+    try {
+      if (frame.current && frame.current.contentWindow) {
+        frame.current.contentWindow.postMessage({ target: "isolate-stage", type: "set", ...msg }, "*");
+      }
+    } catch (_e) { /* ignore */ }
+  };
+  const editControl = (c, value) => {
+    sendSet({ scope: c.scope, key: c.key, instKey: c.instKey, value });
+    const s = surface.value;
+    if (!s) return;
+    const upd = (x) => (x.scope === c.scope && x.key === c.key && x.instKey === c.instKey) ? { ...x, value } : x;
+    surface.value = { ...s, controls: s.controls.map(upd), instances: s.instances.map((inst) => ({ ...inst, controls: inst.controls.map(upd) })) };
+  };
+
+  const widget = (c, onChange) => {
+    const def = c.def || {};
+    const type = def.type || (typeof c.value === "boolean" ? "boolean" : typeof c.value === "number" ? "number" : "text");
+    if (type === "select") {
+      return (
+        <select class="ci" value={c.value == null ? "" : String(c.value)} onChange={(e) => onChange(e.currentTarget.value)}>
+          {(def.options || []).map((o) => <option key={String(o)} value={String(o)}>{String(o)}</option>)}
+        </select>
+      );
+    }
+    if (type === "range") {
+      return (
+        <span class="crange">
+          <input type="range" min={def.min == null ? 0 : def.min} max={def.max == null ? 100 : def.max} step={def.step == null ? 1 : def.step}
+            value={String(c.value == null ? 0 : c.value)} onInput={(e) => onChange(Number(e.currentTarget.value))} />
+          <span class="val">{String(c.value == null ? 0 : c.value)}</span>
+        </span>
+      );
+    }
+    if (type === "color") return <input type="color" class="swatch" value={String(c.value == null ? "#000000" : c.value)} onInput={(e) => onChange(e.currentTarget.value)} />;
+    if (type === "boolean") return <input type="checkbox" class="cbox" checked={!!c.value} onChange={(e) => onChange(e.currentTarget.checked)} />;
+    if (type === "number") return <input type="number" class="ci" value={String(c.value == null ? 0 : c.value)} onInput={(e) => onChange(Number(e.currentTarget.value))} />;
+    return <input type="text" class="ci" value={c.value == null ? "" : String(c.value)} onInput={(e) => onChange(e.currentTarget.value)} />;
+  };
+
+  const renderControlsTab = () => {
+    const s = surface.value;
+    if (!s) return <div class="ctrl-empty">Loading the stage…</div>;
+    const hasHtml = s.html != null;
+    if (!s.controls.length && !hasHtml && !s.instances.length) return <div class="ctrl-empty">no editable props</div>;
+    return (
+      <div class="ctrls-body">
+        {(s.controls.length || hasHtml)
+          ? (
+            <div class="ctrl-group">
+              <div class="ctrl-group__h">{s.name}</div>
+              {s.controls.map((c) => (
+                <div class="ctrl-row" key={c.scope + c.key}>
+                  <label>{c.key}{c.scope === "signal" ? <span class="sig">signal</span> : null}</label>
+                  {widget(c, (v) => editControl(c, v))}
+                </div>
+              ))}
+              {hasHtml
+                ? (
+                  <div class="ctrl-row">
+                    <label>_innerHtml</label>
+                    <input class="ci" value={s.html} onInput={(e) => { const v = e.currentTarget.value; sendSet({ scope: "html", value: v }); surface.value = { ...surface.value, html: v }; }} />
+                  </div>
+                )
+                : null}
+            </div>
+          )
+          : null}
+        {s.instances.map((inst) => (
+          <div class="ctrl-group" key={inst.key}>
+            <div class="ctrl-group__h">{inst.id ? inst.name + " #" + inst.id : inst.name}<span class="pill">instance</span></div>
+            {inst.controls.map((c) => (
+              <div class="ctrl-row" key={c.key}>
+                <label>{c.key}</label>
+                {widget(c, (v) => editControl(c, v))}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderConsoleTab = () => {
+    const list = events.value;
+    const cq = conQ.value.trim().toLowerCase();
+    const hidden = conHidden.value;
+    const types = [...new Set(list.map((e) => e.type))];
+    const visible = list.filter((e) => !hidden[e.type] && (!cq || (e.source + " " + e.type + " " + e.detail).toLowerCase().includes(cq)));
+    return (
+      <div class="con">
+        <div class="con-head">
+          <input class="con-filter" placeholder="filter…" value={conQ.value} onInput={(e) => { conQ.value = e.currentTarget.value; }} />
+          <div class="con-types">
+            {types.map((ty) => <button class={"con-type" + (hidden[ty] ? " off" : "")} key={ty} onClick={() => { conHidden.value = { ...hidden, [ty]: !hidden[ty] }; }}>{ty}</button>)}
+          </div>
+          <span class="con-count">{visible.length + " / " + list.length}</span>
+          {list.length ? <button class="con-clear" onClick={() => { events.value = []; }}>clear</button> : null}
+        </div>
+        <div class="con-list">
+          {visible.length === 0 ? <div class="con-empty">{list.length ? "nothing matches the filter" : "no events yet — interact with the component on the stage"}</div> : null}
+          {visible.map((e) => (
+            <div class="con-row" key={e.id}>
+              <span class="con-time">{e.time}</span>
+              <span class="con-src">{e.source}</span>
+              <span class="con-type-c">{e.type}</span>
+              <span class="con-detail">{e.detail}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTestsTab = () => {
+    const c = activeCase();
+    const files = c ? c.testFiles : [];
+    const names = c ? c.tests : [];
+    const t = tests.value;
+    const run = async () => {
+      if (!files.length || !c) return;
+      tests.value = { status: "running", results: [], error: null };
+      caseStatus.value = { ...caseStatus.value, [c.route]: "running" };
+      try {
+        const res = await fetch("/api/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tests: files }) });
+        const j = await res.json();
+        const results = j.results || [];
+        const pass = j.ok && results.length > 0 && results.every((r) => r.ok);
+        tests.value = { status: "done", results, error: (!j.ok && !results.length) ? (j.error || "run failed") : null };
+        caseStatus.value = { ...caseStatus.value, [c.route]: pass ? "pass" : "fail" };
+      } catch (e) {
+        tests.value = { status: "done", results: [], error: String((e && e.message) || e) };
+        caseStatus.value = { ...caseStatus.value, [c.route]: "fail" };
+      }
+    };
+    return (
+      <div class="tests">
+        <div class="tests-bar">
+          <button class="run-btn" onClick={run} disabled={!files.length || t.status === "running"}>{t.status === "running" ? "running…" : "▸ run tests"}</button>
+          <span class="tests-summary">{files.length ? names.length + " spec(s) · " + files.length + " file(s)" : "no tests for this case"}</span>
+        </div>
+        {t.error ? <div class="spec-err"><span class="lbl">run error</span>{"\\n" + t.error}</div> : null}
+        {t.results.length
+          ? (
+            <div class="spec-file">
+              <div class="spec-file__h">results</div>
+              {t.results.map((r, i) => <div class="spec" key={i}><span class={"ico " + (r.ok ? "pass" : "fail")}>{r.ok ? "✓" : "✗"}</span><span class="name">{r.title}</span></div>)}
+            </div>
+          )
+          : (t.status !== "running" && !t.error && names.length
+            ? (
+              <div class="spec-file">
+                <div class="spec-file__h">specs</div>
+                {names.map((n, i) => <div class="spec" key={i}><span class="ico idle">○</span><span class="name">{n}</span></div>)}
+              </div>
+            )
+            : null)}
+      </div>
+    );
+  };
+
+  // An emulated mobile keyboard tray. Purely visual + space-reserving: it shrinks
+  // the iframe (a real viewport) so the component reflows as it would with a real
+  // on-screen keyboard up. Not a functional input.
+  const renderKeyboard = () => (
+    <div class="kbd" aria-hidden="true">
+      {[["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"], ["a", "s", "d", "f", "g", "h", "j", "k", "l"]].map((row, i) => (
+        <div class="kbd-row" key={i}>{row.map((k) => <span class="kbd-key" key={k}>{k}</span>)}</div>
+      ))}
+      <div class="kbd-row">
+        <span class="kbd-key dark wide">⇧</span>
+        {["z", "x", "c", "v", "b", "n", "m"].map((k) => <span class="kbd-key" key={k}>{k}</span>)}
+        <span class="kbd-key dark wide">⌫</span>
+      </div>
+      <div class="kbd-row">
+        <span class="kbd-key dark">123</span>
+        <span class="kbd-key dark">🌐</span>
+        <span class="kbd-key space">space</span>
+        <span class="kbd-key return">return</span>
+      </div>
+    </div>
+  );
+
+  const cur = activeCase();
+
+  return (
+    <div id="app">
+      <header class="topbar">
+        <div class="brand"><span class="logo">◧</span><span>isolate</span><span class="ver">v0.4</span></div>
+        <button class="kbd-search" onClick={() => { palOpen.value = true; palQ.value = ""; palSel.value = 0; }}>
+          <span>⌕</span><span>Jump to a case…</span><span class="k">⌘K</span>
+        </button>
+        <div class="spacer"></div>
+        <button class="tbtn" onClick={runAll} disabled={running.value}>
+          <span class="dot"></span>{running.value ? "Running…" : "Run all tests"}
+        </button>
+      </header>
+
+      <div class="body">
+        <nav class="sidebar">
+          <div class="sb-search">
+            <input
+              value={search.value}
+              onInput={(e) => { search.value = e.currentTarget.value; }}
+              placeholder="Filter components…  ( / )"
+              autocomplete="off"
+            />
+          </div>
+          <div class="sb-scroll">
+            {shown.length === 0
+              ? (
+                <div class="sb-empty">
+                  {all.length
+                    ? "No cases match your filter."
+                    : "No components yet. Drop an isolate/ folder next to any component to see it here."}
+                </div>
+              )
+              : SECTIONS.map((sec) => {
+                const inSec = shown.filter((c) => c.target === sec.target);
+                if (!inSec.length) return null;
+                const cats = groupBy(inSec, (c) => c.category);
+                return (
+                  <div class="sb-section" key={sec.target}>
+                    <div class={"sb-section__h" + (sec.target === "component" ? " is-comp" : "")}>{sec.label}</div>
+                    {Object.keys(cats).sort().map((cat) => {
+                      const ck = sec.target + "/" + cat;
+                      const isColl = !!collapsed.value[ck];
+                      const comps = groupBy(cats[cat], (c) => c.component);
+                      return (
+                        <div class={"sb-cat" + (isColl ? " collapsed" : "")} key={ck}>
+                          <button class="sb-cat__h" onClick={() => { collapsed.value = { ...collapsed.value, [ck]: !isColl }; }}>
+                            <span class="sb-cat__caret">▸</span><span>{cat}</span><span class="sb-cat__count">{cats[cat].length}</span>
+                          </button>
+                          <div class="sb-cases">
+                            {Object.keys(comps).sort().map((comp) => (
+                              <div class="sb-comp-group" key={comp}>
+                                <div class="sb-comp">{comp}</div>
+                                {comps[comp].map((c) => (
+                                  <button
+                                    class={"sb-case" + (c.route === active.value ? " active" : "")}
+                                    onClick={() => go(c.route)}
+                                    key={c.route}
+                                  >
+                                    <span class="sb-case__label">{c.label}</span>
+                                    <span class={"sb-case__status " + (caseStatus.value[c.route] || c.kind)} title={caseStatus.value[c.route] || c.kind}></span>
+                                  </button>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+          </div>
+        </nav>
+
+        <main class="main">
+          {bannerOpen.value && problems.length
+            ? (
+              <div class="banner">
+                <span>⚠</span>
+                <div>
+                  <b>{problems.length} config problem(s)</b> — these previews are broken.
+                  {problems.map((p) => <div key={p.path + p.detail}><code>{p.path}</code> {p.detail}</div>)}
+                </div>
+                <button class="x" onClick={() => { bannerOpen.value = false; }}>×</button>
+              </div>
+            )
+            : null}
+          <div class="stage-head">
+            {cur
+              ? (
+                <div class="crumb">
+                  <span class="seg">{cur.category}</span><span class="sep">/</span>
+                  <span class="cur">{cur.component} · {cur.label}</span>
+                  <span class={"kind " + cur.kind}>{cur.kind}</span>
+                </div>
+              )
+              : <div class="crumb"><span class="seg">nothing selected</span></div>}
+            <div class="stage-tools">
+              <div class="seg-group">
+                {["fit", "360", "768", "1024", "full"].map((v) => (
+                  <button class={vp.value === v ? "on" : ""} key={v} onClick={() => { vp.value = v; }}>{v}</button>
+                ))}
+              </div>
+              <button class={"tool-ico" + (kbd.value ? " on" : "")} title="toggle emulated mobile keyboard" onClick={() => { kbd.value = !kbd.value; }}>⌨</button>
+              {kbd.value
+                ? (
+                  <div class="seg-group">
+                    <button class={kbdMode.value === "ios" ? "on" : ""} title="iOS: overlay — keyboard floats over a full-height layout (reproduces the fixed-bar-hidden / content-under-keyboard bugs)" onClick={() => { kbdMode.value = "ios"; }}>iOS</button>
+                    <button class={kbdMode.value === "android" ? "on" : ""} title="Android: resizes-content — the layout viewport actually shrinks" onClick={() => { kbdMode.value = "android"; }}>Android</button>
+                  </div>
+                )
+                : null}
+              <button class="tool-ico" title="zoom out" onClick={() => { zoom.value = Math.max(0.25, Math.round((zoom.value - 0.1) * 100) / 100); }}>−</button>
+              <button class="tool-ico" title="reset zoom" onClick={() => { zoom.value = 1; }}>{Math.round(zoom.value * 100) + "%"}</button>
+              <button class="tool-ico" title="zoom in" onClick={() => { zoom.value = Math.min(2, Math.round((zoom.value + 0.1) * 100) / 100); }}>+</button>
+              <button class={"tool-ico" + (grid.value ? " on" : "")} title="toggle grid" onClick={() => { grid.value = !grid.value; }}>▦</button>
+              <input type="color" class="swatch" title="stage background" value={bg.value} onInput={(e) => { bg.value = e.currentTarget.value; }} />
+              {cur ? <a class="stage-open tool-ico" href={active.value} target="_blank" title="open this preview in its own tab">↗</a> : null}
+            </div>
+          </div>
+          <div class={"stage-host" + (grid.value ? " grid" : "")} style={"background:" + bg.value}>
+            {active.value
+              ? (
+                <div class={"stage-canvas" + (kbd.value ? " with-kbd " + (kbdMode.value === "android" ? "kbd-resize" : "kbd-overlay") : "")} style={"width:" + (vp.value === "fit" || vp.value === "full" ? "100%" : vp.value + "px") + ";transform:scale(" + zoom.value + ")"}>
+                  <iframe ref={frame} class="stage-frame" key={active.value} src={active.value}></iframe>
+                  {kbd.value ? renderKeyboard() : null}
+                </div>
+              )
+              : <div class="stage-empty">Select a case from the navigator to preview it here.</div>}
+          </div>
+
+          <section class={"dock" + (dockOpen.value ? "" : " collapsed")} style={dockOpen.value ? "height:" + dockH.value + "px" : ""}>
+            {dockOpen.value ? <div class="dock-resize" onPointerDown={startDockResize}></div> : null}
+            <div class="dock-tabs">
+              <button class={"dock-tab" + (dockTab.value === "controls" ? " on" : "")} onClick={() => { dockTab.value = "controls"; dockOpen.value = true; }}>controls</button>
+              <button class={"dock-tab" + (dockTab.value === "console" ? " on" : "")} onClick={() => { dockTab.value = "console"; dockOpen.value = true; }}>
+                console{events.value.length ? <span class="badge accent">{events.value.length}</span> : null}
+              </button>
+              <button class={"dock-tab" + (dockTab.value === "tests" ? " on" : "")} onClick={() => { dockTab.value = "tests"; dockOpen.value = true; }}>
+                tests{cur && cur.tests.length ? <span class="badge">{cur.tests.length}</span> : null}
+              </button>
+              <button class="dock-collapse" title={dockOpen.value ? "collapse" : "expand"} onClick={() => { dockOpen.value = !dockOpen.value; }}>{dockOpen.value ? "▾" : "▴"}</button>
+            </div>
+            {dockOpen.value
+              ? (
+                <div class="dock-body">
+                  {dockTab.value === "controls" ? renderControlsTab() : dockTab.value === "console" ? renderConsoleTab() : renderTestsTab()}
+                </div>
+              )
+              : null}
+          </section>
+        </main>
+      </div>
+
+      {palOpen.value
+        ? (
+          <div class="palette-back" onClick={(e) => { if (e.target === e.currentTarget) palOpen.value = false; }}>
+            <div class="palette">
+              <input
+                ref={palInput}
+                placeholder="Jump to a case — type a component, category, or case name…"
+                value={palQ.value}
+                onInput={(e) => { palQ.value = e.currentTarget.value; palSel.value = 0; }}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowDown") { e.preventDefault(); palSel.value = Math.min(palSel.value + 1, palItems.length - 1); }
+                  else if (e.key === "ArrowUp") { e.preventDefault(); palSel.value = Math.max(palSel.value - 1, 0); }
+                  else if (e.key === "Enter") { const it = palItems[palSel.value]; if (it) go(it.route); }
+                  else if (e.key === "Escape") palOpen.value = false;
+                }}
+              />
+              <div class="palette-list">
+                {palItems.length === 0
+                  ? <div class="pal-empty">No matches.</div>
+                  : palItems.map((c, i) => (
+                    <div
+                      class={"pal-item" + (i === palSel.value ? " sel" : "")}
+                      key={c.route}
+                      onClick={() => go(c.route)}
+                      onMouseEnter={() => { palSel.value = i; }}
+                    >
+                      <span>{c.component} · {c.label}</span>
+                      <span class="crumbs">{c.category}</span>
+                      <span class="pk">{c.kind}</span>
+                    </div>
+                  ))}
+              </div>
+              <div class="pal-foot">
+                <span><span class="k">↑↓</span> navigate</span>
+                <span><span class="k">↵</span> open</span>
+                <span><span class="k">esc</span> close</span>
+              </div>
+            </div>
+          </div>
+        )
+        : null}
+
+      <div class="toasts">
+        {toasts.value.map((t) => (
+          <div class={"toast " + t.tone} key={t.id}>
+            <div><div class="tt">{t.title}</div><div class="tx">{t.text}</div></div>
+            <button class="x" onClick={() => { toasts.value = toasts.value.filter((x) => x.id !== t.id); }}>×</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+`;
+
+const SHELL_STYLES = `
+/* ===== isolate shell (v0.4) — persistent navigator + iframed stage ===== */
+:root {
+  --ink: #17150f; --ink-2: #6b6453; --ink-3: #9b927c;
+  --paper: #f3eee2; --surface: #fffdf8; --surface-2: #faf6ec;
+  --line: #e4ddcc; --line-2: #d6ccb4;
+  --accent: #c2410c; --accent-2: #9a3412; --accent-soft: #f7e7dd;
+  --ok: #15803d; --fail: #b91c1c; --fail-soft: #fdeceb;
+  --island: #7c3aed; --page: #a16207;
+  --r: 8px; --r-sm: 6px; --r-lg: 12px;
+  --shadow: 0 1px 2px rgba(23,21,15,.06), 0 8px 24px -12px rgba(23,21,15,.18);
+  --shadow-lg: 0 12px 40px -12px rgba(23,21,15,.32);
+  --sb-w: 250px;
+}
+html, body { height: 100%; }
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 99px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }
+
+#app { height: 100vh; display: grid; grid-template-rows: auto 1fr; overflow: hidden;
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13px; line-height: 1.45;
+  color: var(--ink); background: var(--paper); }
+#app button { font: inherit; color: inherit; cursor: pointer; }
+
+.topbar { display: flex; align-items: center; gap: 14px; padding: 0 14px; height: 48px;
+  background: var(--surface); border-bottom: 1px solid var(--line); z-index: 30; }
+.topbar .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; letter-spacing: -.02em; }
+.topbar .logo { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); display: grid;
+  place-items: center; color: #fff; font-size: 13px; box-shadow: inset 0 -2px 4px rgba(0,0,0,.18); }
+.topbar .ver { font-size: 10px; color: var(--ink-3); font-weight: 500; letter-spacing: .04em;
+  border: 1px solid var(--line); border-radius: 99px; padding: 1px 6px; }
+.kbd-search { display: flex; align-items: center; gap: 8px; width: 260px; padding: 5px 9px;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); color: var(--ink-3); }
+.kbd-search:hover { border-color: var(--line-2); background: #fff; }
+.kbd-search .k { margin-left: auto; font-size: 10px; border: 1px solid var(--line); border-radius: 4px;
+  padding: 1px 5px; background: #fff; color: var(--ink-2); }
+.topbar .spacer { flex: 1; }
+.tbtn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: #fff;
+  border-radius: var(--r); padding: 6px 11px; font-size: 12px; }
+.tbtn:hover { border-color: var(--accent); color: var(--accent); }
+.tbtn:disabled { opacity: .6; }
+.tbtn .dot { width: 7px; height: 7px; border-radius: 99px; background: var(--ok); }
+
+.body { display: grid; grid-template-columns: var(--sb-w) 1fr; min-height: 0; position: relative; }
+
+.sidebar { background: var(--surface); border-right: 1px solid var(--line); display: flex;
+  flex-direction: column; min-height: 0; }
+.sb-search { padding: 10px; border-bottom: 1px solid var(--line); }
+.sb-search input { width: 100%; font: inherit; font-size: 12px; padding: 7px 10px; border: 1px solid var(--line);
+  border-radius: var(--r); background: var(--surface-2); color: var(--ink); }
+.sb-search input:focus { outline: none; border-color: var(--accent); background: #fff; box-shadow: 0 0 0 3px var(--accent-soft); }
+.sb-scroll { overflow: auto; flex: 1; padding: 6px 6px 24px; }
+.sb-section { margin-top: 10px; }
+.sb-section:first-child { margin-top: 4px; }
+.sb-section__h { font-size: 9.5px; text-transform: uppercase; letter-spacing: .16em; color: var(--page);
+  padding: 4px 8px; font-weight: 700; }
+.sb-section__h.is-comp { color: var(--accent); }
+.sb-cat { margin: 1px 0; }
+.sb-cat__h { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; background: none;
+  border: 0; padding: 5px 8px; border-radius: var(--r-sm); font-size: 12px; font-weight: 600; color: var(--ink); }
+.sb-cat__h:hover { background: var(--surface-2); }
+.sb-cat__caret { transition: transform .15s; color: var(--ink-3); font-size: 9px; width: 9px; display: inline-block; }
+.sb-cat.collapsed .sb-cat__caret { transform: rotate(-90deg); }
+.sb-cat__count { margin-left: auto; font-size: 10px; color: var(--ink-3); }
+.sb-cat.collapsed .sb-cases { display: none; }
+.sb-comp { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3);
+  padding: 6px 8px 2px 22px; font-weight: 600; }
+.sb-case { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none;
+  border: 0; padding: 5px 8px 5px 24px; border-radius: var(--r-sm); font-size: 12px; color: var(--ink-2); position: relative; }
+.sb-case:hover { background: var(--surface-2); color: var(--ink); }
+.sb-case.active { background: var(--accent-soft); color: var(--accent-2); font-weight: 600; }
+.sb-case.active::before { content: ""; position: absolute; left: 6px; top: 7px; bottom: 7px; width: 2.5px;
+  border-radius: 99px; background: var(--accent); }
+.sb-case__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.sb-case__status { width: 7px; height: 7px; border-radius: 99px; flex: none; background: var(--line-2); }
+.sb-case__status.island { background: var(--island); }
+.sb-case__status.page { background: var(--page); }
+.sb-empty { padding: 24px 14px; color: var(--ink-3); text-align: center; font-size: 12px; line-height: 1.6; }
+
+.main { display: flex; flex-direction: column; min-height: 0; background: var(--paper); }
+.stage-head { display: flex; align-items: center; gap: 12px; padding: 9px 14px; background: var(--surface);
+  border-bottom: 1px solid var(--line); min-height: 46px; }
+.crumb { display: flex; align-items: center; gap: 7px; font-size: 12px; min-width: 0; }
+.crumb .seg { color: var(--ink-3); }
+.crumb .sep { color: var(--ink-3); opacity: .6; }
+.crumb .cur { font-weight: 700; color: var(--ink); }
+.kind { font-size: 9px; text-transform: uppercase; letter-spacing: .1em; font-weight: 700; padding: 2px 7px;
+  border-radius: 99px; border: 1px solid var(--line); color: var(--ink-2); }
+.kind.island { color: var(--island); }
+.kind.page { color: var(--page); }
+.kind.component { color: var(--accent); }
+.stage-open { margin-left: auto; text-decoration: none; border: 1px solid var(--line); border-radius: var(--r);
+  padding: 4px 9px; font-size: 12px; color: var(--ink-2); }
+.stage-open:hover { border-color: var(--accent); color: var(--accent); }
+.stage-host { flex: 1; min-height: 0; position: relative; background: var(--paper); }
+.stage-frame { width: 100%; height: 100%; border: 0; background: #fff; display: block; }
+.stage-empty { padding: 40px; text-align: center; color: var(--ink-3); }
+
+.banner { display: flex; align-items: flex-start; gap: 10px; padding: 9px 14px; background: var(--fail-soft);
+  border-bottom: 1px solid var(--fail); font-size: 12px; }
+.banner b { color: var(--fail); }
+.banner code { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.banner .x { margin-left: auto; border: 0; background: none; color: var(--fail); font-size: 15px; line-height: 1; }
+
+.palette-back { position: fixed; inset: 0; background: rgba(23,21,15,.34); backdrop-filter: blur(3px);
+  display: grid; place-items: start center; padding-top: 14vh; z-index: 60; }
+.palette { width: min(560px, 92vw); background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
+.palette input { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: none;
+  padding: 15px 18px; font: inherit; font-size: 14px; color: var(--ink); }
+.palette input:focus { outline: none; }
+.palette-list { max-height: 46vh; overflow: auto; padding: 6px; }
+.pal-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--r-sm);
+  font-size: 13px; cursor: pointer; }
+.pal-item .crumbs { color: var(--ink-3); font-size: 11px; }
+.pal-item.sel { background: var(--accent-soft); }
+.pal-item .pk { margin-left: auto; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); }
+.pal-empty { padding: 24px; text-align: center; color: var(--ink-3); }
+.pal-foot { display: flex; gap: 14px; padding: 9px 16px; border-top: 1px solid var(--line); font-size: 11px;
+  color: var(--ink-3); background: var(--surface-2); }
+.pal-foot .k { border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; background: #fff; color: var(--ink-2); }
+
+.toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 9px;
+  z-index: 70; width: 340px; }
+.toast { display: flex; gap: 11px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line-2);
+  border-left: 3px solid var(--accent); border-radius: var(--r); box-shadow: var(--shadow-lg); padding: 11px 13px; font-size: 12px; }
+.toast.ok { border-left-color: var(--ok); }
+.toast.fail { border-left-color: var(--fail); }
+.toast.info { border-left-color: var(--accent); }
+.toast .tt { font-weight: 700; margin-bottom: 2px; }
+.toast .tx { color: var(--ink-2); line-height: 1.5; }
+.toast .x { margin-left: auto; border: 0; background: none; color: var(--ink-3); font-size: 15px; line-height: 1; }
+
+/* ---- embedded preview: component-only stage (panel/log/back hidden) ---- */
+html[data-embed] .iso-back { display: none; }
+html[data-embed] .ctrl { grid-template-columns: 1fr; grid-template-rows: 1fr; min-height: 100dvh; }
+html[data-embed] .ctrl-panel, html[data-embed] .iso-log { display: none; }
+html[data-embed] .ctrl-stage { grid-row: 1; grid-column: 1; }
+
+/* ---- stage tools (right of the breadcrumb) ---- */
+.stage-tools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.seg-group { display: flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: #fff; }
+.seg-group button { border: 0; background: none; padding: 5px 9px; font-size: 11px; color: var(--ink-2); border-right: 1px solid var(--line); }
+.seg-group button:last-child { border-right: 0; }
+.seg-group button:hover { background: var(--surface-2); }
+.seg-group button.on { background: var(--accent-soft); color: var(--accent-2); font-weight: 600; }
+.tool-ico { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 28px; padding: 0 6px;
+  border: 1px solid var(--line); border-radius: var(--r); background: #fff; font-size: 12px; color: var(--ink-2); text-decoration: none; }
+.tool-ico:hover { border-color: var(--accent); color: var(--accent); }
+.tool-ico.on { background: var(--accent-soft); color: var(--accent-2); }
+.swatch { width: 30px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: var(--r); background: none; cursor: pointer; }
+.swatch::-webkit-color-swatch-wrapper { padding: 2px; }
+.swatch::-webkit-color-swatch { border: 0; border-radius: 4px; }
+
+/* ---- stage host: a centered, sizeable canvas around the iframe ---- */
+.stage-host { flex: 1; min-height: 0; overflow: auto; display: flex; justify-content: center; align-items: stretch; padding: 22px; }
+.stage-host.grid { background-image: radial-gradient(var(--line-2) 1px, transparent 1px); background-size: 18px 18px; }
+.stage-canvas { width: 100%; max-width: 100%; transform-origin: top center; transition: width .18s ease; align-self: stretch; }
+.stage-frame { width: 100%; height: 100%; min-height: 480px; border: 0; background: #fff; border-radius: var(--r-lg);
+  box-shadow: var(--shadow); display: block; }
+
+/* ---- emulated mobile keyboard (toggle: iOS overlay / Android resize) ---- */
+.stage-canvas.with-kbd { position: relative; }
+/* Android resizes-content: the iframe actually shrinks, keyboard sits below it */
+.stage-canvas.kbd-resize { display: flex; flex-direction: column; border-radius: var(--r-lg); box-shadow: var(--shadow); }
+.stage-canvas.kbd-resize .stage-frame { flex: 1; min-height: 0; border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: none; }
+/* iOS overlays-content: iframe keeps full height, keyboard floats OVER the bottom —
+   a fixed bottom bar hides behind it and content runs under it (the real iOS bug) */
+.stage-canvas.kbd-overlay .kbd { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  box-shadow: 0 -8px 24px -10px rgba(0,0,0,.3); }
+.kbd { background: #bdb5a3; padding: 9px 6px 16px; display: flex; flex-direction: column; gap: 7px;
+  user-select: none; border-radius: 0 0 var(--r-lg) var(--r-lg); border-top: 1px solid rgba(0,0,0,.08); }
+.kbd-row { display: flex; justify-content: center; gap: 5px; width: 100%; max-width: 460px; margin: 0 auto; }
+.kbd-key { flex: 1; max-width: 36px; height: 38px; background: #fff; border-radius: 5px; display: grid;
+  place-items: center; font-size: 14px; color: var(--ink); box-shadow: 0 1px 1px rgba(0,0,0,.25); }
+.kbd-key.dark { background: #8d8676; color: #fff; font-size: 12px; }
+.kbd-key.wide { max-width: 52px; }
+.kbd-key.space { max-width: none; flex: 5; color: var(--ink-3); font-size: 11px; letter-spacing: .1em; }
+.kbd-key.return { max-width: none; flex: 2; background: var(--accent); color: #fff; font-size: 11px; }
+
+/* ---- dock (controls / console / tests) ---- */
+.dock { position: relative; display: flex; flex-direction: column; height: 280px; min-height: 0; background: var(--surface); border-top: 1px solid var(--line); }
+.dock.collapsed { height: auto; }
+.dock-resize { position: absolute; top: -3px; left: 0; width: 100%; height: 6px; cursor: row-resize; z-index: 6; }
+.dock-resize::after { content: ""; position: absolute; top: 2px; left: 50%; transform: translateX(-50%); width: 34px; height: 3px; border-radius: 99px; background: var(--line-2); }
+.sb-case__status.pass { background: var(--ok); }
+.sb-case__status.fail { background: var(--fail); }
+.sb-case__status.running { background: var(--accent); animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.dock-tabs { display: flex; align-items: center; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.dock-tab { position: relative; border: 0; background: none; padding: 9px 13px; font-size: 12px; color: var(--ink-2); font-weight: 600; display: flex; align-items: center; gap: 7px; }
+.dock-tab:hover { color: var(--ink); }
+.dock-tab.on { color: var(--accent-2); }
+.dock-tab.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--accent); border-radius: 99px; }
+.dock-tab .badge { font-size: 10px; font-weight: 700; border-radius: 99px; padding: 1px 6px; background: var(--line); color: var(--ink-2); }
+.dock-tab .badge.accent { background: var(--accent-soft); color: var(--accent-2); }
+.dock-collapse { margin-left: auto; border: 0; background: none; color: var(--ink-3); padding: 8px 6px; font-size: 13px; }
+.dock-collapse:hover { color: var(--ink); }
+.dock-body { flex: 1; overflow: auto; min-height: 0; }
+
+.ctrls-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; max-width: 720px; }
+.ctrl-group { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); padding: 11px 13px; }
+.ctrl-group__h { font-size: 10px; font-weight: 700; letter-spacing: .04em; color: var(--accent); text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 7px; }
+.ctrl-group__h .pill { font-size: 9px; color: var(--ink-3); border: 1px solid var(--line); border-radius: 99px; padding: 1px 6px; text-transform: none; letter-spacing: 0; font-weight: 500; background: #fff; }
+.ctrl-row { display: grid; grid-template-columns: 130px 1fr; gap: 12px; align-items: center; padding: 5px 0; }
+.ctrl-row label { font-size: 12px; color: var(--ink-2); }
+.ctrl-row .sig { font-size: 9px; color: var(--island); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 5px; }
+.ci { font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: #fff; width: 100%; color: var(--ink); }
+.ci:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.crange { display: flex; align-items: center; gap: 10px; }
+.crange input[type=range] { flex: 1; accent-color: var(--accent); }
+.crange .val { min-width: 2.5ch; text-align: right; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.cbox { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+
+.con { display: flex; flex-direction: column; height: 100%; }
+.con-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 9px 14px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 2; }
+.con-filter { font: inherit; font-size: 12px; width: 150px; padding: 5px 9px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+.con-filter:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.con-types { display: flex; gap: 5px; flex-wrap: wrap; }
+.con-type { font-size: 11px; border: 1px solid var(--line); border-radius: 99px; padding: 2px 9px; background: #fff; color: var(--ink-2); }
+.con-type.off { opacity: .4; text-decoration: line-through; }
+.con-type:hover { border-color: var(--accent); }
+.con-count { font-size: 11px; color: var(--ink-3); margin-left: auto; }
+.con-clear { font-size: 11px; border: 1px solid var(--line); border-radius: var(--r-sm); background: #fff; padding: 4px 10px; color: var(--ink-2); }
+.con-clear:hover { border-color: var(--accent); color: var(--accent); }
+.con-list { padding: 4px 0; }
+.con-row { display: grid; grid-template-columns: 96px 160px 90px 1fr; gap: 12px; padding: 5px 14px; font-size: 12px; border-bottom: 1px dotted var(--line); align-items: baseline; }
+.con-row:hover { background: var(--surface-2); }
+.con-time { color: var(--ink-3); font-variant-numeric: tabular-nums; font-size: 11px; }
+.con-src { color: var(--accent); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.con-type-c { color: var(--ink); font-weight: 600; }
+.con-detail { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.con-empty { padding: 30px; text-align: center; color: var(--ink-3); }
+
+.tests { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; max-width: 760px; }
+.tests-bar { display: flex; align-items: center; gap: 10px; }
+.run-btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: var(--r); padding: 6px 13px; font-size: 12px; font-weight: 600; }
+.run-btn:hover:not(:disabled) { background: var(--accent-2); }
+.run-btn:disabled { opacity: .6; cursor: default; }
+.tests-summary { font-size: 12px; color: var(--ink-2); }
+.spec-file { border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.spec-file__h { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--surface-2); font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--line); }
+.spec { display: flex; align-items: center; gap: 9px; padding: 7px 12px; font-size: 12px; border-bottom: 1px dotted var(--line); }
+.spec:last-child { border-bottom: 0; }
+.spec .ico { width: 15px; text-align: center; }
+.spec .ico.pass { color: var(--ok); }
+.spec .ico.fail { color: var(--fail); }
+.spec .ico.idle { color: var(--ink-3); }
+.spec .name { flex: 1; color: var(--ink); }
+.spec-err { background: var(--fail-soft); padding: 10px 14px; font-size: 11px; color: var(--ink); white-space: pre-wrap;
+  border-radius: var(--r); border: 1px solid var(--fail); line-height: 1.6; }
+.spec-err .lbl { color: var(--fail); font-weight: 700; }
+
+@media (max-width: 760px) {
+  .body { grid-template-columns: 1fr; }
+  .sidebar { position: absolute; z-index: 40; height: 100%; width: 240px; box-shadow: var(--shadow-lg); }
 }
 `;
 

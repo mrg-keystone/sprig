@@ -10,7 +10,13 @@ skills/prototype/
 ├── scripts/             app description or spec into ONE self-contained .html:
 │                        every screen clickable, hardcoded data, fake in-memory
 │                        interactions, plus the unglamorous states (empty,
-│                        loading, error, overflow).
+│                        loading, error, overflow) — and iterates on a prototype
+│                        that already exists (add a screen, fix the flow, restyle)
+│                        in place, same file.
+├── annotate/            Click-to-feedback wrapper. Serves a prototype locally and
+│                        injects an overlay: cmd/ctrl+click an element, type
+│                        feedback, save → written to <prototype>.feedback.json
+│                        next to the file for the skill to read and apply.
 └── design-lint/         Standalone Deno linter (a visual anti-pattern detector,
                          ported from impeccable, Puppeteer→Astral). The skill
                          uses it as an optional, non-blocking look-and-feel
@@ -39,6 +45,16 @@ agent → node …/prototype/scripts/detect.mjs --json <file>.html
 
 This is a gut-check only — the prototype is throwaway, so it's never blocked on
 the linter.
+
+## Click-to-feedback (annotate)
+
+`annotate/serve.ts` wraps any prototype with a cmd/ctrl+click feedback overlay
+and writes the notes to `<prototype>.feedback.json` next to the file, which the
+skill reads on the next iteration. See `annotate/README.md`.
+
+```sh
+deno run -A skills/prototype/annotate/serve.ts <your>-prototype.html --open
+```
 
 ## Requirements
 

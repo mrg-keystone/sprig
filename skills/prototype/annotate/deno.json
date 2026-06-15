@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "@std/media-types": "jsr:@std/media-types@^1",
+    "@std/path": "jsr:@std/path@^1"
+  }
+}

@@ -88,6 +88,156 @@ export const handler = define.handlers({
 });
 ```
 
+## Consuming a separate backend in-process — the setup gotchas
+
+When the backend is a **separate sibling package** (its own `@/`-rooted imports and deps —
+a hand-written keep/danet service, not just a rune module you import), wiring it in-process
+is very doable but has a cluster of non-obvious traps. Each one below cost real debugging
+time on a real build — handle them up front.
+
+**Wire the data spine first.** The build order that goes wrong: UI-against-fixtures →
+world-class → *then* wire the server, ending with a beautiful console of 100% fake numbers.
+Build page handlers that read **live** data from request one; fixtures are only for
+endpoints that genuinely don't exist yet, and they get labeled (see *live-first adapter*,
+below).
+
+### The in-process call
+
+The backend's `bootstrapServer(...)` exports an `api` whose `api.backend.fetch(input,
+init)` is `typeof fetch` and dispatches **through the real server pipeline with no port, no
+TCP, no token**. Build the typed client over it with an empty base URL:
+
+```ts
+const client = new QbInterfaceClient({ baseUrl: "", fetch: api.backend.fetch });
+```
+
+(keep also ships an `embed()` Fresh middleware — cross-link the **keep skill** for the
+mount API; don't reinvent it.)
+
+### It needs a Deno workspace — and the workspace rules bite
+
+To import a sibling package cleanly, make the repo a Deno **workspace** and import the
+backend by its package `name`:
+
+```jsonc
+// root deno.json
+{ "workspace": ["./console", "./server"] }
+```
+
+Three keys **only work at the workspace root** — putting them in a member warns and is
+ignored:
+
+- **`nodeModulesDir`** — root only.
+- **`unstable`** — root only.
+- **`compilerOptions`** — must be at the root to reach a *dependency's* source. This one is
+  brutal: a danet dep uses **parameter decorators**
+  (`constructor(@Inject(X) private y: string)`) that **fail to parse** without
+  `experimentalDecorators` — you get `SyntaxError: Invalid or unexpected token` at the `@`,
+  in a file you don't own. Put `experimentalDecorators` + `emitDecoratorMetadata` in the
+  **root** `deno.json`.
+
+Also: members imported by name need their own `name` (+ `exports`) or Deno warns; keep one
+`deno.lock` and one `node_modules` at the root and delete the members'.
+
+### Decorators work under Fresh's Vite SSR — and survive the build
+
+Conventional wisdom says esbuild strips decorator metadata, so a danet/keep app "can't run
+under Vite." It can. Fresh 2's Vite plugin runs SSR through Deno, which honors
+`emitDecoratorMetadata` from the (root) `deno.json` — the danet DI container, controllers,
+and DTO validation all bootstrap in `deno task dev`. And they **survive `deno task build`
+too**: every controller registers in the bundled `server-entry.mjs`. Don't pre-emptively
+avoid the approach.
+
+### Literal dynamic import + what it does to `deno check`
+
+A real tension, and the literal form is mandatory:
+
+- Vite's SSR runner resolves a **literal** dynamic import (`import("@pkg/name")`) but
+  **silently fails a non-literal one** (`import(fn())`) at request time — *"dynamic import
+  cannot be analyzed by Vite."* `@vite-ignore` does **not** rescue the non-literal form at
+  runtime. Use a literal specifier.
+- But a literal/static import makes **`deno check` traverse the dependency's source** under
+  *your* tsconfig, surfacing the dep's own type needs. A single missing `Deno.openKv` /
+  `Deno.KvKey` type cascaded into ~15 errors via broken ternary narrowing. Fix by giving
+  `deno check` what the dep needs: add `deno.unstable` to the consuming app's `lib` and
+  `@types/node` to its imports.
+
+### Load the backend's env from the runtime, not in code
+
+The backend usually picks its datastore (Firestore vs Deno KV vs …) **from env at bootstrap
+/ first call**, so env must be set *before* the server module loads. Two approaches fail:
+
+- ❌ `vite` loads **no** env, so the in-process backend silently falls back to an **empty
+  default store** — every read comes back empty, which looks exactly like "the database is
+  broken" when the database is fine. (A days-of-your-life bug.)
+- ❌ `loadSync(new URL("../server/.env", import.meta.url))` in code works in dev but
+  **breaks in the build** — `import.meta.url` resolves against the *bundled* file, so the
+  path is wrong. (And static `import`s hoist above top-level code, so you can't `loadSync`
+  then import a module that reads env at load.)
+- ✅ Put **`--env-file` on the tasks** so the runtime sets env before any module — works
+  identically in dev and prod:
+
+  ```jsonc
+  // member deno.json
+  "dev":   "deno run -A --env-file=../server/.env npm:vite",        // NOT bare "vite"
+  "start": "deno serve -A --env-file=../server/.env _fresh/server.js"
+  ```
+
+### The live-first / fixture-fallback adapter
+
+A real backend is often **thinner than the UI** (no write-queue list, no activity feed, no
+hit-rate stats). The honest pattern: **one centralized adapter** that tries the live
+endpoint and falls back to the fixture, exposing a `live: boolean` the page surfaces — so
+gaps are *visible*, never silently faked. Pair each fallback with a `TODO(suggested-rune):`
+and the gap audit (below).
+
+```ts
+async function loadStats(): Promise<{ data: Stats; live: boolean }> {
+  try {
+    const res = await api.backend.fetch("/stats");
+    if (res.ok) return { data: await res.json() as Stats, live: true };
+  } catch { /* fall through */ }
+  return { data: STUB_STATS, live: false };       // surface `live:false` in the UI
+}
+```
+
+### The production build is the real test (run it before "done")
+
+`deno task dev` passing proves **nothing** about production: dev transpiles through Deno;
+the build runs esbuild/rollup and bundles the **entire backend** into `_fresh/server/`. A
+dev-verified setup that crashed in the built server taught these:
+
+- ✅ **Decorators survive the build** (DI container bootstraps in `server-entry.mjs`).
+- ❌ **`import.meta.url`-relative file reads break in the bundle** (the path points at the
+  bundled file). The classic chain: env not found → store fell back to Deno KV →
+  `Deno.openKv is not a function` (no `--unstable-kv` under `deno serve`) → 500 on every
+  call, *silently swallowed by the fixture fallback*. Fix via `--env-file` on the task.
+- ⚠️ **Read the build warnings** — e.g. a `class-validator` `isStrongPassword` "not exported
+  by validator" interop wrinkle is harmless until that path runs, then it's fatal.
+- ✅ **`deno serve -A`** (full perms) is required — the in-process backend needs net, env,
+  and read; no narrower set works.
+- ⚠️ **Operational, not wiring:** correct wiring still shows nothing if the datastore is
+  empty/unreachable — e.g. the Firestore emulator must be running and the data actually
+  populated (discover → enable → sync).
+
+**Required step:** `deno task build` → `deno serve -A _fresh/server.js` → hit a real
+endpoint, before declaring the build done — especially when a backend is bundled in.
+
+### Do-it-right-from-the-start checklist
+
+1. Make the repo a Deno **workspace**; put `nodeModulesDir`, `unstable`, and decorator
+   `compilerOptions` in the **root** `deno.json`.
+2. Import the backend by package name; call it in-process via `api.backend.fetch` wrapped
+   in the typed client with `baseUrl: ""` (a **literal** dynamic import).
+3. Load the backend's `.env` via **`--env-file` on dev *and* start** — never via
+   `import.meta.url` paths.
+4. Write handlers that read **live data from request one**; stub only genuinely-missing
+   endpoints and surface `live` vs `placeholder`.
+5. Add `deno.unstable` / `@types/node` to lib/imports so `deno check` survives the imported
+   backend; restart dev when you add an island.
+6. **Run the production build and hit a real endpoint** — dev passing proves nothing.
+7. *Then* style it.
+
 ## Reconcile fixtures — the rune DTO wins
 
 ui-breakdown's `isolate/` cases carry **fake, UI-shaped** data; the rune DTO is

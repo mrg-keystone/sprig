@@ -105,28 +105,32 @@ export interface State {
 export const define = createDefine<State>();
 ```
 
-`vite.config.ts` — replaces Fresh 1's `dev.ts`. Include the **always-full-reload** dev
-plugin below: it makes an already-open browser tab refresh itself on every save, so you
-never have to manually reload or open a new tab to see changes (see "The dev loop" below
-for why this is needed). Pair it with reading changing data at request time.
+`vite.config.ts` — replaces Fresh 1's `dev.ts`. Use **standard Fresh HMR** (the default —
+no custom reload plugin). Keep `cache-control: no-store` so reloads/fetches aren't served
+stale, and read changing data at request time.
+
+> **Do NOT add an `always-full-reload` plugin.** Earlier versions of this skill recommended
+> a plugin that does `handleHotUpdate → server.ws.send({type:"full-reload"})` "so you never
+> see a stale page." It does the opposite **on Safari**: forcing a full reload re-imports the
+> island modules at their stable `fresh-island::*` URLs, and Safari serves those from its
+> module cache **ignoring `no-store`** — so the island you just edited renders **stale**,
+> while a new tab shows it fresh. Standard HMR avoids this because it patches the changed
+> module at a cache-busted `?t=` URL, which Safari refetches. (Reproduced + fixed in real
+> Safari via `safaridriver`; details in `references/playwright-and-dev-loop.md` and
+> `../ui-audit/references/fresh2-bug-catalog.md`.)
 
 ```ts
 import { defineConfig } from "vite";
 import { fresh } from "@fresh/plugin-vite";
-
-// Dev only: force the open tab to reload on every change. Trades partial-HMR (islands
-// keep state) for reliability — you never see a stale page or reach for a new tab.
-const alwaysFullReload = {
-  name: "always-full-reload",
-  handleHotUpdate({ server }) {
-    server.ws.send({ type: "full-reload", path: "*" });
-    return [];
-  },
-};
+// Optional: recover a tab whose HMR socket died while the dev server was down (Safari
+// throttling a backgrounded tab, a long/again-and-again restart). On disconnect it polls
+// the server and reloads the moment it's back — no permanently-stale tab. Dev-only; ships
+// the snippet to the client automatically, so nothing to paste into client.ts.
+import { devReconnect } from "@mrg-keystone/keep/vite";
 
 export default defineConfig({
   server: { headers: { "cache-control": "no-store" } },
-  plugins: [fresh(), alwaysFullReload],
+  plugins: [fresh(), devReconnect()], // devReconnect() is optional
 });
 ```
 
@@ -151,7 +155,10 @@ import "./assets/styles.css";
 | `main.ts` / `client.ts` / `vite.config.ts` / `deno.json` | Entries + config |
 
 **Tasks:** dev = `deno task dev` (runs `vite`); build = `vite build`; run prod =
-`deno serve -A _fresh/server.js`.
+`deno serve -A _fresh/server.js`. **If the app consumes a backend that reads env at load**
+(e.g. an embedded keep/danet service picking its datastore from env), add `--env-file=…`
+to the **dev and start** tasks — bare `vite` loads no env into the SSR process, so the
+backend silently falls back to its default store (see `references/rune-backend.md`).
 
 Don't put imported assets (CSS, icons used as JS imports) in `static/` — they'll be
 duplicated in the build. `static/` is for URL-only files; `assets/` is for imports.
@@ -180,6 +187,10 @@ export default define.page<typeof handler>(({ data }) => <h1>{data.project.name}
 
 Returning from `GET` without `page()` or a `Response` renders nothing — a common
 silent failure.
+
+If this app fronts a separate service rather than owning its data, that `db.projects.find`
+call is instead an in-process backend `fetch` (see *Step 0* and `references/rune-backend.md`)
+— don't invent a local store to stand in for a backend that already exists.
 
 **File routing** (`references/concepts/file-routing.md`). `routes/blog/[slug].tsx`
 → `/blog/:slug` (read via `ctx.params.slug`); `[...path]` is catch-all; `[[opt]]` is
@@ -222,7 +233,38 @@ missing record returns a real 404. Rendering a "not found" page some other way (
 leftover Fresh 1 `_404.tsx`, or a normal page with 200) produces a *soft 404*: looks
 right to humans, lies to crawlers. Always go through `HttpError` + `_error.tsx`.
 
+## Step 0 — where does the data come from?
+
+Before any design work, answer one question: **does this app own its data, or front a
+separate backend?** It sets the build order, and getting it wrong is expensive.
+
+- **Owns its data** (in-app store, Deno KV, local files) → the patterns above are the
+  whole story. Proceed to design.
+- **Fronts a real service** (a keep/danet API, a rune backend, any HTTP backend) →
+  **wire the data spine first.** Identify the endpoints, build the typed client /
+  in-process adapter, and make page handlers read *real* data from request one. Style
+  *after* the data is real, not before.
+
+The failure this prevents: building the entire UI against fixtures, making it world-class,
+and only then trying to wire the server — ending with a beautiful production-looking
+console showing 100% fake numbers while a fully-working backend sits unused beside it. When
+a Fresh app's job is to be a frontend for a real service, **"shows real data" outranks
+"looks world-class"** — design is Step *last*, not Step zero.
+
+Fixtures are legitimate only for endpoints the backend genuinely *lacks*, and those must be
+**labeled** — a `live: boolean` the page surfaces — so "real vs placeholder" is never
+invisible. Never pass a stub off as real data. (The live-first / fixture-fallback adapter
+is in `references/rune-backend.md`.)
+
+If you're fronting a backend, read **`references/rune-backend.md` before wiring** — the
+in-process call, the Deno-workspace setup, loading the backend's env, the literal-import /
+`deno check` trap, and the production-build crash are all non-obvious and each costs real
+debugging time.
+
 ## Make it look good — and "good" means world-class
+
+*(If the app fronts a real backend, do Step 0 first — wire real data, then make it
+world-class. The bar below is non-negotiable, but it comes **after** the data is real.)*
 
 Every visible surface — `_app.tsx`, layouts, pages, components, islands, CSS — must
 look like the work of a senior designer-developer with 20 years of taste: someone who
@@ -266,18 +308,26 @@ inherent to any tooling), a **statically-imported JSON/data file** is cached ser
 socket / stale module cache** (no auto-reload fires). Opening a fresh tab only seems to
 help because it dodges these — usually a restart happened in between.
 
-Two settings make routine editing always reflect on save:
+Two things make routine editing reliably reflect on save:
 
-1. The **always-full-reload** plugin in `vite.config.ts` (see Bootstrapping) → the open
-   tab reloads itself on every change, killing the dead-socket/stale-cache case.
+1. **Standard Fresh HMR** (the default — no custom reload plugin). Island edits hot-patch
+   in place at a cache-busted `?t=` URL; route/server edits trigger a full reload. Do **not**
+   add an `always-full-reload` plugin to "force" reloads — it makes Safari render edited
+   islands stale (see Bootstrapping). If a tab's HMR socket dies during a server restart, add
+   keep's optional `devReconnect()` plugin (`@mrg-keystone/keep/vite`), which reloads the tab
+   the moment the server is back.
 2. **Read changing data at request time** — `Deno.readTextFile(new URL("../data/x.json",
    import.meta.url))` in a handler/loader, not `import … with {type:"json"}` — so the
    reload actually serves fresh data.
 
 With both, edits to **code and data auto-refresh the open tab** — no manual reload, no new
-tab. Only editing the dev config or server entry still needs the server to restart (the
-tab reconnects once it's back). Full details + the Playwright testing angle are in
-`references/playwright-and-dev-loop.md`.
+tab. Two things still need a server restart: editing the dev config or server entry (the
+tab reconnects once it's back), and **adding or removing an island/route file** — Fresh
+builds the island registry from a one-shot scan at startup and patches it incrementally
+from file-watcher events, which drifts out of sync on a structural add (symptom: a bare
+`fresh-island::Name.tsx` specifier → no hydration for *any* island on the page). *Editing*
+an existing island hot-reloads fine; a structural add still needs a restart. Full details +
+the Playwright testing angle are in `references/playwright-and-dev-loop.md`.
 
 ## Track features as user stories — and Playwright-test each one
 
@@ -409,6 +459,14 @@ this is just the shape.
    DTO and **surface every mismatch loudly** — a fixture field the DTO lacks (or
    vice-versa) is the exact seam where frontend and backend silently drift.
 
+Beyond these three, **consuming a separate backend in-process has a cluster of setup
+gotchas** that each cost real time — a Deno **workspace** with `nodeModulesDir`/`unstable`/
+decorator `compilerOptions` at the **root** (param decorators in a danet dep fail to parse
+otherwise), a **literal** dynamic import so Vite resolves it (which also makes `deno check`
+re-type-check the dep's source), loading the backend's env via **`--env-file` on the
+tasks** (never `import.meta.url`-relative), and verifying the **production build**, not
+just dev. All of these are in `references/rune-backend.md`; read it before wiring.
+
 ### Gap audit → suggested runes (the last step of the build)
 
 A backend is often **thinner than the UI** — the mock implies operations no
@@ -496,10 +554,21 @@ lists every public export from `"fresh"` and `"fresh/runtime"`.
 - **Verify against real Fresh 2 APIs.** When unsure whether an export or signature
   exists, check `references/advanced/api-reference.md` rather than guessing — guesses
   tend to reconstruct Fresh 1.
-- **Actually run it before declaring done.** Several Fresh 2 mistakes (the
-  `ctx.render(data)` crash, soft 404s, version drift) only surface at *request* time,
-  not at type-check. `deno task dev` and load the page (or `curl -i` it to confirm the
-  status code) — type-checking alone won't catch them.
+- **Actually run it before declaring done — including the production build.** Several
+  Fresh 2 mistakes (the `ctx.render(data)` crash, soft 404s, version drift) only surface
+  at *request* time, not at type-check: `deno task dev` and load the page (or `curl -i` it
+  to confirm the status code). And **`deno task dev` passing proves nothing about
+  production** — the build runs a different transform (esbuild/rollup, and it bundles any
+  consumed backend into `_fresh/server/`). Run `deno task build` → `deno serve -A
+  _fresh/server.js` → hit a real endpoint. Things that pass in dev and crash only in the
+  build: `import.meta.url`-relative file reads (the path math changes in the bundle), env
+  not loaded (put `--env-file` on the task), and the build *warnings* you didn't read.
+  (Backend details: `references/rune-backend.md`.)
+- **Adding an island while `deno task dev` runs breaks hydration — restart.** A newly
+  added island can emit a bare `fresh-island::Name.tsx` specifier (the browser reads
+  `fresh-island:` as a URL scheme → CORS/404), and a single broken specifier kills
+  hydration for *every* island on the page. Restart the dev server after adding an island
+  or route file; *editing* an existing one is fine. (`references/playwright-and-dev-loop.md`)
 - **Statically-imported JSON/data goes stale in dev.** `import data from "./x.json" with
   {type:"json"}` is cached in Vite's SSR module graph — editing the file fires no HMR and
   every request stays stale (reload *and* new tab) until you restart the dev server. For

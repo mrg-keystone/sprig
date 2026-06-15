@@ -13,3 +13,4 @@ isolate-*.png
 # macOS
 .DS_Store
 ui-breakdown-workspace/
+ui-audit-workspace/

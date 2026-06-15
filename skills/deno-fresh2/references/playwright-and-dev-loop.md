@@ -153,31 +153,47 @@ Reproduced behavior on Fresh 2.3 + Vite 7:
 - **Server/config files need a restart:** `main.ts`, `vite.config.ts`, `deno.json`,
   `utils.ts` (define/State), `.env`. Editing these and only reloading the browser will
   show stale output.
+- **Adding a *new* island or route file needs a restart, too.** `@fresh/plugin-vite`
+  builds the island registry from a one-shot filesystem scan at dev-server start, then
+  patches it incrementally from chokidar `add`/`unlink` events (across two plugins that
+  share state). That incremental path drifts out of sync with a clean scan on a structural
+  add — the observed symptom is the client entry emitting a bare `fresh-island::Name.tsx`
+  specifier, which the browser reads as the URL scheme `fresh-island:` → CORS/404 → **no
+  hydration at all, for every island on the page** (one broken specifier takes the whole
+  page down). *Editing* an existing island hot-reloads fine; a structural **add** still needs
+  a restart — the stale half is the server-side island registry, which only a restart
+  rebuilds (no client reload trick rescues it). Restart `deno task dev` after adding an
+  island/route (or wrap `vite` in a small supervisor that restarts only when the *set* of
+  island/route files changes, so ordinary edits still hot-reload).
 
-### Stop needing a new tab: make every save auto-refresh the open tab
+### Keep saves reflecting on the open tab — without breaking Safari
 
-The default fix — set it up once and routine editing always reflects on save:
+Use **standard Fresh HMR** (the default). Do **not** force a full reload on every change.
 
-1. **Force a full reload on every change** with a dev-only Vite plugin. The open tab
-   reloads itself on save, so you never manually reload or open a new tab. This kills the
-   dead-HMR-socket / stale-module-cache case outright.
+> ⚠️ **The `always-full-reload` plugin breaks Safari.** A tempting "fix" is a dev plugin whose
+> `handleHotUpdate` does `server.ws.send({type:"full-reload"})`. It *looks* reliable on Chrome,
+> but on **Safari** a full reload re-imports island modules at their stable `fresh-island::*`
+> URLs, which Safari serves from its module cache **ignoring `no-store`** — so the island you
+> just edited renders **stale** while a new tab shows it fresh. Reproduced + fixed in real
+> Safari via `safaridriver`. Standard HMR avoids it by patching the changed module at a
+> cache-busted `?t=` URL (which Safari refetches). **Don't reintroduce always-full-reload.**
+
+1. **Standard HMR + `no-store`.** Island edits hot-patch in place; route/server edits
+   full-reload. Keep `cache-control: no-store` for fetches/documents.
 
    ```ts
    // vite.config.ts
-   const alwaysFullReload = {
-     name: "always-full-reload",
-     handleHotUpdate({ server }) {
-       server.ws.send({ type: "full-reload", path: "*" });
-       return []; // skip partial HMR; the full reload refreshes the page
-     },
-   };
+   import { fresh } from "@fresh/plugin-vite";
+   // Optional: reload a tab whose HMR socket died during a server restart (Safari throttling
+   // a backgrounded tab, a long restart). Dev-only; auto-ships the snippet to the client.
+   import { devReconnect } from "@mrg-keystone/keep/vite";
    export default defineConfig({
-     server: { headers: { "cache-control": "no-store" } }, // guard module/asset caching
-     plugins: [fresh(), alwaysFullReload],
+     server: { headers: { "cache-control": "no-store" } },
+     plugins: [fresh(), devReconnect()], // devReconnect() is optional
    });
    ```
 
-2. **Read changing data at request time** (above) so the reload serves fresh data.
+2. **Read changing data at request time** (above) so reloads serve fresh data.
 
 Verified together: editing a route *and* editing a request-time-read `data.json` each
 auto-refreshed an already-open tab to the latest, with no manual reload and no new tab.

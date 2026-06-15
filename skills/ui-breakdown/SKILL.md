@@ -2,10 +2,11 @@
 name: ui-breakdown
 description: >-
   Decompose a UI mock into a build-ready spec — page inventory, shared/page-local
-  components, design tokens, the implied data model, motion specs with jank
-  findings, cropped screenshots and animation filmstrips, and ready-to-drop-in
-  isolate fixture proposals — so a Fresh 2 + isolate build session can rebuild
-  the UI mechanically. Use whenever the user points at a mock, prototype,
+  components, design tokens, the implied data model, the interaction-tier map
+  (which regions are static forms, Fresh Partials, or islands) with feedback and
+  liveness, motion specs with jank findings, cropped screenshots and animation
+  filmstrips, and ready-to-drop-in isolate fixture proposals — so a Fresh 2 +
+  isolate build session can rebuild the UI mechanically. Use whenever the user points at a mock, prototype,
   reference UI, or finished HTML/screenshot/PDF design and wants it broken down,
   spec'd out, decomposed, reverse-engineered, or turned into components —
   phrases like "break this down", "do a ui-breakdown", "spec this mock", "turn
@@ -59,6 +60,60 @@ ui-breakdown/
             └── <component-name>/   (same shape as shared-components/<name>/)
 ```
 
+## Interactivity, data flow & component tiers
+
+A mock is static HTML with inline data — it **always performs well and never
+reveals a runtime cost**. So this skill does **not** spec data loaders, profile,
+or plan performance; that belongs to the build session, against a real backend.
+What the mock *does* reveal — and what you must decide here — is the **runtime
+architecture**: which regions ship JS, who owns each interaction, and how
+feedback flows. Get these wrong and the build inherits slow, reload-heavy,
+over-hydrated pages.
+
+**Classify every interaction by the question that actually matters** — not "is
+it interactive?" (almost everything is), but **"does it mutate server state, or
+is it client-only?"** That answer picks a tier:
+
+- **Server mutation, full re-render is fine** → a `<form method="POST">` +
+  **Post/Redirect/Get**: POST mutates, 303-redirects, the GET re-renders the new
+  state. **Zero JS — static.** Most buttons (enable/disable, save, delete,
+  toggle, submit, run) are this.
+- **Server mutation, but no full reload** (preserve scroll/focus, feel instant)
+  → a **Fresh Partial** (`f-partial`): the click hits the server, the server
+  re-renders just that fragment, it's swapped in. **Minimal JS, no client fetch
+  code, no `reload()`.** The sweet spot for "mutate + re-render this region".
+- **Client-only** — no server round-trip, or must feel optimistic: dropdowns,
+  modals, command palette, a client-side filter/sort, inline validation,
+  drag-drop → **island**. This bucket is small.
+- **Pure display** → static.
+
+The **dominant interaction is `click → server mutates → page re-renders the new
+state`**, with feedback (a toast) riding along as a **flash message** on the
+redirect — the toast is a *passenger*, the re-rendered state is the cargo. Spec
+feedback as that SSR-native pattern (a flash cookie consumed and cleared on the
+next render), **never** a client-held toast + a `setTimeout` before
+`location.reload()` — that band-aid is precisely what you're designing out.
+
+**Defaults & smells:** default to static / form / Partial; an **island must be
+justified by a genuine client-only need.** A whole view wrapped in one island
+that takes server data as frozen props and `reload()`s after actions is THE
+anti-pattern — flag it. Islands own *client* state and refresh in place; they
+never `location.reload()` to re-read server state.
+
+**Liveness:** mark each live-looking panel **request-response** (re-rendered on
+nav/action) vs **pushed** (updates on its own — an activity feed, a queue,
+cross-client changes). Pushed panels need a stream (SSE) at build time; a mock
+faking liveness with `setInterval` signals *intent*, not a mechanism.
+
+**Honest-empty:** the mock always has data; note each panel's real backing
+source, and where there is none, spec a **placeholder, never fabricated data**.
+
+**The one performance thing a static mock CAN tell you** — not by measuring, but
+from the data model: flag expensive data **shapes** as design-time hazards. "A
+count/aggregate over a collection rendered globally" or "a list rendered in a
+layout (every page pays for it)" can't be timed here, but they *can* be marked
+so the builder treats them carefully. A hazard annotation, never a benchmark.
+
 ## The passes, in order
 
 Work through these in order — later passes depend on earlier ones, and the
@@ -102,6 +157,11 @@ backend schema**. Extract it instead of letting it die inside the prototype:
 - How the data is generated: seeded/deterministic PRNG? hardcoded? fetched?
   Determinism is worth recording — it makes screenshot diffs reproducible.
 - Which components consume which entity (a reverse index of the props tables).
+- **Data-shape hazards** — flag access patterns that turn expensive once wired
+  to a real backend: a count/aggregate over a collection rendered globally (e.g.
+  a sidebar total), a list rendered in a layout (every page pays for it), a
+  cross-entity rollup. You can't time them here — the mock is instant — but mark
+  them so the build treats them carefully (cache / point-read, don't scan).
 
 Never copy data **rows** into specs — schema and generation rules only.
 
@@ -120,13 +180,23 @@ Walk each page's DOM and carve it into components. For each one, decide:
   the single-caller fact in "Used on". Only when *both* are ambiguous, default
   page-local — promotion later is cheap, demotion is churn. Record the
   evidence either way in the component's "Used on" section.
-- **Classification** — `static` | `island` | `page-composition`:
-  - `static`: renders from props, no client-side JS → Fresh `components/`.
-  - `island`: needs client JS — owns event listeners, timers, animation loops,
-    or mutable client state → Fresh `islands/`. The test is *needs JS in the
-    browser*, not *looks interactive* (a CSS-only hover effect is static).
+- **Classification** — `static` | `island` | `page-composition` (this picks the
+  Fresh folder). Decide it with the **Interactivity, data flow & component
+  tiers** rules above. The test for `island` is *needs client JS the server
+  can't re-render*, **NOT** *looks interactive*:
+  - `static`: pure display **or a server-mutating button** — a form+PRG
+    submission, or a region the server re-renders as a **Partial** on action.
+    No client JS owned → Fresh `components/`. Most "interactive" buttons land
+    here.
+  - `island`: genuine client-only state — dropdown/modal/command-palette,
+    client-side filter/sort, optimistic toggle, inline validation, drag-drop →
+    Fresh `islands/`. A CSS-only hover is static; a button that just POSTs is a
+    form. **Justify every island; a whole-page island is a smell.**
   - `page-composition`: a page-level arrangement of other components → Fresh
     `pages/` in isolate terms.
+  Record the finer **interaction tier** (form+PRG / Partial / island /
+  client-only) and its data/feedback/liveness in the component's Behavior
+  section (anatomy below), not just the folder bucket.
 
 Name component folders **kebab-case** such that `PascalCase(folder)` is the
 intended component name (`command-palette` → `CommandPalette.tsx`) — isolate
@@ -204,6 +274,9 @@ values belong, *because* the screenshots show them.
 
 - Page inventory (one line per page: purpose + its components).
 - Shared-component **usage matrix** (component × page).
+- **Interaction/tier summary** — the runtime architecture at a glance: which
+  regions are forms (PRG), which are Partials, which are islands (and why);
+  the pushed/SSE panels; and the flagged data-shape hazards.
 - **Build order**: design tokens → shared components (dependency order:
   primitives like button/badge/avatar before composites like card/modal that
   embed them) → page-local components → page compositions.
@@ -214,16 +287,28 @@ values belong, *because* the screenshots show them.
 Before declaring done, walk each page's top-level DOM regions and check each
 one maps to exactly one component or composition entry; walk the source JS and
 check every behavior (each listener, timer, observer, animation) is owned by
-some component's Events or Motion section. Anything unmapped goes in an
-**"Unassigned"** list at the bottom of `index.md` — an empty list is the goal,
-a populated one is honest; silence is the only failure.
+some component's Events or Motion section. Also check every **interaction has a
+tier** (form+PRG / Partial / island / client-only), every **`island` is
+justified** by a genuine client-only need (no whole-page islands, nothing
+`location.reload()`-ing server state), and every live panel is marked
+request-response vs pushed and has an honest-empty note. Anything unmapped goes
+in an **"Unassigned"** list at the bottom of `index.md` — an empty list is the
+goal, a populated one is honest; silence is the only failure.
 
 ## Component .md anatomy
 
 Every component markdown contains, in order:
 
-1. **Classification** — `static` | `island` | `page-composition`, with a
-   one-line justification ("island — owns the drag pointer listeners").
+1. **Classification & behavior** — the folder bucket (`static` | `island` |
+   `page-composition`) **plus the interaction tier and data contract**: for each
+   interaction its tier (form+PRG mutation / Partial / island / client-only);
+   for server mutations, the action + redirect target + **flash** feedback
+   (never a client toast + `reload()`); for islands, the **client state owned**
+   and how it refreshes in place (re-fetch / Partial — never `location.reload()`
+   on server state); each region's **data source** with honest-empty where there
+   is none; **liveness** (request-response vs pushed/SSE); and any **data-shape
+   hazard** flagged for the builder. One-line justification per island
+   ("island — owns the drag pointer listeners").
 2. **Anatomy** — DOM/visual structure sketch; slots/children it accepts.
 3. **Props table** — `name · type · default · control widget · signal?`.
    Each row maps 1:1 to a `fixture.json` control
@@ -271,6 +356,11 @@ Every component markdown contains, in order:
 ## Rules
 
 - One folder per page under `pages/`, named after the page.
+- Classify interactions by **server-mutation vs client-only**, not "interactive
+  vs not": default form-PRG / Partial / static, justify every island, and spec
+  action feedback as **flash/PRG**, never a client toast + `location.reload()`.
+  Performance is the build's job, not the breakdown's (the mock is always fast);
+  here you only flag expensive data *shapes*.
 - Page-local by default; promote to `shared-components/` only with evidence
   (the "Used on" list).
 - Extract over describe, everywhere the source is readable: real keyframes,

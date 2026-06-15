@@ -34,5 +34,26 @@ Only literal `Deno.env.get("FRESH_PUBLIC_NAME")` is rewritten.
 - Anything without `FRESH_PUBLIC_` is treated as server-only and **stays undefined in islands**.
 - Don't put secrets behind a `FRESH_PUBLIC_` name — they will land in browser bundles.
 
+## Server-side env for a consumed backend (the dev/build trap)
+
+If this Fresh app embeds or consumes a **separate backend** that picks its datastore (or any
+config) from env **at module load**, note that the `vite` dev task loads **no** env — the
+backend silently falls back to its default (often empty) store, and every read looks like
+"the database is broken" when it's fine. Two fixes, one works:
+
+- ❌ `loadSync(new URL("../server/.env", import.meta.url))` in code — works in dev, breaks in
+  the production build (`import.meta.url` resolves against the *bundled* file, so the `.env`
+  path is wrong). Static `import`s also hoist above your `loadSync`, so a module that reads
+  env at load runs first.
+- ✅ Put `--env-file` on the **tasks** so the runtime sets env before any module loads —
+  identical in dev and prod:
+  ```jsonc
+  "dev":   "deno run -A --env-file=../server/.env npm:vite",
+  "start": "deno serve -A --env-file=../server/.env _fresh/server.js"
+  ```
+
+Full consumed-backend playbook (workspace, decorators, literal imports, production build):
+`rune-backend.md`.
+
 ## See also
 - `quickstart.md` — `client.ts` runs in the browser

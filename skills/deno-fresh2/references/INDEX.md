@@ -85,7 +85,7 @@
 ### Testing
 - [Testing](testing.md) — unit/integration patterns
 - [isolate](isolate.md) — standalone component/island/page previews with live controls, an event log, and a one-click Playwright runner (bundled tool at `isolate/`)
-- [rune backend](rune-backend.md) — consume a rune/keep backend (shared DTOs, in-process calls) and run the gap audit: emit suggested `.rune` specs + stub-and-TODO for operations the UI needs but the backend lacks
+- [rune backend](rune-backend.md) — consume a rune/keep backend (shared DTOs, in-process calls), the separate-backend setup gotchas (Deno workspace + root config, decorators under Vite, literal dynamic import + `deno check`, loading env via `--env-file`, the production-build crash, live-first/fixture-fallback adapter), and the gap audit: emit suggested `.rune` specs + stub-and-TODO for operations the UI needs but the backend lacks
 
 ## Tier 3 — Reference only (load on demand)
 
