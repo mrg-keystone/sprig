@@ -134,11 +134,17 @@ export default defineConfig({
 });
 ```
 
-`client.ts` — browser entry; import global CSS here:
+`client.ts` — browser entry; import the **global** CSS here (design tokens, fonts,
+resets, keyframes — the things every page shares):
 
 ```ts
 import "./assets/styles.css";
 ```
+
+A plain `.css` file — whether imported here or co-located next to a component — is
+**global**: its selectors apply app-wide and collide by class name. For styles that
+belong to one component, don't write a global `.css`; use a co-located **CSS Module**
+(next section), which Vite scopes so the styles can't leak.
 
 **Project layout** (and what each folder is for):
 
@@ -162,6 +168,62 @@ backend silently falls back to its default store (see `references/rune-backend.m
 
 Don't put imported assets (CSS, icons used as JS imports) in `static/` — they'll be
 duplicated in the build. `static/` is for URL-only files; `assets/` is for imports.
+
+### Component-scoped CSS — co-locate a `.module.css`
+
+Fresh's only built-in stylesheet is **global**, so a hand-written `.css` leaks across the
+app. To scope styles to one component, use a **CSS Module**: name the file
+`*.module.css`, put it in the component's own folder, and import it as an object of
+class names. Vite rewrites every class to a hashed, collision-proof name — so two
+components can both define `.card` with zero interference.
+
+```
+components/card/
+  Card.tsx
+  Card.module.css      ← the `.module` suffix is mandatory; `Card.css` stays global
+```
+
+```css
+/* Card.module.css */
+.card  { padding: 1rem; border: 1px solid var(--border); }
+.title { font-weight: 800; }
+```
+
+```tsx
+// Card.tsx — a server component (ships zero JS) or an island, either works
+import styles from "./Card.module.css";
+
+export function Card() {
+  return (
+    <div class={styles.card}>
+      <h2 class={styles.title}>Scoped</h2>
+    </div>
+  );
+}
+```
+
+Verified in a real Fresh 2 build (dev **and** production): the SSR'd HTML carries the
+hashed class (`class="_card_sbtxc_1"`), Fresh auto-injects the matching
+`<link rel="stylesheet">`, and the served CSS uses the scoped selector — nothing to wire
+up. The hash is content-derived and **stable across renders** (same on server and
+client), so islands hydrate without a class mismatch.
+
+Rules that bite:
+
+- **The suffix is the switch.** `Card.module.css` scopes; `Card.css` is global. Renaming
+  is the entire difference — there's no config flag.
+- **Reference classes through the imported object** (`styles.card`), never as a string
+  literal (`class="card"`) — the literal name doesn't exist in the output, so the element
+  renders unstyled. For a dynamic/conditional class, index it: `styles[variant]`.
+- **A class the module never exports is `undefined`** at `styles.x` — a silent no-class.
+  Typos fail quietly; check the rendered `class=""` if a style "didn't apply".
+- **Keep genuinely global rules global.** Design tokens (`:root` custom properties),
+  `@font-face`, resets, shared `@keyframes`, and element selectors belong in the
+  `client.ts`/`_app.tsx` global sheet — a module is for *this component's* class rules.
+  Custom properties defined globally are readable from inside a module (`var(--border)`
+  above); only the class names are scoped, not the cascade.
+- **Use kebab/camel consistently.** `styles["my-class"]` works but `styles.myClass`
+  reads cleaner — pick one convention per project.
 
 ## The patterns you'll reach for most
 
@@ -295,7 +357,8 @@ named aesthetic concept. Then deliver all four of these — they are non-negotia
 Deliver this through **CSS** (pages ship zero JS) plus View Transitions for navigation,
 and reserve islands for genuinely interactive flourishes. Put the global system — fonts,
 palette variables, base type, keyframes — in `_app.tsx` and the CSS imported via
-`client.ts` so every page inherits it. Avoid generic fonts (Inter/Roboto/Arial/system)
+`client.ts` so every page inherits it; keep each component's *own* rules in a co-located
+`*.module.css` (see *Component-scoped CSS*) so they never leak. Avoid generic fonts (Inter/Roboto/Arial/system)
 and clichés (purple-on-white gradients). Utilitarian prompts ("add a form", "add a
 toggle") are *not* permission to be plain — hold the same bar everywhere.
 
@@ -509,6 +572,7 @@ Before working in an unfamiliar area, read the matching `references/` file(s):
 | Add a page / route | `concepts/routing.md`, `concepts/file-routing.md`, `concepts/data-fetching.md` |
 | Add interactivity | `concepts/islands.md`, `concepts/signals.md`, `advanced/serialization.md` |
 | Style / design the UI (any visible surface) | `frontend-design.md` |
+| Scope CSS to one component (vs. global) | *Component-scoped CSS* above (co-located `*.module.css`) |
 | Handle a form | `advanced/forms.md`, `concepts/data-fetching.md`, `advanced/define.md` |
 | Middleware / auth / sessions | `concepts/middleware.md`, `concepts/context.md`, `examples/session-management.md` |
 | Layouts / nested layouts | `concepts/layouts.md`, `advanced/layouts.md`, `advanced/app-wrapper.md` |
