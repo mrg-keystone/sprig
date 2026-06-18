@@ -1,15 +1,17 @@
 ---
 name: prototype
-description: Use when the user wants a fast, throwaway, single-file clickable HTML prototype to answer "what are we building" — the complete look-and-feel and main flow of an app, not a production build. Builds ONE self-contained .html with hardcoded data, fake in-memory interactions, CDN scripts only, that opens by double-clicking. Deliberately includes the unglamorous states (empty, loading, error toast, content overflow) where real requirements hide. Also use to change, extend, or iterate on a prototype that already exists — add or rework a screen, fix the flow, restyle, tweak the fake data — when the user points at a *-prototype.html or asks to improve a demo you built. Trigger for "mock up", "prototype", "demo screen", "clickable wireframe", "show me what X looks like", "add a screen to the prototype", "change/iterate on the prototype", or turning a spec/notes/rough draft into a tangible demo. NOT for production code, real backends, component libraries, or anything that must be maintained.
-version: 1.2.0
+description: Use when the user wants a fast, throwaway, single-file clickable HTML prototype to answer "what are we building" — the complete look-and-feel and main flow of an app, not a production build. Builds ONE self-contained .html with hardcoded data, fake in-memory interactions, CDN scripts only, that opens by double-clicking. Deliberately includes the unglamorous states (empty, loading, error toast, content overflow) where real requirements hide. Also use to change, extend, or iterate on a prototype that already exists — add or rework a screen, fix the flow, restyle, tweak the fake data — when the user points at a *-prototype.html or asks to improve a demo you built. Trigger for "mock up", "prototype", "demo screen", "clickable wireframe", "show me what X looks like", "add a screen to the prototype", "change/iterate on the prototype", or turning a spec/notes/rough draft, or a Figma URL, into a tangible demo. NOT for production code, real backends, component libraries, or anything that must be maintained.
+version: 1.3.0
 user-invocable: true
-argument-hint: "[app description or change to make] [source: spec, or existing -prototype.html]"
+argument-hint: "[app description or change to make] [source: spec, Figma URL, or existing -prototype.html]"
 license: Apache 2.0
 allowed-tools:
   - Read
   - Write
   - Bash(node *)
   - Bash(deno *)
+  - mcp__daisyui-blueprint__daisyUI-Snippets
+  - mcp__daisyui-blueprint__Figma-to-daisyUI
 ---
 
 Build — or iterate on — a single, self-contained HTML file that demos how an app
@@ -35,12 +37,18 @@ file rather than starting over — the user has already invested clicks in it.
 
 ## Step 1: Find the source of truth
 
-The user gives an app description and optionally a source path (`source: <path>`,
-or any file they point at).
+The user gives an app description and optionally a source (`source: <path>`, any
+file they point at, or a Figma URL).
 
 - **If a path is given**, read it and treat it as the source of truth: spec,
   notes, rough draft, whatever it is. Pull the **screens**, **flows**, and
   **data shape** from it. The file wins over your assumptions.
+- **If it's a Figma URL**, call the `Figma-to-daisyUI` MCP tool on it. It returns
+  the design's structure (frames, layout, text, colors); follow its workflow —
+  read the structure, then pull the matching daisyUI snippets (see **Style with
+  daisyUI** below) and recreate the screens as daisyUI markup. The Figma layout is
+  the source of truth
+  for *look*; you still add the flow, fake data, and unglamorous states.
 - **If it's blank**, work from the app description in the prompt.
 
 Spend your reading budget here, not exploring the repo. You are not integrating
@@ -71,6 +79,55 @@ name (e.g. `<app>-prototype.html`) in the working directory.
 - **Not production-grade.** No real error handling, no auth, no accessibility
   audit, no tests, no responsive perfection. Skip all of it.
 
+**Default look — daisyUI.** Not a hard rule, just the fastest way to make it look
+designed instead of unstyled: a full themeable component library, zero build, pure
+CSS so it composes with whatever JS you use (vanilla, Alpine, React UMD). Drop
+these in `<head>`:
+
+```html
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css" />
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+```
+
+Set the palette with `data-theme` on `<html>` (e.g. `<html data-theme="corporate">`),
+build screens from daisyUI components (`btn`, `card`, `modal`, `navbar`, `table`,
+`badge`, `alert`…) plus Tailwind utilities for layout, and see **Style with daisyUI**
+below for the markup. Swap it if a prototype genuinely needs a different stack.
+
+## Style with daisyUI (via the MCP)
+
+With the tags above in place, don't write daisyUI's component classes from
+memory — pull the real markup from the **`daisyUI-Snippets`** MCP tool, which
+returns up-to-date class lists, syntax, and copy-paste examples. It's faster than
+guessing and it doesn't hallucinate class names.
+
+- **Call it with nested objects, not arrays.** Request every component a screen
+  needs in one call:
+
+  ```
+  daisyUI-Snippets({ "components": { "card": true, "modal": true, "navbar": true } })
+  ```
+
+  Categories: `components` (the class reference for one component), `layouts`
+  (page shells like sidebar/bento), `templates` (whole `dashboard` / `login-form`
+  screens), `themes` (palette + theme list), and `component-examples` (detailed,
+  ready-to-paste markup, named `<component>.<example>` — pull these when the bare
+  class list isn't enough).
+- **Pick a `data-theme` that fits the app's vibe** and set it once on `<html>`.
+  Good defaults: `corporate`/`winter`/`nord` (clean SaaS), `business`/`dim`/`night`
+  (dark tools), `cupcake`/`pastel` (soft/consumer), `synthwave`/`cyberpunk` (bold).
+  The `themes.css` link above enables all 35; ask `daisyUI-Snippets` for the
+  `themes` category to see the full list.
+- **Use daisyUI's semantic colors** (`primary`, `secondary`, `accent`, `base-100/200/300`,
+  `base-content`, `info`/`success`/`warning`/`error`) rather than raw Tailwind
+  palette colors (`bg-blue-500`). They retheme automatically and keep the palette
+  cohesive — which is exactly what the Step 4 gut-check looks for, so you get a
+  clean contrast/hierarchy result almost for free.
+- **CDN caveat:** the drawer variant classes `is-drawer-open` / `is-drawer-close`
+  are not in the CDN build — don't rely on them; toggle drawers with a checkbox or
+  a tiny bit of JS instead.
+
 ## Step 3: Include every screen AND the unglamorous states
 
 Make the **entire main flow fully clickable** — every screen and step, wired up
@@ -79,12 +136,16 @@ with fake state so the user can walk the whole thing.
 Then show the states that are usually skipped, **on purpose** — this is where
 the real requirements hide:
 
-- **Empty state** — a list/screen with no data yet.
+- **Empty state** — a list/screen with no data yet. (daisyUI: a muted `card` or
+  `hero` with an icon + call to action.)
 - **Loading state** — a fake spinner/skeleton (use `setTimeout` to simulate).
-- **Error toast** — a visible failure message the user can trigger.
+  (daisyUI: `skeleton` blocks, or `loading loading-spinner`.)
+- **Error toast** — a visible failure message the user can trigger. (daisyUI:
+  `alert alert-error` inside a `toast`.)
 - **Overflow** — at least one spot with too-long content (a long title, a huge
   number, a wall of text) that could break the layout. Show it overflowing or
-  handling it, so the user can see the seam.
+  handling it, so the user can see the seam. (daisyUI `badge` for counts; Tailwind
+  `truncate`/`line-clamp-*` to show the handling.)
 
 Give the prototype a way to reach these (e.g. a small floating "demo states"
 panel, buttons, or seeded variants) so they're all reachable by clicking.
@@ -118,9 +179,11 @@ list and apply them (see **Visual feedback loop** below) before anything else.
 
 1. **Read the whole file first.** Find the hardcoded data block at the top, the
    screens, the fake-interaction wiring, and the demo-states panel. Match what's
-   already there — its stack (Tailwind / Alpine / React-UMD / vanilla), its
-   naming, its structure. Don't reformat or "clean up" code you weren't asked to
-   touch; a giant diff on a throwaway file just slows the next change.
+   already there — its stack (daisyUI / Tailwind / Alpine / React-UMD / vanilla),
+   its `data-theme`, its naming, its structure. If it already uses daisyUI, stay
+   in daisyUI and pull any new components from `daisyUI-Snippets`. Don't reformat
+   or "clean up" code you weren't asked to touch; a giant diff on a throwaway file
+   just slows the next change.
 2. **Make the change surgically, keeping the ethos.** Still ONE file, still
    hardcoded data at the top, still fake-in-memory interactions, still copy-paste
    over abstraction. Adding one screen is not a reason to refactor the whole thing

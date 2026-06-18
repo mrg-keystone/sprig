@@ -362,6 +362,21 @@ palette variables, base type, keyframes — in `_app.tsx` and the CSS imported v
 and clichés (purple-on-white gradients). Utilitarian prompts ("add a form", "add a
 toggle") are *not* permission to be plain — hold the same bar everywhere.
 
+**daisyUI via the MCP is a structure accelerator, not a shortcut past the bar.** The
+`daisyui-blueprint` MCP (`daisyUI-Snippets` + `Figma-to-daisyUI`) hands you accessible
+component markup, the class vocabulary, and screenshots — and in Fresh its CSS-only
+dropdowns, collapses, drawers, tabs, and **theme/dark-mode toggles work with zero
+islands** (modals too, in their checkbox variant), which is exactly how you want
+interactivity here. But daisyUI delivers **none** of this section's four
+non-negotiables — typography, motion, depth, a signature moment — only the accessible
+structure beneath them; shipped as its default theme it's the generic look the bar
+forbids. So pull the structure, then **re-theme with a custom `@plugin "daisyui/theme"`**
+and supply your own typography, motion, depth, and signature moment. **Read
+`references/daisyui-mcp.md`**
+before building UI with it — the nested-object call syntax, the CSS-only-vs-island
+choice, the `class`/inline-`onclick` Preact gotchas, and the custom-theme bridge are all
+there.
+
 ## The dev loop — seeing your changes without the new-tab dance
 
 A plain browser reload sometimes won't show your edit in Fresh 2 dev, for three reasons:
@@ -572,6 +587,7 @@ Before working in an unfamiliar area, read the matching `references/` file(s):
 | Add a page / route | `concepts/routing.md`, `concepts/file-routing.md`, `concepts/data-fetching.md` |
 | Add interactivity | `concepts/islands.md`, `concepts/signals.md`, `advanced/serialization.md` |
 | Style / design the UI (any visible surface) | `frontend-design.md` |
+| Build UI from daisyUI (accessible components, CSS-only interactivity, theming, Figma→UI) | `daisyui-mcp.md` |
 | Scope CSS to one component (vs. global) | *Component-scoped CSS* above (co-located `*.module.css`) |
 | Handle a form | `advanced/forms.md`, `concepts/data-fetching.md`, `advanced/define.md` |
 | Middleware / auth / sessions | `concepts/middleware.md`, `concepts/context.md`, `examples/session-management.md` |
@@ -638,6 +654,12 @@ lists every public export from `"fresh"` and `"fresh/runtime"`.
   every request stays stale (reload *and* new tab) until you restart the dev server. For
   data that changes, read it at request time (`Deno.readTextFile`) so a reload reflects
   edits. (`references/playwright-and-dev-loop.md`)
+- **daisyUI snippets paste into Preact, but with two catches.** Keep `class` (don't
+  rewrite to `className`); and inline string handlers like `onclick="my_modal.showModal()"`
+  are **dead in JSX** — use daisyUI's CSS-only variant (checkbox/`<details>`/`<dialog>`, no
+  island) or move the trigger into an island with a real `onClick` function. Also: never
+  ship the **default** daisyUI theme — define a custom `@plugin "daisyui/theme"`, or you've
+  shipped the exact generic look the design bar forbids. (`references/daisyui-mcp.md`)
 - **Don't gate above-the-fold content on scroll-driven reveals.** A
   `animation-timeline: view()` reveal that starts at `opacity: 0` leaves the hero/first
   content *invisible* until scrolled — and permanently blank where the scroll timeline

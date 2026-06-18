@@ -1,16 +1,9 @@
-# Dependencies & build output (any depth — covers fixture/)
+# dependencies + build artifacts
 node_modules/
 _fresh/
-
-# Test / verification artifacts
-.playwright-mcp/
-isolate-*.png
-
-# Env
-.env
-.env.*
-
-# macOS
+test-results/
 .DS_Store
-ui-breakdown-workspace/
-ui-audit-workspace/
+
+# scaffolding kept locally, not shipped — the old code lives in git history
+/reference/
+/spec/

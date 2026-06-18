@@ -1,169 +1,78 @@
-// `deno task install` — set isolate up for everyday DEV use:
-//   1. Symlink every skill in this repo's `skills/` folder at USER scope
-//      so Claude Code picks them up: ~/.claude/skills/<skill-name>.
-//   2. Install the `isolate` CLI at GLOBAL scope from JSR, so `isolate <cmd>`
-//      works in any project.
+#!/usr/bin/env -S deno run -A
+// deno-lint-ignore-file no-import-prefix -- standalone remote bootstrap (run via
+// `deno run -A <url>`); it has no import map, so the inline jsr: specifier is required.
+// Bootstrap installer for the isolate CLI. One-liner:
 //
-// The skill sources are the directories under `skills/` (one skill each,
-// named by their SKILL.md frontmatter). Installing is a symlink, so edits to
-// a skill reflect live — this is the dev-mode setup; consumers should run
-// `isolate update` instead, which installs a plain copy of the latest
-// published version. Idempotent and non-destructive: it never clobbers an
-// existing, different skill folder, and when a symlink already points here
-// it just reports "already installed".
+//   deno run -A https://raw.githubusercontent.com/mrg-keystone/isolate/main/install.ts
 //
-// One special layout: this checkout may itself live INSIDE an installed
-// skill dir (~/.claude/skills/deno-fresh2/isolate). The target then can't be
-// a single symlink — instead each entry of the skill source (SKILL.md,
-// references/, evals/) is symlinked individually into the target dir.
-import { basename, join } from "jsr:@std/path@^1";
+// Downloads the latest GitHub release bundle (cli + server + ui + skills) into
+// ~/.isolate, then hands off to the bundle's own installer to copy the skills to
+// ~/.claude/skills and install the global `isolate` bin. After this, use
+// `isolate update` to upgrade everything (skills, CLI, and the bundled UI).
+//
+// Standalone by design — it can't import the bundle's modules before the bundle
+// exists, so the download+extract is duplicated from cli/lib/install-core.ts.
+import { dirname, join } from "jsr:@std/path@^1";
 
-const CLI_NAME = "isolate";
-const JSR_PKG = "jsr:@mrg-keystone/isolate";
+const REPO = "mrg-keystone/isolate";
+const UA = { "user-agent": "isolate-install" };
 
-async function lstat(p: string): Promise<Deno.FileInfo | null> {
-  try {
-    return await Deno.lstat(p);
-  } catch {
-    return null;
-  }
+const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE");
+if (!home) {
+  console.error("✗ HOME not set — cannot locate ~/.isolate.");
+  Deno.exit(1);
 }
+const runtime = join(home, ".isolate");
 
-/** realpath, or null if the path doesn't resolve. */
-async function real(p: string): Promise<string | null> {
-  try {
-    return await Deno.realPath(p);
-  } catch {
-    return null;
-  }
+console.log("Finding the latest isolate release…");
+const relRes = await fetch(
+  `https://api.github.com/repos/${REPO}/releases/latest`,
+  { headers: { ...UA, accept: "application/vnd.github+json" } },
+);
+if (!relRes.ok) {
+  console.error(`✗ GitHub API ${relRes.status} ${relRes.statusText}.`);
+  Deno.exit(1);
 }
+// deno-lint-ignore no-explicit-any
+const rel: any = await relRes.json();
+// deno-lint-ignore no-explicit-any
+const asset = (rel.assets ?? []).find((a: any) =>
+  /^isolate-.*\.tar\.gz$/.test(a.name)
+);
+const url: string = asset ? asset.browser_download_url : rel.tarball_url;
+const isSource = !asset;
+console.log(`Installing isolate ${rel.tag_name}…`);
 
-/** Read `name:` from a SKILL.md frontmatter, else fall back to the dir name. */
-async function skillName(skillDir: string): Promise<string> {
-  try {
-    const md = await Deno.readTextFile(join(skillDir, "SKILL.md"));
-    const m = md.match(/^name:\s*(\S+)/m);
-    if (m) return m[1];
-  } catch { /* no SKILL.md / unreadable */ }
-  return basename(skillDir);
+const tmp = await Deno.makeTempDir({ prefix: "isolate-install-" });
+const tgz = join(tmp, "bundle.tar.gz");
+const dl = await fetch(url, { headers: UA });
+if (!dl.ok) {
+  console.error(`✗ download failed: ${dl.status} ${dl.statusText}.`);
+  Deno.exit(1);
 }
-
-/**
- * The checkout-inside-the-skill layout: the target dir is an ancestor of this
- * repo, so it can't be replaced by a symlink. Link the skill's entries
- * (SKILL.md, references/, …) into it one by one. Existing symlinks that
- * point into this repo are re-pointed; anything else is left untouched.
- */
-async function linkEntries(skillDir: string, target: string, repoReal: string) {
-  for await (const entry of Deno.readDir(skillDir)) {
-    const src = join(skillDir, entry.name);
-    const dest = join(target, entry.name);
-    const destReal = await real(dest);
-    const srcReal = await real(src);
-    if (destReal && srcReal && destReal === srcReal) continue; // already right
-    const info = await lstat(dest);
-    if (info) {
-      // Replace only our own links: a symlink that points into this repo
-      // (possibly dangling after a re-layout). Never touch real files.
-      if (!info.isSymlink) {
-        console.warn(`⚠ ${dest} exists and isn't ours — leaving it.`);
-        continue;
-      }
-      const raw = await Deno.readLink(dest);
-      const resolved = raw.startsWith("/") ? raw : join(target, raw);
-      if (!resolved.startsWith(repoReal + "/")) {
-        console.warn(`⚠ ${dest} links outside this repo — leaving it.`);
-        continue;
-      }
-      await Deno.remove(dest);
-    }
-    await Deno.symlink(src, dest);
-    console.log(`  ↳ linked ${entry.name}`);
-  }
-}
-
-async function installSkill(skillDir: string, repoDir: string): Promise<void> {
-  const home = Deno.env.get("HOME");
-  if (!home) {
-    console.warn("⚠ HOME not set — skipping skill install.");
-    return;
-  }
-  const name = await skillName(skillDir);
-  const skillsRoot = join(home, ".claude", "skills");
-  const target = join(skillsRoot, name);
-
-  const targetReal = await real(target);
-  const sourceReal = await real(skillDir);
-  const repoReal = (await real(repoDir)) ?? repoDir;
-
-  // Already pointing at (or literally being) this skill → nothing to do.
-  if (targetReal && sourceReal && targetReal === sourceReal) {
-    console.log(`✓ skill '${name}' already installed → ${target}`);
-    return;
-  }
-
-  // The dev layout where this checkout lives INSIDE the target skill dir
-  // (e.g. ~/.claude/skills/deno-fresh2/isolate): link entries individually.
-  if (targetReal && repoReal.startsWith(targetReal + "/")) {
-    console.log(`✓ skill '${name}' hosts this checkout — linking entries:`);
-    await linkEntries(skillDir, target, repoReal);
-    return;
-  }
-
-  const info = await lstat(target);
-  if (info) {
-    // Something else is already there — don't destroy it.
-    console.warn(
-      `⚠ ${target} already exists and points elsewhere (${
-        targetReal ?? "?"
-      }).\n` +
-        `  Leaving it untouched. Remove it and re-run if you want to link this checkout.`,
-    );
-    return;
-  }
-
-  await Deno.mkdir(skillsRoot, { recursive: true });
-  await Deno.symlink(skillDir, target);
-  console.log(`✓ linked skill '${name}' → ${target}`);
-}
-
-async function installCli(): Promise<void> {
-  console.log(`Installing the '${CLI_NAME}' CLI globally from ${JSR_PKG}…`);
-  const cmd = new Deno.Command("deno", {
-    // -g global · -A all perms (it spawns deno/npm/playwright + touches the fs)
-    // -f force overwrite of any existing bin · -n names the binary `isolate`
-    args: ["install", "-gA", "-f", "-n", CLI_NAME, JSR_PKG],
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  const { success } = await cmd.output();
-  if (!success) {
-    console.error(
-      `✗ '${CLI_NAME}' global install failed. You can retry with:\n` +
-        `    deno install -gA -f -n ${CLI_NAME} ${JSR_PKG}`,
-    );
-    Deno.exit(1);
-  }
-  console.log(
-    `✓ '${CLI_NAME}' installed. If it isn't found, add Deno's bin dir to PATH ` +
-      `(deno reports it above; usually ~/.deno/bin).`,
-  );
-}
-
-const repoDir = import.meta.dirname;
-if (!repoDir) {
-  console.error("Cannot resolve the install directory.");
+await Deno.writeFile(tgz, new Uint8Array(await dl.arrayBuffer()));
+const ex = join(tmp, "bundle");
+await Deno.mkdir(ex, { recursive: true });
+const untar = await new Deno.Command("tar", {
+  args: ["-xzf", tgz, "-C", ex, ...(isSource ? ["--strip-components=1"] : [])],
+  stdout: "null",
+  stderr: "inherit",
+}).output();
+if (!untar.success) {
+  console.error("✗ failed to extract the release bundle.");
   Deno.exit(1);
 }
 
-// Every directory under skills/ that carries a SKILL.md is an installable skill.
-const skillsDir = join(repoDir, "skills");
-for await (const entry of Deno.readDir(skillsDir)) {
-  if (!entry.isDirectory) continue;
-  const dir = join(skillsDir, entry.name);
-  if (!(await lstat(join(dir, "SKILL.md")))) continue;
-  await installSkill(dir, repoDir);
-}
+// Swap into ~/.isolate.
+await Deno.remove(runtime, { recursive: true }).catch(() => {});
+await Deno.mkdir(dirname(runtime), { recursive: true });
+await Deno.rename(ex, runtime);
+console.log(`✓ runtime → ${runtime}`);
 
-await installCli();
-console.log("\nDone. Try:  isolate list   (from inside a Fresh project)");
+// Finish with the bundle's own installer (skills → ~/.claude/skills, + the bin).
+const finish = await new Deno.Command("deno", {
+  args: ["run", "-A", join(runtime, "cli", "lib", "install-core.ts")],
+  stdout: "inherit",
+  stderr: "inherit",
+}).output();
+Deno.exit(finish.success ? 0 : 1);

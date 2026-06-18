@@ -1,0 +1,71 @@
+name: Release
+
+# Auto-bump + publish a GitHub release on every push to main. The release ships
+# ONE bundle (cli + server + ui + skills) as `isolate-vX.Y.Z.tar.gz`; users install
+# it with `deno run -A .../install.ts` and upgrade with `isolate update`.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # Skip the run triggered by our own version-bump commit.
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump patch version (cli/deno.json)
+        id: ver
+        run: |
+          cur=$(jq -r .version cli/deno.json)
+          IFS=. read -r MA MI PA <<< "$cur"
+          new="$MA.$MI.$((PA + 1))"
+          tmp=$(mktemp)
+          jq --arg v "$new" '.version = $v' cli/deno.json > "$tmp" && mv "$tmp" cli/deno.json
+          echo "version=$new" >> "$GITHUB_OUTPUT"
+          echo "Bumped $cur → $new"
+
+      - name: Commit + tag the bump
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add cli/deno.json
+          git commit -m "release: v${{ steps.ver.outputs.version }} (auto-bump) [skip ci]"
+          git tag "v${{ steps.ver.outputs.version }}"
+          git push origin main --follow-tags
+
+      - name: Build the bundle
+        run: |
+          tar -czf "isolate-v${{ steps.ver.outputs.version }}.tar.gz" \
+            --exclude='node_modules' \
+            --exclude='_fresh' \
+            --exclude='test-results' \
+            --exclude='.git' \
+            cli server ui skills
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.ver.outputs.version }}" \
+            "isolate-v${{ steps.ver.outputs.version }}.tar.gz" \
+            --title "isolate v${{ steps.ver.outputs.version }}" \
+            --notes "isolate v${{ steps.ver.outputs.version }} — cli + ui + server + skills bundle.
+
+          Install:
+              deno run -A https://raw.githubusercontent.com/mrg-keystone/isolate/main/install.ts
+
+          Upgrade (skills + CLI + UI):
+              isolate update"

@@ -1,8 +1,0 @@
-{
-  "category": "buttons",
-  "folder": "regular",
-  "controls": {
-    "disabled": { "type": "boolean" },
-    "size": { "type": "select", "options": ["sm", "md", "lg"], "value": "md" }
-  }
-}

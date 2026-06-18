@@ -29,6 +29,7 @@
 | Adding security headers | `plugins/{csp,csrf,cors,ip-filter,trailing-slashes}.md` |
 | Writing tests | `testing.md` |
 | Preview / test one component in isolation | `isolate.md` |
+| Build UI from daisyUI (accessible components, CSS-only interactivity, theming, Figma→UI) | `daisyui-mcp.md` |
 | Wire to a rune/keep backend / propose missing endpoints | `rune-backend.md` |
 | Coming from Fresh 1 | `migration-guide.md` first, then everything |
 | Stuck / weird error | `advanced/troubleshooting.md`, `advanced/api-reference.md` |
@@ -85,6 +86,7 @@
 ### Testing
 - [Testing](testing.md) — unit/integration patterns
 - [isolate](isolate.md) — standalone component/island/page previews with live controls, an event log, and a one-click Playwright runner (bundled tool at `isolate/`)
+- [daisyUI MCP](daisyui-mcp.md) — the `daisyui-blueprint` MCP (`daisyUI-Snippets` + `Figma-to-daisyUI`): accessible component markup + class vocabulary + screenshots, CSS-only (zero-island) interactivity in Fresh, the custom-theme bridge off the stock default look (type/motion/depth/signature moment are still yours), and Figma → daisyUI
 - [rune backend](rune-backend.md) — consume a rune/keep backend (shared DTOs, in-process calls), the separate-backend setup gotchas (Deno workspace + root config, decorators under Vite, literal dynamic import + `deno check`, loading env via `--env-file`, the production-build crash, live-first/fixture-fallback adapter), and the gap audit: emit suggested `.rune` specs + stub-and-TODO for operations the UI needs but the backend lacks
 
 ## Tier 3 — Reference only (load on demand)
@@ -96,7 +98,7 @@
 
 ### Examples (recipes)
 - [API routes](examples/api-routes.md) — `routes/api/` + `Response.json()` patterns
-- [daisyUI](examples/daisyui.md) — install + Tailwind plugin wiring
+- [daisyUI](examples/daisyui.md) — install + Tailwind plugin wiring (the MCP fast path is `daisyui-mcp.md`)
 - [Rendering Markdown](examples/markdown.md) — `@deno/gfm` + `dangerouslySetInnerHTML`
 - [Rendering raw HTML](examples/rendering-raw-html.md) — `dangerouslySetInnerHTML` + XSS warnings
 - [Sharing state between islands](examples/sharing-state-between-islands.md) — per-request signal in a parent (avoid module-level)

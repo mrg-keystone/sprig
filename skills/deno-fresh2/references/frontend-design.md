@@ -138,5 +138,14 @@ Fresh's architecture shapes *how* you deliver the design — lean into it, don't
   `static/`; reference it through a CSS variable. Don't settle for the system stack.
 - **Tailwind**: if the project scaffolded with Tailwind (`@tailwindcss/vite`), express the
   palette/type scale as theme tokens and still avoid the default look — customize, don't ship
-  stock utility soup. daisyUI is available (`references/examples/daisyui.md`) if a component
-  layer helps, but a custom theme beats a default one.
+  stock utility soup.
+- **daisyUI via the MCP — structure only, then make it yours.** The `daisyui-blueprint` MCP
+  (`daisyUI-Snippets` + `Figma-to-daisyUI`, see `references/daisyui-mcp.md`) is the fast way
+  to get *accessible component markup* — and in Fresh especially, its CSS-only dropdowns,
+  collapses, drawers, and theme toggles give you interactivity with **zero islands** (modals
+  too, via their checkbox variant). But daisyUI gives only the accessible **structure**; it
+  delivers none of the pillars this doc demands — distinctive **typography**, a **motion
+  layer**, **depth/atmosphere**, a **signature moment**, cohesion. So pull the structure, then
+  **re-theme it with a custom `@plugin "daisyui/theme"`** (your OKLCH palette, radius, depth)
+  and supply those pillars yourself. Stock daisyUI shipped as-is is the generic look we avoid;
+  a custom theme plus the pillars above is what makes it world-class.

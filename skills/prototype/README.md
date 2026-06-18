@@ -2,7 +2,11 @@
 
 A focused toolkit for building **throwaway, single-file clickable prototypes** —
 the kind you make to answer "what are we building" before any production work.
-Two pieces that ship together:
+Prototypes are styled with **daisyUI** (Tailwind component classes, loaded by CDN,
+no build step), with correct markup pulled from the **daisyUI MCP** — see
+[daisyUI integration](#daisyui-integration-mcp) below.
+
+Two pieces ship together in this repo:
 
 ```
 skills/prototype/
@@ -46,6 +50,32 @@ agent → node …/prototype/scripts/detect.mjs --json <file>.html
 This is a gut-check only — the prototype is throwaway, so it's never blocked on
 the linter.
 
+## daisyUI integration (MCP)
+
+The skill defaults to **daisyUI** for the look-and-feel of every prototype. It's a
+class-based component layer on top of Tailwind, loaded entirely by CDN — so it
+keeps the one-file, no-build, double-click-to-open ethos intact:
+
+```html
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css" />
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+```
+
+To get the component markup right, the skill calls the **daisyUI MCP**
+(`daisyui-blueprint`):
+
+- **`daisyUI-Snippets`** — returns up-to-date class lists, syntax, and
+  copy-paste examples for components, layouts, whole-screen templates
+  (`dashboard`, `login-form`), and themes. Called with nested objects, e.g.
+  `{ "components": { "card": true, "modal": true } }`.
+- **`Figma-to-daisyUI`** — when the source is a Figma URL, fetches the design and
+  drives its conversion into daisyUI markup.
+
+These tools are declared in the skill's `allowed-tools`. The CDN styling itself
+needs nothing but a browser; the MCP only needs to be connected when you want it
+to supply snippets or convert a Figma file. See `SKILL.md` → *Style with daisyUI*.
+
 ## Click-to-feedback (annotate)
 
 `annotate/serve.ts` wraps any prototype with a cmd/ctrl+click feedback overlay
@@ -58,10 +88,15 @@ deno run -A skills/prototype/annotate/serve.ts <your>-prototype.html --open
 
 ## Requirements
 
+- **A browser** — the only hard requirement for the prototype itself (daisyUI +
+  Tailwind load from CDN; it opens by double-clicking).
+- **The daisyUI MCP** (`daisyui-blueprint`) connected, if you want the skill to
+  pull component snippets or convert a Figma design. Without it, daisyUI still
+  styles the page from CDN — you just write the classes directly.
 - **Node** on `PATH` for the skill's optional gut-check wrapper (it just spawns
   Deno).
-- **Deno** on `PATH` only if you use the gut-check; the prototype itself needs
-  nothing but a browser.
+- **Deno** on `PATH` only if you use the gut-check or the annotate wrapper; the
+  prototype itself needs nothing but a browser.
 
 ## Install
 
