@@ -1,0 +1,42 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
+  "_generated": true,
+  "_source": "theme.css",
+  "_note": "DERIVED from theme.css — the token allow-list below mirrors theme.css. Regenerate on change.",
+  "plugins": ["react"],
+  "rules": {
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a daisyUI semantic class (btn-primary, bg-base-100) or var(--color-*)."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value — use a Tailwind utility or a design-system token (--radius-*, --step-*)."
+      },
+      {
+        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\"]?(?:{{DisplayFont}}|{{BodyFont}}))/i]",
+        "message": "Off-system font. Available: {{DisplayFont}} (display, --font-display), {{BodyFont}} (body, --font-body)."
+      }
+    ]
+  },
+  "x-ds": {
+    "_comment": "Token catalog for resolving legal var() / class names. Derived from theme.css.",
+    "fontFamilies": ["{{DisplayFont}}", "{{BodyFont}}"],
+    "semanticColors": [
+      "base-100", "base-200", "base-300", "base-content",
+      "primary", "primary-content", "secondary", "secondary-content",
+      "accent", "accent-content", "neutral", "neutral-content",
+      "info", "success", "warning", "error"
+    ],
+    "radii": ["--radius-selector", "--radius-field", "--radius-box"],
+    "typeScale": ["--step--2", "--step--1", "--step-0", "--step-1", "--step-2", "--step-3", "--step-4", "--step-5"],
+    "easing": ["--ease-bounce", "--ease-standard"],
+    "shades": ["--color-base-content-30", "--color-base-content-50"],
+    "prototypeDesignLint": {
+      "_comment": "Anti-patterns prototype's design-lint flags; list brand-intentional exceptions here.",
+      "knownBrandExceptions": ["{{e.g. cream-palette (pale surface) — delete if none}}"]
+    }
+  }
+}

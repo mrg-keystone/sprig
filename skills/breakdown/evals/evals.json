@@ -1,0 +1,64 @@
+{
+  "skill_name": "isolate-breakdown",
+  "evals": [
+    {
+      "id": 0,
+      "name": "stress-html-breakdown",
+      "prompt": "Here's the finished mock of our task-tracker app: <SOURCE_DIR>/pulse.html. Break it down into a ui-breakdown spec so a build session can rebuild it in Fresh 2 with isolate previews \u2014 the full treatment: components, design tokens, motion, isolate fixtures, everything a build session would need.",
+      "expected_output": "A ui-breakdown/ directory next to the source with index.md (page inventory, usage matrix, build order), design-tokens.md (light AND dark token sets), an extracted data model (task/user/activity schema), 5 pages (dashboard, board, table, reports, settings \u2014 the hash routes, not one page for the one file), shared components incl. modal/toast/command-palette, cropped screenshots + at least one animation filmstrip, parseable isolate fixture.json/case proposals, and the 5 deliberately planted jank traps flagged with rebuild fixes.",
+      "files": [
+        "fixtures/pulse.html"
+      ],
+      "assertions": [
+        "Output tree complete: ui-breakdown/ contains index.md, design-tokens.md, a pages/ dir and a shared components dir",
+        "All 5 hash-route views (dashboard, board, table, reports, settings) recognized as separate pages",
+        "Overlay components (modal, toast, command palette) extracted as shared components, not folded into pages",
+        "At least 4 of the 5 planted jank traps flagged: height animation on row-details, transition:all on table rows, box-shadow hover on kanban cards, scroll-progress width animation, forced synchronous layout in the table scroll handler",
+        "isolate proposals are real, valid files: every proposed fixture.json parses as JSON and uses only valid control types (boolean/number/text/range/select/color); cases follow cases/<name>/<name>.json",
+        "Screenshots captured: at least one PNG per page and at least one filmstrip.png for an animated component",
+        "Implied data model extracted: task entity fields (id, title, assignee, priority, due, status, lane) documented as a schema, not data rows",
+        "Dark-theme token set captured alongside light in the design tokens",
+        "index.md prescribes build order tokens \u2192 shared components \u2192 page-local components \u2192 page compositions",
+        "Sampled component specs contain the required sections (classification, props table, states, events, motion, responsive, a11y, used-on)"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "image-only-fallback",
+      "prompt": "All I have from the designer so far is this screenshot of the dashboard: <SOURCE_DIR>/dashboard.png. Do a ui-breakdown on it so we can start planning the Fresh rebuild \u2014 I know it'll be partial without the HTML, just get me as far as you can.",
+      "expected_output": "A scoped-to-evidence breakdown: one dashboard page (no invented pages), components for the visible regions (topbar/nav, stat cards, line chart, donut+legend, activity feed), tokens sampled from pixels and flagged as approximations, isolate fixture hypotheses, and every inferred claim marked 'described, not extracted \u2014 verify during build'. No fabricated js/css extractions, motion keyframes, or jank measurements.",
+      "files": [
+        "dashboard.png (screenshot of pulse.html#/dashboard)"
+      ],
+      "assertions": [
+        "Output scoped to the evidence: only a dashboard page exists (no fabricated board/table/reports/settings pages)",
+        "Inferred content explicitly marked as described-not-extracted / needing verification during build",
+        "No fabricated extraction artifacts: no js/ or css/ source dumps, no keyframe-level motion specs, no jank measurements",
+        "Design tokens present as pixel-sampled approximations (hex values) and flagged as such",
+        "isolate proposals still provided as parseable fixture.json + case JSON files",
+        "Component census covers the visible dashboard regions: topbar/nav, stat cards, throughput chart, donut+legend, activity feed"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "ledgerline-no-router",
+      "prompt": "Next mock to spec out: <SOURCE_DIR>/ledgerline.html \u2014 our personal-finance app. Break it down into a ui-breakdown spec so a build session can rebuild it in Fresh 2 with isolate previews \u2014 the full treatment: components, design tokens, motion, isolate fixtures, everything a build session would need.",
+      "expected_output": "A ui-breakdown/ with 5 pages detected from [data-view] toggling (no router exists), confirm-dialog shared on authorial evidence, the 5 new jank traps flagged WITHOUT flagging the 3 labeled correct patterns (scaleX bars, transform+opacity motion, CSS scroll-snap carousel \u2014 which must be classified static), all three theme token sets, fixtures carrying the real seeded data, data model with the 900-vs-8 cardinality contrast, breakpoint captures at 640/960/1280.",
+      "files": [
+        "fixtures/ledgerline.html"
+      ],
+      "assertions": [
+        "All 5 [data-view] views (overview, transactions, budgets, recurring, settings) recognized as separate pages despite the mock having NO router (no hash, no History API \u2014 plain container toggling)",
+        "confirm-dialog classified as a shared component on authorial evidence (generic app-wide primitive, global mount) despite its sole current caller being transactions\u2192delete",
+        "At least 4 of the 5 planted jank traps flagged: ticker keyframes animating margin-left, stat-card entrance animating filter: blur(), setTimeout(16)-driven count-up, getBoundingClientRect per chip per frame inside the ticker rAF loop, non-passive unthrottled table-wrap scroll listener",
+        "False-positive discipline: the labeled correct patterns are NOT flagged as jank \u2014 budget bars animating transform: scaleX, view/dialog motion using transform+opacity, and the pure CSS scroll-snap carousel",
+        "The scroll-snap carousel is classified static (CSS-only), not island, despite looking interactive",
+        "All three theme token sets (light, dark, contrast) captured in the design tokens deliverable",
+        "isolate proposals are real, valid files (fixture.json parses, only valid control types, cases/<name>/<name>.json) and case values reproduce the mock's actual seeded data, not invented stand-ins",
+        "Data model documents the entities (transaction, account, budget category, merchant, recurring rule) as schema with the cardinality contrast noted (900-row paginated table vs 8-row unpaginated budget list)",
+        "Screenshots: at least one per page, captures at the source's real breakpoints (640/960/1280 \u2014 incl. the \u2264640px bottom tab bar), and at least one filmstrip for an animated component",
+        "index.md has build order (tokens \u2192 shared \u2192 page-local \u2192 compositions) and a completeness/Unassigned audit"
+      ]
+    }
+  ]
+}

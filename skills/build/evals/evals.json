@@ -1,0 +1,52 @@
+{
+  "skill_name": "isolate-build",
+  "evals": [
+    {
+      "id": 0,
+      "name": "blog-with-dynamic-route",
+      "prompt": "I want to start a new Deno Fresh site. Set up the project and add a blog: a /blog page that lists posts read from a local posts.json file (each post has slug, title, date, body), and a /blog/[slug] page that shows a single post's full body. If the slug doesn't exist, show a 404. Give me the actual files.",
+      "expected_output": "A Fresh 2 project skeleton (main.ts with new App().use(staticFiles()).fsRoutes(), vite.config.ts with @fresh/plugin-vite, utils.ts with createDefine, deno.json) plus routes/blog/index.tsx and routes/blog/[slug].tsx using define.handlers + define.page<typeof handler> + page(), reading params via ctx.params.slug, and throwing HttpError(404) (handled by routes/_error.tsx) for a missing slug.",
+      "files": [],
+      "assertions": [
+        "Server entry uses Fresh 2 `new App().fsRoutes()`",
+        "Build via Vite `@fresh/plugin-vite`, no Fresh 1 `dev.ts`",
+        "Types wired through `createDefine`",
+        "Dynamic route reads `ctx.params.slug`",
+        "Missing slug → `HttpError(404)` (not Fresh 1 `renderNotFound`)",
+        "Unified `_error.tsx`, no Fresh 1 `_404.tsx`/`_500.tsx`",
+        "Uses `define.handlers` + `define.page`",
+        "No Fresh 1 manifest artifacts (dev.ts/fresh.gen.ts/fresh.config.ts)"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "dark-mode-shared-island",
+      "prompt": "On my Fresh app I need a dark-mode toggle button. The toggle lives in the header but a small 'currently: dark/light' label in the footer needs to reflect the same state and update instantly when I click the toggle. Make it work and explain where the files go.",
+      "expected_output": "Uses islands (in islands/ or (_islands)/) with Preact signals. A module-level signal() (or a single signal passed as a prop into both the header and footer islands) shares state across the two islands so they stay in sync. Event handler (onClick) lives inside the island, never passed as a prop. No useState; no function props crossing the island boundary.",
+      "files": [],
+      "assertions": [
+        "Interactivity delivered via islands",
+        "Shared state uses Preact signals",
+        "No `useState` (signals preferred, and useState can't cross islands)",
+        "Toggle and footer label share one signal",
+        "Event handler lives inside the island (onClick in island)",
+        "No function props passed across the island boundary"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "contact-form-and-protected-admin",
+      "prompt": "Add two things to my Deno Fresh app: (1) a /contact page with a form (name + email + message) that validates the email server-side and, on success, redirects to /thanks; (2) a /admin section that's only accessible if there's a logged-in session, otherwise it should bounce to /login. Show me the route and middleware files.",
+      "expected_output": "A POST handler reading await ctx.req.formData(), validating server-side, returning a 303 redirect to /thanks on success (Post/Redirect/Get) and re-rendering with an error otherwise. A routes/admin/_middleware.ts (or equivalent define.middleware) that checks session (cookie/ctx.state) and returns ctx.redirect('/login') when absent, else await ctx.next(). Single (ctx) handler/middleware signature throughout; State typed via define.",
+      "files": [],
+      "assertions": [
+        "POST reads `await ctx.req.formData()`",
+        "Successful POST returns HTTP 303 redirect (PRG)",
+        "Server-side email validation in the contact handler",
+        "/admin gated by directory `_middleware.ts`",
+        "Unauthorized request redirected to `/login`",
+        "Single `(ctx)` handler/middleware signature (no Fresh 1 `(req, ctx)`)"
+      ]
+    }
+  ]
+}

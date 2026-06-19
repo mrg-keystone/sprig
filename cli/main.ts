@@ -16,7 +16,7 @@ import { updateCmd } from "./commands/update.ts";
 
 const cli = new Command()
   .name("isolate")
-  .version("0.4.0")
+  .version("0.5.0")
   .description(
     "Live, typed previews for Fresh 2 components — no config, no separate build.",
   )

@@ -1,0 +1,8 @@
+{
+  "nodeModulesDir": "manual",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "workspace": ["./cli", "./server", "./ui"]
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Detection entrypoint for the impeccable skill.
+ * Detection entrypoint for the prototype skill.
  *
  * This forwards to the toolchain's standalone Deno linter ("design-lint"),
  * which vendors the impeccable detection engine and runs under Deno with no
@@ -10,7 +10,7 @@
  * source of truth.
  *
  * Invocation (unchanged for the agent):
- *   node .claude/skills/impeccable/scripts/detect.mjs --json <targets...>
+ *   node .claude/skills/prototype/scripts/detect.mjs --json <targets...>
  *
  * Resolving design-lint (first hit wins):
  *   1. $DESIGN_LINT_BIN   — absolute path to design-lint/bin/detect.mjs

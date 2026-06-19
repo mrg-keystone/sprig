@@ -1,0 +1,32 @@
+{
+  "_generated": true,
+  "_source": "theme.css",
+  "_note": "DERIVED from theme.css — do not hand-edit. Regenerate when theme.css changes.",
+  "namespace": "{{BrandSlug}}DesignSystem",
+  "source": "daisyui-theme",
+  "globalCssPaths": ["theme.css"],
+  "cdnCssPath": "theme.cdn.css",
+  "themes": [
+    { "name": "brand", "colorScheme": "light", "default": true },
+    { "name": "brand-dark", "colorScheme": "dark", "prefersdark": true }
+  ],
+  "brandFonts": [
+    { "family": "{{DisplayFont}}", "role": "display", "var": "--font-display", "via": "google-fonts" },
+    { "family": "{{BodyFont}}", "role": "body", "var": "--font-body", "via": "google-fonts" }
+  ],
+  "tokens": [
+    { "name": "--color-primary", "light": "{{primary}}", "dark": "{{dark-primary}}", "kind": "color" },
+    { "name": "--color-base-100", "light": "{{surface}}", "dark": "{{dark-surface}}", "kind": "color" },
+    { "name": "--color-base-content", "light": "{{ink}}", "dark": "{{dark-ink}}", "kind": "color" },
+    { "name": "--radius-box", "value": "{{radius-box}}", "kind": "radius" },
+    { "name": "--font-display", "value": "{{DisplayFont}}", "kind": "font" },
+    { "name": "--step-0", "value": "1rem", "kind": "font" },
+    { "name": "--ease-bounce", "value": "cubic-bezier(0.34, 1.56, 0.64, 1)", "kind": "easing" }
+  ],
+  "_tokens_note": "List EVERY token defined in theme.css here — colors (light+dark), radii, border, texture, fonts, type scale, easing, durations, shades. The entries above are illustrative.",
+  "cards": [
+    { "path": "preview/colors.html", "group": "Foundations", "viewport": "760x220", "name": "Colors", "subtitle": "Semantic palette swatches" },
+    { "path": "preview/showcase.html", "group": "Showcase", "viewport": "1280x900", "name": "Dashboard showcase", "subtitle": "full themed dashboard" }
+  ],
+  "_cards_note": "One entry per file in preview/."
+}

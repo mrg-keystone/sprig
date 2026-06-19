@@ -232,6 +232,19 @@ export async function materialize(
   for (const f of STATIC) {
     await write(`${appDir}/${f}`, await Deno.readTextFile(`${UI_DIR}/${f}`));
   }
+
+  // The materialized app runs STANDALONE (not a workspace member), so it must carry
+  // its own `nodeModulesDir` — without a real node_modules, Vite-under-Deno resolves
+  // from the global npm cache and crashes ("Could not find referrer npm package").
+  // (ui/deno.json omits it because, as a workspace member, nodeModulesDir is root-only.)
+  {
+    const djPath = `${appDir}/deno.json`;
+    const dj = JSON.parse(await Deno.readTextFile(djPath));
+    if (dj.nodeModulesDir !== "manual") {
+      dj.nodeModulesDir = "manual";
+      await Deno.writeTextFile(djPath, JSON.stringify(dj, null, 2) + "\n");
+    }
+  }
   await rmrf(`${appDir}/assets`);
   await copy(`${UI_DIR}/assets`, `${appDir}/assets`, { overwrite: true });
   await rmrf(`${appDir}/static`);

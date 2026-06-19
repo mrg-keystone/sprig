@@ -24,8 +24,8 @@ deno run -A https://raw.githubusercontent.com/mrg-keystone/isolate/main/install.
 ```
 
 This downloads the latest release, extracts the runtime to **`~/.isolate/`**,
-copies the skills to **`~/.claude/skills/<name>`**, and installs the global
-`isolate` bin via `deno install` from `~/.isolate/cli/main.ts`. Thereafter:
+copies the skills (each as **`~/.claude/skills/isolate-<name>`**) + shared contracts (`interfaces/`), and
+installs the global `isolate` bin via `deno install` from `~/.isolate/cli/main.ts`. Thereafter:
 
 ```sh
 isolate update      # re-pull the latest skills + CLI + UI (all in the bundle)

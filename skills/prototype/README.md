@@ -3,8 +3,8 @@
 A focused toolkit for building **throwaway, single-file clickable prototypes** —
 the kind you make to answer "what are we building" before any production work.
 Prototypes are styled with **daisyUI** (Tailwind component classes, loaded by CDN,
-no build step), with correct markup pulled from the **daisyUI MCP** — see
-[daisyUI integration](#daisyui-integration-mcp) below.
+no build step) and **Lucide** icons, with correct daisyUI markup pulled from the
+**daisyUI MCP** — see [daisyUI integration](#daisyui-integration-mcp) below.
 
 Two pieces ship together in this repo:
 
@@ -60,9 +60,15 @@ keeps the one-file, no-build, double-click-to-open ethos intact:
 <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
 <link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css" />
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
 ```
 
-To get the component markup right, the skill calls the **daisyUI MCP**
+These tags are shown here as the stack at a glance; **`SKILL.md` is the canonical source**
+for them (and for the daisyUI/Lucide usage gotchas — the explicit `/dist/umd/` Lucide path,
+calling `lucide.createIcons()` after each render). Icons come from **Lucide** (the last tag);
+browse names at <https://lucide.dev/icons/>. See `SKILL.md` → *Icons (Lucide)*.
+
+To get the daisyUI component markup right, the skill calls the **daisyUI MCP**
 (`daisyui-blueprint`):
 
 - **`daisyUI-Snippets`** — returns up-to-date class lists, syntax, and
@@ -88,8 +94,8 @@ deno run -A skills/prototype/annotate/serve.ts <your>-prototype.html --open
 
 ## Requirements
 
-- **A browser** — the only hard requirement for the prototype itself (daisyUI +
-  Tailwind load from CDN; it opens by double-clicking).
+- **A browser** — the only hard requirement for the prototype itself (daisyUI,
+  Tailwind, and Lucide load from CDN; it opens by double-clicking).
 - **The daisyUI MCP** (`daisyui-blueprint`) connected, if you want the skill to
   pull component snippets or convert a Figma design. Without it, daisyUI still
   styles the page from CDN — you just write the classes directly.

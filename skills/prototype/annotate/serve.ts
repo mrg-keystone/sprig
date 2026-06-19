@@ -141,6 +141,7 @@ async function handler(req: Request): Promise<Response> {
       delete data[key];
     } else {
       delete (entry as { _delete?: boolean })._delete;
+      delete (entry as { key?: string }).key; // redundant with the object's own key
       data[key] = entry;
     }
     await writeFeedback(data);
