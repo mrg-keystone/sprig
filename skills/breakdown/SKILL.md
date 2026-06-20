@@ -1,5 +1,5 @@
 ---
-name: isolate-breakdown
+name: "isolate:breakdown"
 description: >-
   Decompose a UI mock into a build-ready spec — page inventory, shared/page-local
   components, design tokens, the implied data model, the interaction-tier map

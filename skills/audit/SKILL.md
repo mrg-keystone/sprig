@@ -1,5 +1,5 @@
 ---
-name: isolate-audit
+name: "isolate:audit"
 description: >-
   Hunt down and FIX bugs and performance problems in a *running* Fresh 2 +
   isolate app by orchestrating a pipeline of agents: one agent hunts bugs in the

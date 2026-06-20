@@ -1,7 +1,7 @@
 // GitHub-release install/update for isolate. The release ships ONE bundle
 // (deno.json + deno.lock + cli/ + server/ + ui/ + skills/ — a self-contained Deno
 // workspace); we extract it to ~/.isolate, `deno install` its node_modules, copy the
-// skills (as isolate-<name>) + shared contracts (interfaces/) to ~/.claude/skills/, and
+// skills (as isolate:<name>) + shared contracts (interfaces/) to ~/.claude/skills/, and
 // (re)install the global `isolate` bin from ~/.isolate/cli/main.ts against the WORKSPACE
 // ROOT config — so the CLI's in-process keep import (`../../server`) + `../../ui` reads
 // resolve standalone, with no dependency on a dev checkout or symlinks.
@@ -119,14 +119,16 @@ export async function extractToRuntime(rel: Release): Promise<string> {
 
 function skillNameFrom(md: string, fallback: string): string {
   const m = md.match(/^name:\s*(\S+)/m);
-  return m ? m[1] : fallback;
+  // Strip surrounding quotes — YAML names are quoted (`name: "isolate:build"`).
+  return m ? m[1].replace(/^["']|["']$/g, "") : fallback;
 }
 
 /**
  * Install the bundled skills + shared contracts FLAT under ~/.claude/skills.
- * The umbrella is an `isolate-` NAME PREFIX (isolate-build, isolate-breakdown, …),
- * NOT a subdirectory: Claude Code only discovers skills that are direct children of
- * ~/.claude/skills, so a nested ~/.claude/skills/isolate/<name> would never load.
+ * The umbrella is an `isolate:` NAMESPACE PREFIX (isolate:build, isolate:breakdown, …) —
+ * `:` is Claude Code's plugin:skill separator, so a flat colon-named folder reads as the
+ * `isolate` namespace. (A nested ~/.claude/skills/isolate/<name> would NOT load — only
+ * direct children of ~/.claude/skills are discovered; the colon flattens the namespace.)
  * Contracts go to ~/.claude/skills/interfaces so the cross-skill `../interfaces/<x>.md`
  * path resolves (skills + interfaces stay siblings, as in the dev checkout).
  * Never deletes a git checkout.
@@ -154,8 +156,8 @@ export async function installSkills(bundleDir: string): Promise<void> {
     const mdPath = join(dir, "SKILL.md");
     if (!(await exists(mdPath))) continue; // not an installable skill
     const name = skillNameFrom(await Deno.readTextFile(mdPath), e.name);
-    // Enforce the `isolate-` umbrella prefix even if a SKILL.md frontmatter omits it.
-    const installName = name.startsWith("isolate-") ? name : `isolate-${name}`;
+    // Enforce the `isolate:` namespace prefix even if a SKILL.md frontmatter omits it.
+    const installName = name.startsWith("isolate:") ? name : `isolate:${name}`;
     const target = join(skillsRoot, installName);
     // Never delete a git checkout — a dev layout keeps the repo inside the skill.
     if (await exists(join(target, ".git"))) {

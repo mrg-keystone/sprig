@@ -1,5 +1,5 @@
 {
-  "skill_name": "isolate-audit",
+  "skill_name": "isolate:audit",
   "notes": "Targets a running build app with planted bugs. The fixture is fixtures/buggy-shop (boot per its README: symlink node_modules from fixtures/fresh-app, then `deno task dev`). The skill orchestrates a 4-stage agent pipeline (hunt -> root-cause -> fix -> validate) and leaves fixes.md as the record. Run the with-skill subagent with the app already booted and the base URL provided; the baseline gets the same.",
   "evals": [
     {

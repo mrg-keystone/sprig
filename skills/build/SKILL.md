@@ -1,5 +1,5 @@
 ---
-name: isolate-build
+name: "isolate:build"
 description: >-
   Expert guidance for building web apps with Fresh 2 — the Deno + Preact full-stack
   framework (Vite builds, server-rendered, islands). Use this whenever the user is

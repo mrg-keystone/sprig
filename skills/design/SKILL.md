@@ -1,5 +1,5 @@
 ---
-name: isolate-design
+name: "isolate:design"
 description: Create a reusable design-system artifact — a daisyUI-5 brand theme plus tokens, component/chart recipes, and consume guides — that the prototype skill can apply with zero translation. Use this whenever the user wants to build or generate a design system, brand theme, or design tokens: phrases like "create a design system", "make a brand/design system", "build a theme for our brand", "turn this palette/brand/logo/Figma into a design system", "design tokens our prototypes and Fresh apps can share", or "a house style we can reuse". Produces a folder whose single source of truth is one theme.css, with derived files, docs, preview specimens, and its own SKILL.md so the output is itself an invokable skill. NOT for applying an already-built design system (use its consume recipe, or the prototype skill), restyling a single component, or building a one-off throwaway mock (that's the prototype skill).
 version: 1.1.0
 user-invocable: true

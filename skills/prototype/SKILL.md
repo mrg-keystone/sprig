@@ -1,5 +1,5 @@
 ---
-name: isolate-prototype
+name: "isolate:prototype"
 description: Use when the user wants a fast, throwaway, single-file clickable HTML prototype to answer "what are we building" — the complete look-and-feel and main flow of an app, not a production build. Builds ONE self-contained .html with hardcoded data, fake in-memory interactions, CDN scripts only, that opens by double-clicking. Deliberately includes the unglamorous states (empty, loading, error toast, content overflow) where real requirements hide. Also use to change, extend, or iterate on a prototype that already exists — add or rework a screen, fix the flow, restyle, tweak the fake data — when the user points at a *-prototype.html or asks to improve a demo you built. Trigger for "mock up", "prototype", "demo screen", "clickable wireframe", "show me what X looks like", "add a screen to the prototype", "change/iterate on the prototype", or turning a spec/notes/rough draft, or a Figma URL, into a tangible demo. NOT for production code, real backends, component libraries, or anything that must be maintained.
 version: 1.4.0
 user-invocable: true

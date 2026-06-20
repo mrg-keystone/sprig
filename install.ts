@@ -7,7 +7,7 @@
 //
 // Downloads the latest GitHub release bundle (cli + server + ui + skills) into
 // ~/.isolate, then hands off to the bundle's own installer to copy the skills to
-// ~/.claude/skills (skills as isolate-<name>) and install the global `isolate` bin. After this, use
+// ~/.claude/skills (skills as isolate:<name>) and install the global `isolate` bin. After this, use
 // `isolate update` to upgrade everything (skills, CLI, and the bundled UI).
 //
 // Standalone by design — it can't import the bundle's modules before the bundle
