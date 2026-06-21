@@ -4,6 +4,10 @@ _fresh/
 test-results/
 .DS_Store
 
+# sprig build output (app/build.ts → static/) + server-only build manifest
+/static/
+/.sprig-manifest.json
+
 # scaffolding kept locally, not shipped — the old code lives in git history
 /reference/
 /spec/

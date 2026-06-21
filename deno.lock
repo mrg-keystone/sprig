@@ -26,6 +26,7 @@
     "jsr:@hono/hono@4.6.3": "4.6.3",
     "jsr:@mrg-keystone/keep@1": "1.22.0",
     "jsr:@std/assert@*": "1.0.19",
+    "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/bytes@^1.0.6": "1.0.6",
     "jsr:@std/dotenv@~0.225.5": "0.225.7",
     "jsr:@std/encoding@^1.0.10": "1.0.10",
@@ -62,6 +63,7 @@
     "npm:@babel/core@^7.28.0": "7.29.7",
     "npm:@babel/preset-react@^7.27.1": "7.29.7_@babel+core@7.29.7",
     "npm:@opentelemetry/api@^1.9.0": "1.9.1",
+    "npm:@preact/signals-core@^1.8.0": "1.14.2",
     "npm:@preact/signals@^2.5.1": "2.9.1_preact@10.29.2",
     "npm:@preact/signals@^2.9.0": "2.9.1_preact@10.29.2",
     "npm:@prefresh/vite@^2.4.8": "2.4.12_preact@10.29.2_vite@7.3.3",
@@ -87,6 +89,7 @@
     "npm:tailwindcss@^4.1.10": "4.3.0",
     "npm:vite@^7.1.3": "7.3.3",
     "npm:vite@^7.1.4": "7.3.3",
+    "npm:web-tree-sitter@0.25": "0.25.10",
     "npm:zod@3": "3.23.8",
     "npm:zod@3.23.8": "3.23.8"
   },
@@ -1734,6 +1737,9 @@
       ],
       "bin": true
     },
+    "web-tree-sitter@0.25.10": {
+      "integrity": "sha512-Y09sF44/13XvgVKgO2cNDw5rGk6s26MgoZPXLESvMXeefBf7i6/73eFurre0IsTW6E14Y0ArIzhUMmjoc7xyzA=="
+    },
     "yallist@3.1.1": {
       "integrity": "sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g=="
     },
@@ -1746,7 +1752,23 @@
     }
   },
   "workspace": {
+    "dependencies": [
+      "jsr:@std/assert@1",
+      "jsr:@std/fs@1",
+      "jsr:@std/path@1",
+      "npm:@preact/signals-core@^1.8.0",
+      "npm:web-tree-sitter@0.25"
+    ],
     "members": {
+      "app": {
+        "dependencies": [
+          "jsr:@std/assert@1",
+          "jsr:@std/fs@1",
+          "jsr:@std/path@1",
+          "npm:@preact/signals-core@^1.8.0",
+          "npm:web-tree-sitter@0.25"
+        ]
+      },
       "cli": {
         "dependencies": [
           "jsr:@cliffy/ansi@^1.0.0-rc.7",

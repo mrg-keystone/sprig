@@ -1,0 +1,22 @@
+<!-- Flat gallery index (fallback view). WS4 ports the full grouped gallery +
+     per-case <run-tests> islands; this is the minimal SSR scaffold. -->
+<main class="gallery">
+  <h1>isolate <span class="gallery__count">{{ count }} cases</span></h1>
+  @if (problems.length > 0) {
+    <section class="gallery__problems">
+      @for (p of problems; track p.path) {
+        <p>{{ p.kind }}: {{ p.detail }}</p>
+      }
+    </section>
+  }
+  <ul class="gallery__grid">
+    @for (c of cases; track c.route) {
+      <li class="gallery__card">
+        <a [attr.href]="c.route">{{ c.label }}</a>
+        <span class="gallery__badge">{{ c.kind }}</span>
+      </li>
+    } @empty {
+      <li>No cases.</li>
+    }
+  </ul>
+</main>

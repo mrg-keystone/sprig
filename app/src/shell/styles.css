@@ -1,0 +1,29 @@
+/* Document-root styling escapes view encapsulation via :global. The terracotta/
+   paper design tokens are ported from the isolate UI's styles.css. */
+:global(:root) {
+  --iso-ink: #17150f;
+  --iso-ink-2: #6b6453;
+  --iso-ink-3: #9b927c;
+  --iso-paper: #f7f3ea;
+  --iso-surface: #fffdf8;
+  --iso-line: #e4ddcc;
+  --iso-line-2: #d8cfb8;
+  --iso-accent: #c2410c;
+  --iso-accent-soft: #f4e3d6;
+  --iso-ok: #15803d;
+  --iso-fail: #b91c1c;
+  --iso-island: #7c3aed;
+  --iso-page: #a16207;
+  --iso-r: 8px;
+  --iso-r-sm: 6px;
+}
+:global(body) {
+  margin: 0;
+  background: var(--iso-paper);
+  color: var(--iso-ink);
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  -webkit-font-smoothing: antialiased;
+}
+.app-root {
+  min-height: 100vh;
+}
