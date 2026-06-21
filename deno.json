@@ -1,25 +1,18 @@
 {
-  "workspace": ["./backend", "./ui"],
-  "exclude": ["fixtures", "tree-sitter-angular-template"],
+  "exclude": ["tree-sitter-angular-template"],
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
   },
   "imports": {
     "@sprig/core": "./ui/.sprig/core.ts",
-    "@sprig/keep": "./packages/keep/mod.ts",
     "@preact/signals-core": "npm:@preact/signals-core@^1.8.0",
+    "web-tree-sitter": "npm:web-tree-sitter@^0.25",
     "@std/path": "jsr:@std/path@^1",
     "@std/fs": "jsr:@std/fs@^1",
-    "@std/assert": "jsr:@std/assert@^1",
-    "playwright": "npm:playwright@^1.49"
+    "@std/assert": "jsr:@std/assert@^1"
   },
   "tasks": {
-    "build": "deno run -A packages/keep/cli.ts build ui",
-    "start": "deno serve -A --unstable-kv serve.ts",
-    "serve": "deno serve -A --unstable-kv serve.ts",
-    "dev": "deno run -A packages/keep/cli.ts dev",
-    "sprig": "deno run -A packages/keep/cli.ts",
-    "test": "RUNE_E2E=1 deno test -A"
+    "test": "deno test -A ui/.sprig/compiler/compiler.test.ts"
   }
 }

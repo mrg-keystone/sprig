@@ -1,8 +1,0 @@
-<!-- toast-host: client-DI toast queue with §13 [@slide] enter animation, §6 @for/@switch -->
-<div class="toasts" aria-live="polite">@for (t of toasts(); track t.id) {
-    <div [class]="['toast', 'toast--' + t.kind]" [@slide]="'in'" (@slide.done)="onDone($event)">
-      @switch (t.kind) { @case ('success') { <svg-icon name="check" label="ok"></svg-icon> } @case ('error') { <span>!</span> } @default { <span>i</span> } }
-      <span class="toast__text">{{ t.text }}</span>
-      <button class="toast__x" (click)="dismiss(t.id)" [attr.aria-label]="'dismiss'">×</button>
-    </div>
-  } @empty {  }</div>
