@@ -15,7 +15,9 @@
     "@std/assert": "jsr:@std/assert@^1"
   },
   "tasks": {
-    "build:app": "deno run -A app/build.ts",
+    "sprig": "deno run -A framework/cli.ts",
+    "dev": "deno run -A framework/cli.ts dev app",
+    "build": "deno run -A framework/cli.ts build app",
     "start": "deno serve -A --unstable-kv serve.ts"
   }
 }
