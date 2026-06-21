@@ -1,0 +1,19 @@
+<!--
+  avatar-stack — STATIC + PARAMETRIZED (no logic.ts): implied @input `users` (User[]).
+  Renders overlapping avatar chips from data alone — no calls/events, ships zero JS.
+  §6 @for ($first, @empty) + §2 [style.--customProp] / [attr.title] / [class.avatar--first].
+  u.color is a real hex, so binding it to the --avatar-color custom property is a valid colour.
+-->
+<div class="avatar-stack">
+  @for (u of users; track u.id; let first = $first) {
+    <span
+      class="avatar"
+      [style.--avatar-color]="u.color"
+      [attr.title]="u.name"
+      [class.avatar--first]="first"
+    ></span>
+  } @empty {
+    <span class="avatar avatar--empty">∅</span>
+  }
+  <small class="avatar__count" [attr.data-count]="users.length">{{ users.length }}</small>
+</div>

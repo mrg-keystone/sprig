@@ -1,0 +1,9 @@
+<!-- counter — ISLAND. Signals read as count(); methods called as inc()/dec(). -->
+<div class="counter">
+  <button class="counter__btn" type="button" (click)="dec()" [disabled]="count() <= 0">−</button>
+  <output class="counter__value">{{ count() }}</output>
+  <button class="counter__btn" type="button" (click)="inc()">+</button>
+  @if (count() >= 5) {
+    <span class="counter__badge">🔥 on a roll</span>
+  }
+</div>

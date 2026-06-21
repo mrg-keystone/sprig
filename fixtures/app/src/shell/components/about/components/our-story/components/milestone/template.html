@@ -1,0 +1,12 @@
+<!--
+  milestone — child of our-story (our-story/components/milestone), and itself a parent: it nests
+  components/year-badge. STATIC + PARAMETRIZED — implied @inputs: year, title, note (passed as
+  plain attributes by our-story). It forwards `year` down to the deepest component, <year-badge>.
+-->
+<li class="milestone">
+  <year-badge [year]="year"></year-badge>
+  <div class="milestone__body">
+    <h3 class="milestone__title">{{ title }}</h3>
+    <p class="milestone__note">{{ note }}</p>
+  </div>
+</li>

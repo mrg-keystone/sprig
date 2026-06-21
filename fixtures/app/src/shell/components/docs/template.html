@@ -1,0 +1,26 @@
+<!--
+  docs — a template-feature GALLERY. STATIC page (no logic.ts, no free names): plain links and
+  a single NAMED outlet `example`. Each link is a `name=value` URL segment selecting which
+  example the <router-outlet name="example"> shows (route `example=:topic` in main.ts). The
+  outlet is declared here and matched by that route (verified by check-outlets.ts).
+-->
+<section class="docs">
+  <header class="docs__head">
+    <h1>Template feature gallery</h1>
+    <p class="docs__lede">
+      Every Angular-template feature sprig parses — pipes, control flow, content projection and
+      the legacy structural directives — each on its own deep-linkable example.
+    </p>
+  </header>
+
+  <nav class="docs__nav" aria-label="examples">
+    <a href="/docs/example=pipes/">Pipes</a>
+    <a href="/docs/example=control-flow/">Control flow</a>
+    <a href="/docs/example=projection/">Content projection</a>
+    <a href="/docs/example=legacy/">Legacy directives</a>
+  </nav>
+
+  <div class="docs__stage">
+    <router-outlet name="example"></router-outlet>
+  </div>
+</section>

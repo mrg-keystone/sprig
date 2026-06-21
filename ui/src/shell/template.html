@@ -1,0 +1,20 @@
+<!-- shell — the root layout; <router-outlet> hosts the matched page. -->
+<div class="shell">
+  <header class="shell__bar">
+    <a class="brand" href="/ui/">sprig</a>
+    <nav class="nav">
+      <a href="/ui/">Dashboard</a>
+      <a href="/ui/board">Board</a>
+      <a href="/ui/users/ada">Ada</a>
+    </nav>
+    <!-- a persistent island: lives in the shell (outside the outlet), so it keeps
+         its state across soft navigations. -->
+    <counter></counter>
+  </header>
+  <main class="shell__main">
+    <router-outlet></router-outlet>
+  </main>
+  <footer class="shell__foot">
+    <small>Built with sprig — keep backend + in-process Backend, rendered from template.html.</small>
+  </footer>
+</div>

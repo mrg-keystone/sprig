@@ -1,0 +1,25 @@
+.settings {
+  display: grid;
+  grid-template-columns: 14rem 1fr 16rem;
+  gap: 1.5rem;
+}
+.settings__side {
+  border-right: 1px solid #e5e7eb;
+  padding-right: 1.5rem;
+}
+.settings__panel {
+  border-left: 1px solid #e5e7eb;
+  padding-left: 1.5rem;
+}
+/* shared, global-by-convention styles for the outlet panels */
+.panel h3 {
+  margin: 0 0 0.5rem;
+}
+.panel ul {
+  margin: 0;
+  padding-left: 1rem;
+  color: #374151;
+}
+.topic h2 {
+  margin-top: 0;
+}

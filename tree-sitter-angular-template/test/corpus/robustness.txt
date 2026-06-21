@@ -1,0 +1,151 @@
+========================================
+css custom property binding
+========================================
+
+<a [style.--my-var]="c"></a>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name)
+      (property_binding
+        name: (binding_name)
+        value: (identifier)))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+percent style unit
+========================================
+
+<i [style.width.%]="p"></i>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name)
+      (property_binding
+        name: (binding_name)
+        value: (identifier)))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+namespaced attribute binding
+========================================
+
+<svg [attr.xlink:href]="u"></svg>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name)
+      (property_binding
+        name: (binding_name)
+        value: (identifier)))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+keyed access numeric
+========================================
+
+{{ items[0] }}
+
+---
+
+(template
+  (interpolation
+    expression: (subscript_expression
+      object: (identifier)
+      index: (number))))
+
+========================================
+keyed access string
+========================================
+
+{{ obj['k'] }}
+
+---
+
+(template
+  (interpolation
+    expression: (subscript_expression
+      object: (identifier)
+      index: (string))))
+
+========================================
+single-quoted attribute
+========================================
+
+<div id='main'></div>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name)
+      (attribute
+        name: (attribute_name)
+        value: (quoted_value
+          (attribute_text))))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+scientific number
+========================================
+
+{{ 1.5e-2 }}
+
+---
+
+(template
+  (interpolation
+    expression: (number)))
+
+========================================
+numeric object key
+========================================
+
+<a [m]="{ 1: a, 2: b }"></a>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name)
+      (property_binding
+        name: (binding_name)
+        value: (object
+          (pair
+            key: (number)
+            value: (identifier))
+          (pair
+            key: (number)
+            value: (identifier)))))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+namespaced tag
+========================================
+
+<svg:circle></svg:circle>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name))
+    (end_tag
+      name: (tag_name))))

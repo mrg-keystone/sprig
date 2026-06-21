@@ -1,0 +1,18 @@
+<!--
+  settings — a page with THREE NAMED outlets. The URL carries which component each shows:
+    /settings/main=question/sidebar=admin/panel=profile/
+      → sidebar = admin nav, main = "question" topic, panel = the profile form island
+  The outlet routes are this route's children in main.ts (sidebar / main / panel). Each
+  <router-outlet name="…"> here must be matched by a route — verified by check-outlets.ts.
+-->
+<section class="settings">
+  <aside class="settings__side">
+    <router-outlet name="sidebar"></router-outlet>
+  </aside>
+  <div class="settings__main">
+    <router-outlet name="main"></router-outlet>
+  </div>
+  <aside class="settings__panel">
+    <router-outlet name="panel"></router-outlet>
+  </aside>
+</section>

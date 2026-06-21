@@ -1,0 +1,48 @@
+.board {
+  display: grid;
+  grid-template-columns: 1fr 18rem;
+  grid-template-areas:
+    "head head"
+    "cols panel"
+    "detail detail";
+  gap: 1rem;
+}
+.board__head {
+  grid-area: head;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.board__title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+.board__meta {
+  margin: 0.25rem 0 0;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+.board__filters {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  text-decoration: none;
+  color: #374151;
+}
+.board__cols {
+  grid-area: cols;
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+.board__panel {
+  grid-area: panel;
+}
+.board__detail {
+  grid-area: detail;
+}
+.board__empty {
+  color: #6b7280;
+}

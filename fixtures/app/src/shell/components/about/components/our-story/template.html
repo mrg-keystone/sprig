@@ -1,0 +1,14 @@
+<!--
+  our-story — a page-local component of the `about` page (about/components/our-story). It has
+  its OWN components/ (milestone), which in turn nests components/ (year-badge). This proves the
+  components/ tree nests to any depth, every level the same folder-component shape, with tag
+  resolution descending into each component's local components/ first. STATIC (no free names).
+-->
+<section class="story">
+  <h2 i18n="@@ourStory">Our story</h2>
+  <ol class="story__timeline">
+    <milestone year="2025" title="First commit" note="A folder is a component: template.html plus optional logic."></milestone>
+    <milestone year="2026" title="Islands ship" note="Selective hydration over server-rendered HTML."></milestone>
+    <milestone year="2026" title="Named outlets" note="The whole screen lives in the URL — deep-linkable."></milestone>
+  </ol>
+</section>

@@ -1,0 +1,135 @@
+========================================
+defer full
+========================================
+
+@defer (on viewport) { <c /> } @placeholder (minimum 500ms) { <p>ph</p> } @loading (after 100ms; minimum 1s) { <s /> } @error { <e /> }
+
+---
+
+(template
+  (defer_block
+    triggers: (defer_triggers
+      (defer_trigger
+        (defer_on)))
+    (block
+      (self_closing_element
+        name: (tag_name)))
+    placeholder: (placeholder_clause
+      (block_parameters
+        (block_parameter
+          duration: (duration)))
+      (block
+        (element
+          (start_tag
+            name: (tag_name))
+          (text)
+          (end_tag
+            name: (tag_name)))))
+    loading: (loading_clause
+      (block_parameters
+        (block_parameter
+          duration: (duration))
+        (block_parameter
+          duration: (duration)))
+      (block
+        (self_closing_element
+          name: (tag_name))))
+    error: (error_clause
+      (block
+        (self_closing_element
+          name: (tag_name))))))
+
+========================================
+defer combined triggers
+========================================
+
+@defer (on idle; on timer(5s)) { <c /> }
+
+---
+
+(template
+  (defer_block
+    triggers: (defer_triggers
+      (defer_trigger
+        (defer_on))
+      (defer_trigger
+        (defer_on
+          duration: (duration))))
+    (block
+      (self_closing_element
+        name: (tag_name)))))
+
+========================================
+defer interaction with ref and prefetch
+========================================
+
+@defer (on interaction(btn); prefetch on idle) { <c /> } @placeholder { <p>x</p> }
+
+---
+
+(template
+  (defer_block
+    triggers: (defer_triggers
+      (defer_trigger
+        (defer_on
+          (trigger_ref
+            ref: (identifier))))
+      (defer_trigger
+        (defer_on)))
+    (block
+      (self_closing_element
+        name: (tag_name)))
+    placeholder: (placeholder_clause
+      (block
+        (element
+          (start_tag
+            name: (tag_name))
+          (text)
+          (end_tag
+            name: (tag_name)))))))
+
+========================================
+defer when
+========================================
+
+@defer (when ready()) { <c /> }
+
+---
+
+(template
+  (defer_block
+    triggers: (defer_triggers
+      (defer_trigger
+        condition: (call_expression
+          function: (identifier)
+          arguments: (arguments))))
+    (block
+      (self_closing_element
+        name: (tag_name)))))
+
+========================================
+let declarations
+========================================
+
+@let total = items.reduce((s, i) => s + i.p, 0);
+
+---
+
+(template
+  (let_declaration
+    name: (identifier)
+    value: (call_expression
+      function: (member_expression
+        object: (identifier)
+        property: (identifier))
+      arguments: (arguments
+        (arrow_function
+          parameters: (arrow_parameters
+            (identifier)
+            (identifier))
+          body: (binary_expression
+            left: (identifier)
+            right: (member_expression
+              object: (identifier)
+              property: (identifier))))
+        (number)))))

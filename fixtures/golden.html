@@ -1,0 +1,382 @@
+<!--
+  golden.html — Angular template "golden" fixture.
+
+  A single Angular *component template* that exercises EVERY feature documented in
+  ../angular-html-features.md. Sectioned with comments matching the doc (§1–§13) so each
+  feature is locatable. Modern control flow (@if/@for/@switch/@defer) and legacy structural
+  directives (*ngIf/*ngFor/*ngSwitch) intentionally coexist — both are valid Angular.
+
+  Assumed backing component API (so the fixture is wireable / coherent):
+    signals : count = signal(0); double = computed(...); items = signal<Item[]>([]);
+              isOpen = signal(false); state = signal('in');
+    props   : name; user; user$: Observable; todos$; data$; status; price; today;
+              ratio; longText; description; color; size; width; isActive; enabled;
+              isOnline; nickname; avatarUrl; profileUrl; logo; trustedHtml; ready;
+              isLoggedIn; rows: Row[]; gender; pluralMap; selectMap; theme;
+              currentUser; isSubmitting; label; email; username; phoneState;
+    methods : save($e?); onClick(); onInput($e); submit(); cancel(); send(); call(v);
+              handle($e); increment(); trackById(i,item); onDone($e); play();
+    pipes   : truncate (custom, declared in component imports)
+    modules : FormsModule (for ngModel); CommonModule (for legacy *ngIf/*ngFor/etc.)
+-->
+
+<!-- ============================================================ -->
+<!-- §1 — INTERPOLATION & TEXT                                    -->
+<!-- ============================================================ -->
+<section class="s1-interpolation">
+  <h1>Hello {{ name }}</h1>
+  <p>1 + 1 = {{ 1 + 1 }}</p>
+  <p>{{ user.firstName + ' ' + user.lastName }}</p>
+  <p>{{ isOnline ? 'Online' : 'Offline' }}</p>
+  <img src="{{ avatarUrl }}" alt="avatar (interpolated attribute)" />
+</section>
+
+<!-- ============================================================ -->
+<!-- §2 — BINDING                                                 -->
+<!-- ============================================================ -->
+<section class="s2-binding">
+
+  <!-- property binding -->
+  <button [disabled]="isSubmitting">Save</button>
+  <app-user [user]="currentUser" [role]="'admin'"></app-user>
+  <a [href]="profileUrl">Profile</a>
+  <img [src]="avatarUrl" alt="avatar" />
+
+  <!-- attribute binding -->
+  <button [attr.aria-label]="label">×</button>
+  <table><tr><td [attr.colspan]="2 + 1">spanned</td></tr></table>
+  <div [attr.data-id]="user.id">data attr</div>
+
+  <!-- class binding: single toggle, object, array -->
+  <div [class.active]="isActive" [class.disabled]="!enabled">single class toggles</div>
+  <div [class]="{ active: isActive, 'text-danger': user.hasError }">class object</div>
+  <div [class]="['card', theme]">class array</div>
+
+  <!-- style binding: single, unit suffix, object -->
+  <p [style.color]="color">single style</p>
+  <div [style.width.px]="width" [style.font-size.rem]="size">unit-suffixed styles</div>
+  <div [style]="{ color: 'red', 'font-weight': 'bold' }">style object</div>
+
+  <!-- event binding (+ $event, key/pointer pseudo-events) -->
+  <button (click)="onClick()">Click</button>
+  <input (input)="onInput($event)" (keyup.enter)="submit()" />
+  <form (submit)="save($event)">
+    <input (keydown.escape)="cancel()" />
+    <div (keyup.control.enter)="send()">ctrl+enter</div>
+    <button type="submit">submit</button>
+  </form>
+  <app-search (results)="handle($event)"></app-search>
+
+  <!-- two-way binding: ngModel, its desugared form, and a custom component model -->
+  <input name="name1" [(ngModel)]="name" />
+  <input name="name2" [ngModel]="name" (ngModelChange)="name = $event" />
+  <app-counter [(value)]="count"></app-counter>
+</section>
+
+<!-- ============================================================ -->
+<!-- §3 — TEMPLATE EXPRESSION OPERATORS                           -->
+<!-- ============================================================ -->
+<section class="s3-operators">
+  <p>{{ user?.address?.city }}</p>            <!-- safe navigation ?. -->
+  <p>{{ nickname ?? 'Anonymous' }}</p>        <!-- nullish coalescing ?? -->
+  <p>{{ user!.name }}</p>                      <!-- non-null assertion ! -->
+  <p>{{ price | currency }}</p>               <!-- pipe | -->
+  <p>{{ $any(user).legacyField }}</p>         <!-- $any() type-cast escape hatch -->
+</section>
+
+<!-- ============================================================ -->
+<!-- §4 — TEMPLATE REFERENCE VARIABLES                            -->
+<!-- ============================================================ -->
+<section class="s4-template-refs">
+
+  <!-- #ref to a DOM element -->
+  <input #phone placeholder="phone" />
+  <button (click)="call(phone.value)">Call</button>
+
+  <!-- #ref to a component instance + method call -->
+  <app-player #player></app-player>
+  <button (click)="player.play()">Play</button>
+
+  <!-- exportAs: grab the ngModel directive instance -->
+  <input #ctrl="ngModel" name="email" [(ngModel)]="email" />
+  <span *ngIf="ctrl.invalid">Invalid email</span>
+
+  <!-- #ref to an <ng-template> (consumed in §10) -->
+  <ng-template #tpl><em>reusable fragment</em></ng-template>
+</section>
+
+<!-- ============================================================ -->
+<!-- §5 — @let : LOCAL TEMPLATE VARIABLES (v18.1+)               -->
+<!-- ============================================================ -->
+<section class="s5-let">
+  @let u = user$ | async;
+  @let fullName = u?.first + ' ' + u?.last;
+  @let total = items().reduce((s, i) => s + i.price, 0);
+
+  <h2>{{ fullName }}</h2>
+  <p>Total: {{ total | currency }}</p>
+
+  @if (u) {
+    <p>Welcome back, {{ u.first }}</p>     <!-- subscribes only once via @let -->
+  }
+</section>
+
+<!-- ============================================================ -->
+<!-- §6 — BUILT-IN CONTROL FLOW (v17+)                            -->
+<!-- ============================================================ -->
+<section class="s6-control-flow">
+
+  <!-- @if / @else if / @else -->
+  @if (user.isAdmin) {
+    <admin-panel />
+  } @else if (user.isMember) {
+    <member-area />
+  } @else {
+    <p>Please sign in.</p>
+  }
+
+  <!-- @if with `as` aliasing of an async value -->
+  @if (user$ | async; as account) {
+    <p>{{ account.name }}</p>
+  }
+
+  <!-- @for : track required; @empty fallback; contextual vars + aliasing -->
+  @for (item of items(); track item.id) {
+    <li>{{ item.name }}</li>
+  } @empty {
+    <li>No items found.</li>
+  }
+
+  @for (row of rows; track row.id; let i = $index, isLast = $last) {
+    <tr [class.last]="isLast">
+      {{ i + 1 }}/{{ $count }}. {{ row.label }}
+      <span [class.first]="$first" [class.even]="$even" [class.odd]="$odd">·</span>
+    </tr>
+  }
+
+  <!-- @switch / @case / @default (strict ===, no fall-through) -->
+  @switch (status) {
+    @case ('loading') { <spinner /> }
+    @case ('error')   { <p>Something went wrong.</p> }
+    @case ('done')    { <results [data]="data$ | async" /> }
+    @default          { <p>Idle</p> }
+  }
+</section>
+
+<!-- ============================================================ -->
+<!-- §7 — @defer : LAZY / DEFERRED LOADING                        -->
+<!-- ============================================================ -->
+<section class="s7-defer">
+
+  <!-- full set of sub-blocks with their options -->
+  @defer (on viewport) {
+    <heavy-chart [data]="data$ | async" />
+  } @placeholder (minimum 500ms) {
+    <p>Scroll down to load the chart…</p>
+  } @loading (after 100ms; minimum 1s) {
+    <spinner />
+  } @error {
+    <p>Failed to load the chart.</p>
+  }
+
+  <!-- every trigger variant -->
+  @defer (on idle)        { <comp-idle /> }      @placeholder { <i>idle…</i> }
+  @defer (on immediate)   { <comp-immediate /> }
+  @defer (on timer(2s))   { <comp-timer /> }
+  @defer (on hover)       { <comp-hover /> }      @placeholder { <i>hover me</i> }
+  @defer (on interaction) { <comp-click /> }      @placeholder { <i>click me</i> }
+  @defer (when isOpen())  { <comp-when /> }       @placeholder { <i>waiting…</i> }
+
+  <!-- explicit trigger element via template ref -->
+  <button #loadBtn>Load on interaction with this button</button>
+  @defer (on interaction(loadBtn)) { <comp-ref /> } @placeholder { <i>…</i> }
+
+  <!-- combined triggers (OR) + prefetch separate from render -->
+  @defer (on viewport; on timer(5s)) { <comp-combined /> } @placeholder { <i>…</i> }
+  @defer (on interaction; prefetch on idle) { <comp-prefetch /> } @placeholder { <i>tap</i> }
+</section>
+
+<!-- ============================================================ -->
+<!-- §8 — LEGACY STRUCTURAL DIRECTIVES (pre-v17, still valid)     -->
+<!-- ============================================================ -->
+<section class="s8-legacy">
+
+  <!-- *ngIf : basic -->
+  <div *ngIf="isLoggedIn">Welcome</div>
+
+  <!-- *ngIf : else -->
+  <div *ngIf="isLoggedIn; else login">Welcome</div>
+  <ng-template #login><a>Sign in</a></ng-template>
+
+  <!-- *ngIf : then / else -->
+  <div *ngIf="ready; then content else loading"></div>
+  <ng-template #content>Ready!</ng-template>
+  <ng-template #loading><spinner /></ng-template>
+
+  <!-- *ngIf : bind + alias an async result with `as` -->
+  <div *ngIf="user$ | async as account">{{ account.name }}</div>
+
+  <!-- *ngFor : trackBy + all contextual locals -->
+  <li *ngFor="let item of items();
+              trackBy: trackById;
+              let i = index;
+              let first = first; let last = last;
+              let even = even; let odd = odd"
+      [class.first]="first" [class.last]="last" [class.even]="even" [class.odd]="odd">
+    {{ i }}: {{ item.name }}
+  </li>
+
+  <!-- *ngSwitch / *ngSwitchCase / *ngSwitchDefault -->
+  <div [ngSwitch]="status">
+    <spinner *ngSwitchCase="'loading'" />
+    <p       *ngSwitchCase="'error'">Error</p>
+    <results *ngSwitchCase="'done'" [data]="data$ | async" />
+    <p       *ngSwitchDefault>Idle</p>
+  </div>
+
+  <!-- desugared form: *ngIf="c" === <ng-template [ngIf]="c"> -->
+  <ng-template [ngIf]="ready"><div>desugared ngIf</div></ng-template>
+</section>
+
+<!-- ============================================================ -->
+<!-- §9 — PIPES                                                   -->
+<!-- ============================================================ -->
+<section class="s9-pipes">
+
+  <!-- basic, parameters, chaining -->
+  {{ price | currency }}
+  {{ price | currency:'EUR':'symbol':'1.2-2' }}
+  {{ name | lowercase | titlecase }}
+
+  <!-- all 13 built-in pipes -->
+  <p>{{ data$ | async }}</p>                       <!-- async -->
+  <p>{{ today | date:'medium' }}</p>               <!-- date -->
+  <p>{{ name | uppercase }}</p>                     <!-- uppercase -->
+  <p>{{ name | lowercase }}</p>                     <!-- lowercase -->
+  <p>{{ name | titlecase }}</p>                     <!-- titlecase -->
+  <p>{{ price | currency:'USD' }}</p>              <!-- currency -->
+  <p>{{ price | number:'1.0-2' }}</p>             <!-- number (DecimalPipe) -->
+  <p>{{ ratio | percent }}</p>                     <!-- percent -->
+  <pre>{{ user | json }}</pre>                      <!-- json -->
+  <p>{{ items() | slice:0:5 }}</p>                 <!-- slice -->
+  <ul>                                              <!-- keyvalue -->
+    @for (entry of user | keyvalue; track entry.key) {
+      <li>{{ entry.key }}: {{ entry.value }}</li>
+    }
+  </ul>
+  <p>{{ items().length | i18nPlural: pluralMap }}</p>   <!-- i18nPlural -->
+  <p>{{ gender | i18nSelect: selectMap }}</p>           <!-- i18nSelect -->
+
+  <!-- format-string examples -->
+  <p>{{ today | date:'yyyy-MM-dd HH:mm' }}</p>
+  <p>{{ today | date:'fullDate' }}</p>
+  <p>{{ 1234.5 | number:'1.2-2' }}</p>
+  <p>{{ 0.1234 | percent:'1.1-1' }}</p>
+  <p>{{ 9.99 | currency:'GBP':'symbol':'1.2-2' }}</p>
+  <p>{{ longText | slice:0:100 }}…</p>
+
+  <!-- async pipe with @if/as and with @for -->
+  @if (user$ | async; as account) {
+    <p>{{ account.name }}</p>
+  }
+  <ul>
+    @for (todo of todos$ | async; track todo.id) {
+      <li>{{ todo.title }}</li>
+    }
+  </ul>
+
+  <!-- custom pipe, with and without an extra argument -->
+  <p>{{ description | truncate:50 }}</p>
+  <p>{{ description | truncate:50:' →' }}</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- §10 — CONTENT PROJECTION & TEMPLATE CONTAINERS              -->
+<!-- ============================================================ -->
+<section class="s10-projection">
+
+  <!-- --- as it appears INSIDE a component template, e.g. card.component.html --- -->
+  <div class="card">
+    <header><ng-content select="[card-title]"></ng-content></header>
+    <div class="body"><ng-content></ng-content></div>     <!-- default slot -->
+    <footer>
+      <ng-content select="card-actions">
+        <button>OK</button>          <!-- fallback content if none projected (v18+) -->
+      </ng-content>
+    </footer>
+  </div>
+
+  <!-- --- as a CONSUMER uses that component (projected content + ngProjectAs) --- -->
+  <app-card>
+    <h2 card-title>Title</h2>
+    <p>Body goes in the default slot.</p>
+    <card-actions><button>Save</button></card-actions>
+    <ng-container ngProjectAs="card-actions"><button>Also projects</button></ng-container>
+  </app-card>
+
+  <!-- <ng-container> : logical grouping, renders no element -->
+  <ng-container *ngIf="user">
+    <h2>{{ user.name }}</h2>
+    <p>{{ user.bio }}</p>
+  </ng-container>
+
+  <!-- stack two structural directives with no extra DOM -->
+  <ng-container *ngFor="let row of rows">
+    <tr *ngIf="row.visible">{{ row.label }}</tr>
+  </ng-container>
+
+  <!-- <ng-template> + *ngTemplateOutlet with context ($implicit + named) -->
+  <ng-template #greeting let-name let-formal="formal">
+    <p>{{ formal ? 'Good day' : 'Hi' }}, {{ name }}!</p>
+  </ng-template>
+  <ng-container
+    *ngTemplateOutlet="greeting; context: { $implicit: 'Sam', formal: true }">
+  </ng-container>
+
+  <!-- render the #tpl declared back in §4 -->
+  <ng-container *ngTemplateOutlet="tpl"></ng-container>
+</section>
+
+<!-- ============================================================ -->
+<!-- §11 — BUILT-IN ATTRIBUTE DIRECTIVES                          -->
+<!-- ============================================================ -->
+<section class="s11-attr-directives">
+  <div [ngClass]="{ active: isActive, disabled: !enabled }">ngClass object</div>
+  <div [ngClass]="['card', theme]">ngClass array</div>
+  <div [ngStyle]="{ color: color, 'font-size.px': size }">ngStyle (unit-suffixed key)</div>
+  <input name="username" [(ngModel)]="username" />
+</section>
+
+<!-- ============================================================ -->
+<!-- §12 — SIGNALS IN TEMPLATES                                   -->
+<!-- ============================================================ -->
+<section class="s12-signals">
+  <p>{{ count() }} × 2 = {{ double() }}</p>           <!-- read by calling -->
+  <button (click)="increment()">+</button>
+
+  @if (count() > 10) { <p>High!</p> }
+  @for (item of items(); track item.id) { <li>{{ item.name }}</li> }
+
+  <!-- signal input + model() two-way directly on a child -->
+  <app-child [value]="count()" [(open)]="isOpen" />
+</section>
+
+<!-- ============================================================ -->
+<!-- §13 — MISC: animations, self-closing, security, i18n         -->
+<!-- ============================================================ -->
+<section class="s13-misc">
+
+  <!-- animation trigger binding + callback event -->
+  <div [@fadeInOut]="state()" (@fadeInOut.done)="onDone($event)">animated</div>
+
+  <!-- self-closing component tags (v16+) -->
+  <app-spinner />
+  <app-user [user]="currentUser" />
+
+  <!-- security: sanitized [innerHTML] -->
+  <div [innerHTML]="trustedHtml"></div>
+
+  <!-- i18n: marked text + translatable attribute -->
+  <h1 i18n="@@homeTitle">Welcome</h1>
+  <img [src]="logo" i18n-alt alt="Company logo" />
+</section>

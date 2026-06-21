@@ -1,0 +1,31 @@
+<!-- issue page — @inputs `detail` + `id`. Exercises [innerHTML] (trusted), @for/@empty. -->
+<section class="issue">
+  @if (detail; as d) {
+    <h1>{{ d.issue.id }} — {{ d.issue.title }}</h1>
+    <p class="issue__sub">status {{ d.issue.status }} · {{ d.issue.points }} pts · priority {{ d.issue.priority }}</p>
+
+    <h2>{{ d.comments.length }} comments</h2>
+    <ul class="issue__comments">
+      @for (c of d.comments; track c.id) {
+        <li><strong>{{ c.author }}</strong> <span class="comment" [innerHTML]="c.bodyHtml"></span></li>
+      } @empty {
+        <li>No comments yet.</li>
+      }
+    </ul>
+
+    <h2>Related</h2>
+    <ul class="issue__related">
+      @for (r of d.relateds; track r.id) {
+        <li><a [href]="'/ui/issues/' + r.id">{{ r.id }} — {{ r.title }}</a></li>
+      }
+    </ul>
+
+    <h2>Rate this issue</h2>
+    <!-- island; its chunk loads only when this widget scrolls into view -->
+    <star-rating></star-rating>
+
+    <p><a href="/ui/board">← back to board</a></p>
+  } @else {
+    <p class="issue__missing">No issue with id "{{ id }}".</p>
+  }
+</section>

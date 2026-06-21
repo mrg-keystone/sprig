@@ -1,0 +1,4 @@
+<!-- star-rating: click a star to set value(); two-way [(value)] + (rate) output -->
+<div class="star-rating" role="radiogroup">@for (n of stars(); track n) {
+  <button type="button" class="star-rating__star" (click)="set(n)" [class.star-rating__star--on]="n <= value()" [attr.aria-label]="'rate ' + n">★</button>
+}</div>

@@ -56,6 +56,60 @@ Two flavors, same split as Angular's "view encapsulation": **emulated** (hashed 
 - **Run:** `await api.listen()` or `Deno.serve((req, info) => api.handler(req, info))` (forward `info`, or localhost trust + `/_mint` break).
 - **Docs:** JSR `@mrg-keystone/keep`; danet — https://danet.land
 
+## Component model (folder = component)
+
+A component is a **folder** (worked example: `fixtures/app`).
+- `template.html` (**required**) — the view, in Angular-flavoured syntax (`{{ }}`, `[prop]`, `(event)`, `@if/@for/@switch`). Parsed by the in-repo **`tree-sitter-angular-template`** grammar → AST → compiled to a Preact render function.
+- `logic.ts` (**optional**) — its presence promotes the folder to an **island**. Needed only for local state (signals), event handlers/methods, injected deps, or explicit typed inputs — **a purely presentational component goes without one**. Default-exports `defineComponent({ inputs?, setup })`; `setup()` returns the template scope. In templates, both signals and computeds read as `name()` and methods call as `fn()` — so the runtime wraps signals in **callable accessors** (raw `@preact/signals` Signals aren't callable; `count.value`/`count.set()` still write).
+- `styles.css` (**optional**) — **global-by-convention** (BEM). True scoping needs a CSS-modules esbuild plugin (off the `deno bundle` path, see Styling) or goober `` css`…` `` in `logic.ts` — goober does not scope external `.css` files.
+- `resolve.ts` (**optional, pages**) — runs on the **server** inside the request injector (may `inject()` server services) and returns the page's `@input`s.
+
+**Three kinds:**
+- *template only, no free names* → **static**: pure server-rendered HTML, **zero** client JS.
+- *template only, reads free names* → **static + parametrized**: the free identifiers its `{{ }}`/`[bindings]` read are **implied `@input`s** — no `logic.ts` needed. Still zero client JS; the parent fills them at SSR. Inferred from the template AST by `tree-sitter-angular-template/scripts/implied-inputs.ts` (`{{ name }} {{ bio }}` → inputs `["bio","name"]`). A template with `(event)`/`[(two-way)]`/method calls can't be static — the tool reports `requiresLogic: true`.
+- *template + logic* → **island**: SSR'd for first paint, wrapped in `<is-land on:…>` with a JSON prop bridge, then hydrated by its own `deno bundle` chunk.
+
+**Selector = folder name** (`counter/` → `<counter>`). The compiler swaps component tags for their rendered output; native HTML tags pass through. A name **must not** equal a native HTML element (compile error); hyphen recommended. Resolution order: local `components/` → `shared-components/` → built-ins (`router-outlet`) → native.
+- **Inputs:** islands declare them explicitly (`inputs: [...]`) so the compiler can wire/validate parent bindings; static components have them **implied** (see above). `[x]="expr"` passes an evaluated expression, a plain `attr="…"` passes a string. **Outputs** `(x)` and two-way `[(x)]` (= `x` input + `xChange` output) bind via `ctx.output`/`ctx.model`.
+
+**Compile/loader contract:** `template.html` is not consumed by plain `deno bundle` (a `.tsx` pipeline). The "island glue you own" (esbuild + `@luca/esbuild-deno-loader`, see below) parses `template.html` → Preact render fn, co-bundles sibling `logic.ts`/`styles.css`, and emits **one module per folder**.
+
+**Referencing:** a route names a component by its **folder-path string** `load: "./shell/components/user"` — the folder *is* the component, `template.html` is just one file in it. The build instruments the string (discovers the files, compiles, lazy-loads); no per-route import function. (A layout isn't special — it's the **root component**, the route at `{ path: "", load: "./shell", children: [ …pages… ] }`, whose `<router-outlet>` hosts the matched page. Its route-children — the pages — file under its own `components/` like any child, so there is no separate `layout` field, and no special `layouts/` or `pages/` directory.)
+
+**Layout:** one recursive folder-component tree — `src/shell/` (the root component) with the pages under `src/shell/components/<route>/` (each nesting its own `components/`, to any depth) — plus the cross-cutting `src/shared-components/`, `src/services/`, and `src/main.ts` (route table + bootstrap).
+
+## Dependency injection
+
+Angular-style DI. sprig keeps its **own** request-scoped injector (a danet middleware runs each request inside it via `runInInjector`) — it is *not* danet's container; the two coexist.
+- `@Injectable({ scope, providedIn })` registers a service; `inject(Token)` resolves from the active injector. Hierarchy: **root → route → component**; `providedIn:"root"` is a per-side singleton instantiated **at** the root (not wherever first requested).
+- **`scope` is the SSR/island boundary:** `server` (DB / secrets / in-process keep backend), `client` (DOM-only stores), `both` (isomorphic; an independent instance per side — e.g. `Logger`, `Router`).
+- **DI never crosses the wire — data does.** An island may only inject `client`/`both` services; server-only values reach it as serialized **`@input`s**, produced by a page's `resolve.ts` and shipped via the island prop bridge (the JSON `<script>` glue below). Injecting a `server` token in island code throws.
+- **Client root:** one document-level injector (`clientRoot()`). This requires `@sprig/core` + `providedIn:"root"` services to be emitted as **one shared chunk** islands import (not duplicated per island) — otherwise each per-island bundle gets its own registry/root and "singletons" diverge.
+
+## Router & `<router-outlet>`
+
+- `main.ts` maps URL → page **folder-path string** (`load: "./shell/components/user"`); the build instruments each into a lazy per-folder `deno bundle` chunk. `<router-outlet>` (in the root `shell` component) is a **reserved built-in**: it compiles to a real, persistent boundary element with a stable selector (the one exception to tag-swapping) so it can be the swap target.
+- **Server is the sole renderer:** match URL → run each matched route's `resolve.ts` for `@input`s → render the matched route tree (root component → … → page) into its `<router-outlet>`s → full HTML document (keep handler).
+- **Client soft-nav (one model):** the **Navigation API** (below) intercepts same-origin links → `fetch(e.destination.url, { signal: e.signal })` → parse → replace **only** the outlet's `innerHTML` inside `document.startViewTransition()`, guarded on `!e.signal.aborted`. Islands **outside** the outlet stay mounted (state preserved); islands inside re-arm on insertion. Use `e.intercept({ scroll: "manual" })` + explicit scroll restore. Unsupported → full-navigation fallback (cross-document `@view-transition`). A route's `load` is a declarative folder-path string the build instruments — not a function, not a client render path.
+- `Router` (scope `both`, `providedIn:"root"`) exposes `url`/`params` signals + `navigate()`. A page inside the outlet is recreated each soft-nav, so it reads params **once** at (re)hydration via `@input` (e.g. `/users/:id` → `resolve.ts`); live `params`/`url` reactivity is for persisted islands outside the outlet.
+
+### Named outlets & the URL scheme
+
+The whole screen lives in the path, so every view is deep-linkable + SSR-renderable:
+
+```
+/settings/main=question/sidebar=admin/
+ └ plain segments → the PRIMARY route chain
+          └ `name=value` segments → NAMED outlets (which <router-outlet name="…"> shows what)
+```
+
+- **`=` is the outlet delimiter in BOTH the URL and the route table** (joining `/` and `:` as reserved). A path segment containing `=` is a `name=value` outlet assignment; split on the **first** `=`. A literal `=` in a value is `%3D`, a `/` is `%2F` (an outlet value is one segment in v1). (Browsers treat `=` as an ordinary path char — verified — so this is free.)
+- **Canonical form** sorts outlet segments by name → one screen ⇒ one URL (cache / equality / back-forward safe).
+- **Route table — it's all just routes.** There is no special "outlet route" kind: every entry is a `Route` (`path` / `load` / `children`); whether it matches a primary segment or a `name=value` outlet segment is just whether its `path` contains `=` — `{ path: "users/:id", load }` vs `{ path: "sidebar=admin", load }`, `{ path: "main=:topic", load }` (an explicit `{ outlet: "sidebar", path: "admin" }` is an equivalent alternative). So `children` nests **infinitely on both axes** — a `panel=…` outlet inside a `sidebar=…` outlet inside a page, etc. Params inherit down; the value may be a `:param` (`main=question` matches `path: "main=:topic"` → `topic="question"`, an implied `@input` to a logic-less panel).
+- **Links just work:** `<a href="/settings/main=question/sidebar=admin/">` *is* the whole navigation — no special link API. Imperative: `setOutlet`/`clearOutlet` build the next URL.
+- **Per-outlet swap:** soft-nav diffs the parsed outlet sets, so changing one `=` segment swaps only that outlet's region; siblings/parents (and their island state) persist.
+- **Engine + grammar-validated:** `.sprig/router.ts` (parse/serialize/match) + `.sprig/router.test.ts`; `scripts/check-outlets.ts` reads `<router-outlet name>` from each template (via the grammar) and verifies every `outlet:` route has a matching declared outlet.
+
 ## Browser APIs (no install)
 
 ### Cross-document View Transitions

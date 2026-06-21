@@ -1,0 +1,22 @@
+<!-- about — STATIC page (no logic.ts): pure server-rendered HTML, ships no JS. §13 i18n + i18n-alt + self-closing/nested static <svg-icon>. -->
+<article class="prose">
+  <img class="about__logo" [src]="'/logo.svg'" width="32" height="32" i18n-alt alt="sprig logo" />
+  <h1 i18n="@@aboutTitle">About sprig</h1>
+  <p>sprig renders HTML on the server and hydrates only the interactive bits as islands.</p>
+  <ul>
+    <li><strong>Static component</strong> — a folder with just <code>template.html</code>.</li>
+    <li><strong>Island</strong> — add a <code>logic.ts</code>; the folder hydrates on the client.</li>
+    <li><strong>Styles</strong> — drop a <code>styles.css</code> into the folder (scoped).</li>
+  </ul>
+  <h2 i18n="@@aboutFeatures">Why sprig</h2>
+  <ul class="about__features">
+    <li><svg-icon name="check" label="ok"></svg-icon> Server-rendered HTML by default, zero JS for static pages.</li>
+    <li><svg-icon name="check" label="ok"></svg-icon> Islands hydrate only the interactive parts of a page.</li>
+    <li><svg-icon name="check" label="ok"></svg-icon> Angular-flavoured templates compiled to fast Preact.</li>
+  </ul>
+
+  <!-- a deeply-nested page-local component tree: about → our-story → milestone → year-badge -->
+  <our-story></our-story>
+
+  <p><a href="/">← back home</a></p>
+</article>

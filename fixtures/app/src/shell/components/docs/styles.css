@@ -1,0 +1,36 @@
+.docs {
+  display: grid;
+  gap: 1.5rem;
+}
+.docs__head h1 {
+  margin: 0 0 0.5rem;
+}
+.docs__lede {
+  margin: 0;
+  color: #6b7280;
+  max-width: 42rem;
+}
+.docs__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.docs__nav a {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  text-decoration: none;
+  color: #374151;
+  font-size: 0.875rem;
+}
+.docs__nav a:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+.docs__stage {
+  padding: 1.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  background: #fff;
+  min-height: 12rem;
+}

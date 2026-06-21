@@ -1,0 +1,41 @@
+/* data-table — BEM-scoped under .dt. Global by convention; the .dt prefix is the scope. */
+.dt {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  color: #1f2933;
+}
+
+.dt thead th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 2px solid #cbd2d9;
+  font-weight: 600;
+  color: #52606d;
+}
+
+.dt tbody td,
+.dt tfoot td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e4e7eb;
+}
+
+.dt code {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.8125rem;
+  color: #3e4c59;
+}
+
+.dt--even {
+  background: #f5f7fa;
+}
+
+.dt--last td {
+  border-bottom: 2px solid #cbd2d9;
+}
+
+.dt tfoot td {
+  font-weight: 600;
+  color: #7b8794;
+  border-bottom: none;
+}

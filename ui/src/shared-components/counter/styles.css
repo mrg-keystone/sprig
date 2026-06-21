@@ -1,0 +1,19 @@
+/* counter — view-encapsulated; these rules can only touch this component's elements. */
+.counter {
+  @apply inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm;
+}
+.counter__btn {
+  @apply grid h-7 w-7 place-items-center rounded-md bg-slate-100 text-lg font-bold leading-none text-slate-700 transition;
+}
+.counter__btn:hover {
+  @apply bg-slate-200;
+}
+.counter__btn:disabled {
+  @apply cursor-not-allowed opacity-40;
+}
+.counter__value {
+  @apply min-w-6 text-center font-semibold tabular-nums;
+}
+.counter__badge {
+  @apply ml-1 text-xs font-medium text-amber-600;
+}

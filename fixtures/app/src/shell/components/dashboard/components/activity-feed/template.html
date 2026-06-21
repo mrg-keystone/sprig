@@ -1,0 +1,14 @@
+<!-- Island: collapsible recent-activity feed; a row click emits select(issueId). -->
+<section class="feed">
+  <button class="feed__toggle" (click)="toggle()">{{ open() ? 'Hide' : 'Show' }} activity</button>
+  @if (open()) {
+    <ul class="feed__list">@for (a of items(); track a.id; let last = $last, idx = $index) {
+      <li class="feed__item" [class.feed__item--last]="last" (click)="select(a.issueId)">
+        <span class="feed__n">{{ idx + 1 }}</span>
+        @switch (a.kind) { @case ('comment') { <em>commented</em> } @case ('status') { <em>moved</em> } @case ('assign') { <em>assigned</em> } @default { <em>created</em> } }
+        on <code>{{ a.issueId }}</code> — {{ a.detail }}
+        <time class="feed__time">{{ a.at | date:'short' }}</time>
+      </li>
+    } @empty { <li>No recent activity.</li> }</ul>
+  }
+</section>

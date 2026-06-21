@@ -1,0 +1,16 @@
+{
+  "name": "@app/ui",
+  "version": "0.0.0",
+  "exports": "./src/main.ts",
+  "compilerOptions": {
+    "experimentalDecorators": true
+  },
+  "imports": {
+    "@sprig/core": "./.sprig/core.ts",
+    "@preact/signals-core": "npm:@preact/signals-core@^1.8.0",
+    "web-tree-sitter": "npm:web-tree-sitter@^0.25",
+    "@std/path": "jsr:@std/path@^1",
+    "@std/fs": "jsr:@std/fs@^1",
+    "@std/assert": "jsr:@std/assert@^1"
+  }
+}

@@ -1,0 +1,10 @@
+# sprig build output + generated files
+/static/
+**/client-entry.gen.ts
+
+# os / editor
+.DS_Store
+.playwright-mcp/
+
+# generated build manifest
+/.sprig-manifest.json

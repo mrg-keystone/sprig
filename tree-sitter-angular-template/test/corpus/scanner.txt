@@ -1,0 +1,177 @@
+========================================
+script raw text
+========================================
+
+<script>var a = 1 < 2 && b > 3;</script>
+
+---
+
+(template
+  (script_element
+    (start_tag
+      name: (tag_name))
+    (raw_text)
+    (end_tag
+      name: (tag_name))))
+
+========================================
+style raw text
+========================================
+
+<style>.box { color: red; width: 10px }</style>
+
+---
+
+(template
+  (style_element
+    (start_tag
+      name: (tag_name))
+    (raw_text)
+    (end_tag
+      name: (tag_name))))
+
+========================================
+li implicit close
+========================================
+
+<ul><li>one<li>two</ul>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name))
+    (element
+      (start_tag
+        name: (tag_name))
+      (text))
+    (element
+      (start_tag
+        name: (tag_name))
+      (text))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+p implicit close by block
+========================================
+
+<p>one<div>x</div>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name))
+    (text))
+  (element
+    (start_tag
+      name: (tag_name))
+    (text)
+    (end_tag
+      name: (tag_name))))
+
+========================================
+table cell and row implicit close
+========================================
+
+<table><tr><td>a<td>b<tr><td>c</table>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name))
+    (element
+      (start_tag
+        name: (tag_name))
+      (element
+        (start_tag
+          name: (tag_name))
+        (text))
+      (element
+        (start_tag
+          name: (tag_name))
+        (text)))
+    (element
+      (start_tag
+        name: (tag_name))
+      (element
+        (start_tag
+          name: (tag_name))
+        (text)))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+dt dd implicit close
+========================================
+
+<dl><dt>term<dd>def</dl>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name))
+    (element
+      (start_tag
+        name: (tag_name))
+      (text))
+    (element
+      (start_tag
+        name: (tag_name))
+      (text))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+void element before sibling
+========================================
+
+<div><br><span>x</span></div>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name))
+    (element
+      (start_tag
+        name: (tag_name)))
+    (element
+      (start_tag
+        name: (tag_name))
+      (text)
+      (end_tag
+        name: (tag_name)))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+void elements without slash
+========================================
+
+<br><hr><img src="a.png">
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name)))
+  (element
+    (start_tag
+      name: (tag_name)))
+  (element
+    (start_tag
+      name: (tag_name)
+      (attribute
+        name: (attribute_name)
+        value: (quoted_value
+          (attribute_text))))))

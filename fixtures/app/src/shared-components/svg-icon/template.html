@@ -1,0 +1,28 @@
+<!-- svg-icon — STATIC + PARAMETRIZED. Implied @inputs: `name` (which glyph) and `label`
+  (accessible name). Zero JS; §13 inline SVG + §6 @switch + §2 [attr.*]/[class] array binding. -->
+<svg viewBox="0 0 24 24" role="img" [attr.aria-label]="label" [class]="['icon']" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  @switch (name) {
+    @case ('check') {
+      <path d="M20 6 L9 17 L4 12" />
+    }
+    @case ('flag') {
+      <path d="M4 22 L4 4" />
+      <path d="M4 4 L4 15 L14 15 L12 11 L20 11 L20 4 Z" />
+    }
+    @case ('search') {
+      <path d="M11 4 a7 7 0 1 0 0 14 a7 7 0 1 0 0 -14 Z" />
+      <path d="M21 21 L16.65 16.65" />
+    }
+    @case ('moon') {
+      <path d="M21 12.79 A9 9 0 1 1 11.21 3 A7 7 0 0 0 21 12.79 Z" />
+    }
+    @case ('sun') {
+      <path d="M12 7 a5 5 0 1 0 0 10 a5 5 0 1 0 0 -10 Z" />
+      <path d="M12 1 L12 3 M12 21 L12 23 M4.22 4.22 L5.64 5.64 M18.36 18.36 L19.78 19.78 M1 12 L3 12 M21 12 L23 12 M4.22 19.78 L5.64 18.36 M18.36 5.64 L19.78 4.22" />
+    }
+    @default {
+      <path d="M12 3 a9 9 0 1 0 0 18 a9 9 0 1 0 0 -18 Z" />
+      <path d="M12 16 L12 12 M12 8 L12 8" />
+    }
+  }
+</svg>

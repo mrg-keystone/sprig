@@ -1,0 +1,177 @@
+========================================
+pipe chain
+========================================
+
+{{ name | lowercase | titlecase }}
+
+---
+
+(template
+  (interpolation
+    expression: (pipe_expression
+      expression: (pipe_expression
+        expression: (identifier)
+        name: (identifier))
+      name: (identifier))))
+
+========================================
+pipe with args
+========================================
+
+{{ p | currency:'EUR':'symbol':'1.2-2' }}
+
+---
+
+(template
+  (interpolation
+    expression: (pipe_expression
+      expression: (identifier)
+      name: (identifier)
+      argument: (pipe_argument
+        (string))
+      argument: (pipe_argument
+        (string))
+      argument: (pipe_argument
+        (string)))))
+
+========================================
+ternary
+========================================
+
+{{ on ? 'Y' : 'N' }}
+
+---
+
+(template
+  (interpolation
+    expression: (ternary_expression
+      condition: (identifier)
+      consequence: (string)
+      alternative: (string))))
+
+========================================
+safe navigation chain
+========================================
+
+{{ user?.address?.city }}
+
+---
+
+(template
+  (interpolation
+    expression: (safe_member_expression
+      object: (safe_member_expression
+        object: (identifier)
+        property: (identifier))
+      property: (identifier))))
+
+========================================
+non-null and member
+========================================
+
+{{ user!.name }}
+
+---
+
+(template
+  (interpolation
+    expression: (member_expression
+      object: (non_null_expression
+        (identifier))
+      property: (identifier))))
+
+========================================
+nullish coalescing
+========================================
+
+{{ nick ?? 'anon' }}
+
+---
+
+(template
+  (interpolation
+    expression: (binary_expression
+      left: (identifier)
+      right: (string))))
+
+========================================
+any cast then member
+========================================
+
+{{ $any(x).legacy }}
+
+---
+
+(template
+  (interpolation
+    expression: (member_expression
+      object: (call_expression
+        function: (identifier)
+        arguments: (arguments
+          (identifier)))
+      property: (identifier))))
+
+========================================
+call then member
+========================================
+
+{{ f().g.h }}
+
+---
+
+(template
+  (interpolation
+    expression: (member_expression
+      object: (member_expression
+        object: (call_expression
+          function: (identifier)
+          arguments: (arguments))
+        property: (identifier))
+      property: (identifier))))
+
+========================================
+array and object literals
+========================================
+
+<a [x]="['c', t]" [y]="{ a: 1, 'b-c': d }"></a>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name)
+      (property_binding
+        name: (binding_name)
+        value: (array
+          (string)
+          (identifier)))
+      (property_binding
+        name: (binding_name)
+        value: (object
+          (pair
+            key: (identifier)
+            value: (number))
+          (pair
+            key: (string)
+            value: (identifier)))))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+operator precedence
+========================================
+
+{{ a + b * c > d }}
+
+---
+
+(template
+  (interpolation
+    expression: (binary_expression
+      left: (binary_expression
+        left: (identifier)
+        right: (binary_expression
+          left: (identifier)
+          right: (identifier)))
+      right: (identifier))))

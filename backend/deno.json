@@ -1,0 +1,27 @@
+{
+  "name": "@app/backend",
+  "version": "0.0.0",
+  "exports": "./bootstrap/mod.ts",
+  "compilerOptions": {
+    "strict": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "//lint": "rune-generated module: the architecture is enforced by `rune lint` (clean). These deno-lint rules flag rune's codegen idioms on generated DTOs/coordinators, not app defects.",
+  "lint": {
+    "rules": {
+      "exclude": ["verbatim-module-syntax", "require-await", "ban-types", "no-slow-types", "no-unused-vars"]
+    }
+  },
+  "imports": {
+    "@/": "./",
+    "class-validator": "npm:class-validator@^0.14",
+    "class-transformer": "npm:class-transformer@^0.5",
+    "reflect-metadata": "npm:reflect-metadata@0.1.13",
+    "#std/assert": "jsr:@std/assert",
+    "#std/path": "jsr:@std/path",
+    "@mrg-keystone/keep": "jsr:@mrg-keystone/keep@^1",
+    "#assert": "jsr:@mrg-keystone/keep@^1/assert",
+    "#api-doc": "jsr:@danet/swagger@^2.1.1/decorators"
+  }
+}

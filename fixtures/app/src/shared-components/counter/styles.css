@@ -1,0 +1,28 @@
+.counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.counter__btn {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  background: #fff;
+  font-size: 1.125rem;
+  cursor: pointer;
+}
+.counter__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.counter__value {
+  min-width: 2.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.25rem;
+}
+.counter__badge {
+  margin-left: 0.5rem;
+  font-size: 0.875rem;
+}

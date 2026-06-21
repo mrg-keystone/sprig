@@ -1,0 +1,7 @@
+<!-- issue-card — STATIC + PARAMETRIZED. No logic.ts; implied @input is `issue` (Issue). Composes priority-pill + tag-chip; shows [attr.]/[href] concat/[class] map + @for. -->
+<a class="icard" [attr.data-id]="issue.id" [href]="'/issues/' + issue.id" [class]="{ icard: true, 'icard--urgent': issue.priority === 'urgent' }">
+  <div class="icard__top"><code class="icard__id">{{ issue.id }}</code><priority-pill [priority]="issue.priority"></priority-pill></div>
+  <h3 class="icard__title">{{ issue.title }}</h3>
+  <div class="icard__tags">@for (tag of issue.tags; track tag.label) { <tag-chip [label]="tag.label" [tone]="tag.tone"></tag-chip> }</div>
+  <footer class="icard__foot"><span>{{ issue.points }} pts</span><span>{{ issue.assignees.length }} assigned</span></footer>
+</a>

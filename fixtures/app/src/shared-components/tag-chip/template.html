@@ -1,0 +1,8 @@
+<!--
+  tag-chip — STATIC but PARAMETRIZED (no logic.ts → ships zero JS). Its @inputs are *implied*
+  from the free names it reads: `label` and `tone`. Showcases §2 bindings: a [class] ARRAY and
+  an [attr.data-*] attribute binding. The tone KEYWORD drives the colour through CSS
+  [data-tone="…"] selectors (which set --chip-tone to a real hex) rather than an inline style,
+  so the palette lives in styles.css and the keyword never leaks into a CSS colour slot.
+-->
+<span class="chip" [class]="['chip']" [attr.data-tone]="tone">{{ label }}</span>

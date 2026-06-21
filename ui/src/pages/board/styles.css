@@ -1,0 +1,37 @@
+/* board — kanban columns. Encapsulated. */
+.board {
+  @apply space-y-5;
+}
+.board__head h1 {
+  @apply text-2xl font-bold tracking-tight text-slate-900;
+}
+.board__meta {
+  @apply text-sm text-slate-400;
+}
+.board__cols {
+  @apply grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5;
+}
+.col {
+  @apply rounded-xl bg-slate-100 p-2.5;
+}
+.col__title {
+  @apply mb-2 flex items-center justify-between px-1 text-xs font-semibold uppercase tracking-wide text-slate-500;
+}
+.col__count {
+  @apply rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-500;
+}
+.col__count--over {
+  @apply bg-red-200 text-red-700;
+}
+.col__list {
+  @apply space-y-2;
+}
+.col__item {
+  @apply list-none;
+}
+.col__empty {
+  @apply list-none rounded-lg border border-dashed border-slate-300 p-3 text-center text-xs text-slate-400;
+}
+.board__error {
+  @apply rounded-lg border border-dashed border-slate-300 p-6 text-center text-slate-400;
+}

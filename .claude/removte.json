@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -e '.stop_hook_active == true' >/dev/null 2>&1 && exit 0; echo '{\"decision\":\"block\",\"reason\":\"are you sure you have built tested and validated the spec while thinking step by step sequentially? you must do this before stopping\"}'"
+          }
+        ]
+      }
+    ]
+  }
+}

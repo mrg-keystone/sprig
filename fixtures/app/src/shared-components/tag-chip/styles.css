@@ -1,0 +1,33 @@
+/* tag-chip — BEM .chip. The tone keyword arrives as [data-tone]; the attribute selectors below
+   map it to a real hex via the --chip-tone custom property (a #475569 default keeps an unknown
+   tone readable). var(--chip-tone) is then a genuine colour everywhere it is consumed. */
+.chip {
+  --chip-tone: #475569;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  border-radius: 9999px;
+  color: var(--chip-tone);
+  border: 1px solid currentColor;
+  background: color-mix(in srgb, var(--chip-tone) 12%, transparent);
+}
+
+.chip::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: var(--chip-tone);
+}
+
+.chip[data-tone="slate"]  { --chip-tone: #475569; }
+.chip[data-tone="blue"]   { --chip-tone: #2563eb; }
+.chip[data-tone="green"]  { --chip-tone: #16a34a; }
+.chip[data-tone="amber"]  { --chip-tone: #d97706; }
+.chip[data-tone="red"]    { --chip-tone: #dc2626; }
+.chip[data-tone="violet"] { --chip-tone: #7c3aed; }

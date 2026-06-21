@@ -1,0 +1,35 @@
+/* shell layout styles (scoped to this component's folder) */
+.shell {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  font-family: system-ui, sans-serif;
+}
+.shell__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+.shell__bar .nav {
+  border-bottom: 0;
+  flex: 1;
+}
+.shell__main {
+  max-width: 64rem;
+  margin-inline: auto;
+  padding: 2rem 1rem;
+  width: 100%;
+}
+.shell__footer {
+  border-top: 1px solid #e5e7eb;
+  padding: 1rem;
+  text-align: center;
+  color: #6b7280;
+}
+
+/* opt into cross-document view transitions for full navigations (list.md) */
+@view-transition {
+  navigation: auto;
+}

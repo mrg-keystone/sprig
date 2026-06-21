@@ -1,0 +1,79 @@
+/* example — docs feature-gallery island. BEM-prefixed `ex__*` (global-by-convention, scoped here). */
+.ex {
+  display: grid;
+  gap: 0.75rem;
+  font: 0.95rem/1.5 system-ui, sans-serif;
+  color: #1f2933;
+}
+
+.ex__title {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.ex__grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0;
+}
+.ex__grid dt {
+  font-weight: 600;
+  color: #52606d;
+}
+.ex__grid dd {
+  margin: 0;
+}
+
+.ex__json {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  background: #f5f7fa;
+  border-radius: 0.4rem;
+  overflow: auto;
+}
+
+.ex__kv {
+  display: inline-block;
+  margin-right: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  background: #eef2f7;
+  border-radius: 0.3rem;
+}
+
+.ex__list {
+  margin: 0.25rem 0;
+  padding-left: 1.1rem;
+}
+.ex__item--even {
+  color: #334e68;
+}
+.ex__item--odd {
+  color: #627d98;
+}
+
+.ex__badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #eef2f7;
+}
+.ex__badge--ok {
+  background: #def7ec;
+  color: #03543f;
+}
+
+.ex__defer {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+.ex__ph {
+  color: #9aa5b1;
+  font-style: italic;
+}
+
+.ex__line {
+  margin: 0.2rem 0;
+}

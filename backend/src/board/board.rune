@@ -1,0 +1,133 @@
+[MOD] board
+
+// The keep backend for the sprig Board workspace. Each [REQ] is one read
+// endpoint returning a ready-to-render view-model; the sprig UI's resolve.ts
+// calls these in-process via inject(Backend).fetch (no token, no TCP).
+
+[REQ] board.get({}): BoardDto
+    [NEW] board
+    board.assemble(): BoardDto
+
+[REQ] dashboard.get({}): DashboardDto
+    [NEW] dashboard
+    dashboard.assemble(): DashboardDto
+
+[REQ] issue.get(IssueRefDto): IssueDetailDto
+    [NEW] issue
+    issue.assemble(issueId): IssueDetailDto
+
+[REQ] user.get(UserRefDto): UserProfileDto
+    [NEW] user
+    user.assemble(userId): UserProfileDto
+
+[ENT] http.board({}): BoardDto
+[ENT] http.dashboard({}): DashboardDto
+[ENT] http.issue(IssueRefDto): IssueDetailDto
+[ENT] http.user(UserRefDto): UserProfileDto
+
+[TYP] id: string
+    a stable identifier
+[TYP] key: string
+    a project key, e.g. SPR
+[TYP] name: string
+    a human-readable name
+[TYP] velocity: number
+    points delivered per sprint
+[TYP] label: string
+    a short display label
+[TYP] wip: number
+    a column work-in-progress limit
+[TYP] title: string
+    an issue title
+[TYP] status: string
+    a workflow status (backlog, todo, in-progress, review, done)
+[TYP] priority: string
+    an issue priority (low, medium, high, urgent)
+[TYP] points: number
+    story points for an issue
+[TYP] tone: string
+    a colour tone name for a tag chip
+[TYP] assignee: string
+    a user id assigned to an issue
+[TYP] descriptionHtml: string
+    trusted, server-authored issue description HTML
+[TYP] bodyHtml: string
+    trusted, server-authored comment body HTML
+[TYP] author: string
+    the user id who wrote a comment
+[TYP] at: string
+    an ISO 8601 timestamp
+[TYP] commentCount: number
+    number of comments on an issue
+[TYP] createdAt: string
+    ISO 8601 creation time
+[TYP] updatedAt: string
+    ISO 8601 last-updated time
+[TYP] kind: string
+    an activity kind (comment, status, assign, create)
+[TYP] actor: string
+    the user id who performed an activity
+[TYP:example=SPR-101] issueId: string
+    an issue id used to fetch one issue
+[TYP:example=ada] userId: string
+    a user id used to fetch one profile
+[TYP] detail: string
+    a one-line activity description
+[TYP] completion: number
+    completion ratio from 0 to 1
+[TYP] budget: number
+    remaining budget in the project currency
+[TYP] total: number
+    total number of issues
+[TYP] done: number
+    number of completed issues
+[TYP] trend: number
+    completed points for one day of the trend
+[TYP] bio: string
+    a one-line user biography
+[TYP] role: string
+    a workspace role (owner, maintainer, contributor)
+[TYP] color: string
+    a hex colour for the user avatar
+
+[DTO] ProjectDto: id, key, name, velocity
+    the project the board belongs to
+[DTO] ColumnDto: id, label, wip
+    a single board column
+[DTO] TagDto: label, tone
+    a coloured label on an issue
+[DTO] IssueDto: id, title, status, priority, points, tag(s), assignee(s)
+    an issue card view-model
+[DTO] GroupDto: column, issue(s)
+    a column paired with its issues
+[DTO] BoardDto: project, group(s)
+    the whole board: a project and its grouped issues
+[DTO] StatsDto: total, done, completion, velocity, budget, trend(s)
+    headline metrics for the dashboard
+[DTO] ActivityDto: id, kind, actor, issueId, at, detail
+    one entry in the recent-activity feed
+[DTO] DashboardDto: project, stats, issue(s), activity(s)
+    the dashboard: stats, recent issues and recent activity
+[DTO] UserDto: id, name, bio, role, color
+    a workspace member
+[DTO] CommentDto: id, author, bodyHtml, at
+    a comment on an issue
+[DTO] RelatedDto: id, title, status
+    a lean issue summary shown in the related list
+[DTO] IssueRefDto: issueId
+    a reference to one issue by id
+[DTO] IssueDetailDto: issue, user(s), comment(s), related(s)
+    a full issue page: the issue, assignees, comments and related issues
+[DTO] UserRefDto: userId
+    a reference to one user by id
+[DTO] UserProfileDto: user, issue(s)
+    a user profile: the user and their assigned issues
+
+[NON] board
+    the kanban board aggregate
+[NON] dashboard
+    the workspace overview aggregate
+[NON] issue
+    a single unit of work
+[NON] user
+    a workspace member

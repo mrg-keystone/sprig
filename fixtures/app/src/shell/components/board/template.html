@@ -1,0 +1,35 @@
+<!--
+  board — the kanban board. STATIC + PARAMETRIZED page: it has no logic.ts, so its free names
+  (`project`, `groups`) are implied @inputs, filled on the server by resolve.ts (which groups
+  each column with its issues). It composes the <kanban-column> island per column and hosts two
+  NAMED outlets: `panel` (a filter side-panel) and `detail` (the master-detail issue view).
+  Both outlets are declared here and matched by routes in main.ts (checked by check-outlets.ts).
+-->
+<section class="board">
+  <header class="board__head">
+    <div>
+      <h1 class="board__title">{{ project.name }} board</h1>
+      <p class="board__meta">
+        {{ project.key }} · target velocity {{ project.velocity | number:'1.0-0' }} pts
+      </p>
+    </div>
+    <!-- named outlets are just part of the href — no special link API -->
+    <a class="board__filters" href="/board/panel=filters/">Filters</a>
+  </header>
+
+  <div class="board__cols">
+    @for (group of groups; track group.column.id) {
+      <kanban-column [column]="group.column" [issues]="group.issues"></kanban-column>
+    } @empty {
+      <p class="board__empty">No columns configured.</p>
+    }
+  </div>
+
+  <aside class="board__panel">
+    <router-outlet name="panel"></router-outlet>
+  </aside>
+
+  <section class="board__detail">
+    <router-outlet name="detail"></router-outlet>
+  </section>
+</section>

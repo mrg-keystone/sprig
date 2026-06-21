@@ -1,0 +1,164 @@
+========================================
+ngIf else
+========================================
+
+<div *ngIf="ok; else other"></div>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name)
+      (structural_directive
+        name: (directive_name)
+        value: (microsyntax
+          (micro_expression
+            (identifier))
+          (micro_else
+            template: (identifier)))))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+ngIf then else
+========================================
+
+<div *ngIf="r; then a else b"></div>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name)
+      (structural_directive
+        name: (directive_name)
+        value: (microsyntax
+          (micro_expression
+            (identifier))
+          (micro_then
+            template: (identifier))
+          (micro_else
+            template: (identifier)))))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+ngIf async as
+========================================
+
+<div *ngIf="u$ | async as u"></div>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name)
+      (structural_directive
+        name: (directive_name)
+        value: (microsyntax
+          (micro_expression
+            (pipe_expression
+              expression: (identifier)
+              name: (identifier)))
+          (micro_as
+            name: (identifier)))))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+ngFor full
+========================================
+
+<li *ngFor="let x of xs; trackBy: byId; let i = index; let first = first"></li>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name)
+      (structural_directive
+        name: (directive_name)
+        value: (microsyntax
+          (micro_let
+            name: (identifier))
+          (micro_of
+            value: (identifier))
+          (micro_keyed
+            key: (identifier)
+            value: (identifier))
+          (micro_let
+            name: (identifier)
+            value: (identifier))
+          (micro_let
+            name: (identifier)
+            value: (identifier)))))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+ngSwitch
+========================================
+
+<div [ngSwitch]="s"><p *ngSwitchCase="'a'"></p><p *ngSwitchDefault></p></div>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name)
+      (property_binding
+        name: (binding_name)
+        value: (identifier)))
+    (element
+      (start_tag
+        name: (tag_name)
+        (structural_directive
+          name: (directive_name)
+          value: (microsyntax
+            (micro_expression
+              (string)))))
+      (end_tag
+        name: (tag_name)))
+    (element
+      (start_tag
+        name: (tag_name)
+        (structural_directive
+          name: (directive_name)))
+      (end_tag
+        name: (tag_name)))
+    (end_tag
+      name: (tag_name))))
+
+========================================
+ngTemplateOutlet with context
+========================================
+
+<ng-container *ngTemplateOutlet="t; context: { $implicit: 'x', k: 1 }"></ng-container>
+
+---
+
+(template
+  (element
+    (start_tag
+      name: (tag_name)
+      (structural_directive
+        name: (directive_name)
+        value: (microsyntax
+          (micro_expression
+            (identifier))
+          (micro_keyed
+            key: (identifier)
+            value: (object
+              (pair
+                key: (identifier)
+                value: (string))
+              (pair
+                key: (identifier)
+                value: (number)))))))
+    (end_tag
+      name: (tag_name))))

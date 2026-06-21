@@ -1,0 +1,28 @@
+/* svg-icon — BEM block `.icon`. Global-by-convention; prefixed to avoid collisions. */
+.icon {
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+  vertical-align: middle;
+  color: currentColor;
+  flex: 0 0 auto;
+}
+.icon--sm {
+  width: 1rem;
+  height: 1rem;
+}
+.icon--lg {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+.icon--muted {
+  color: #6b7280;
+}
+.icon--spin {
+  animation: icon-spin 1s linear infinite;
+}
+@keyframes icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

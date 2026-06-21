@@ -1,0 +1,10 @@
+<!-- theme-toggle — ISLAND: client DI (Prefs) + (click) + [class.x] + §13 [@spin] animation + computed + nested <svg-icon>. -->
+<button
+  class="theme-toggle"
+  (click)="toggle()"
+  [class.theme-toggle--dark]="isDark()"
+  [attr.aria-pressed]="isDark()"
+  [@spin]="isDark()"
+>
+  <svg-icon [name]="isDark() ? 'moon' : 'sun'" label="toggle theme"></svg-icon>
+</button>

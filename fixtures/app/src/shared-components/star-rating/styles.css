@@ -1,0 +1,32 @@
+/* star-rating — BEM scoped under .star-rating */
+.star-rating {
+  display: inline-flex;
+  gap: 0.125rem;
+  align-items: center;
+}
+
+.star-rating__star {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0 0.05rem;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--sr-empty, #cbd5e1);
+  transition: color 0.12s ease, transform 0.08s ease;
+}
+
+.star-rating__star:hover {
+  transform: scale(1.12);
+}
+
+.star-rating__star:focus-visible {
+  outline: 2px solid var(--sr-focus, #3b82f6);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+.star-rating__star--on {
+  color: var(--sr-on, #f59e0b);
+}

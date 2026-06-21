@@ -1,0 +1,151 @@
+========================================
+if else-if else
+========================================
+
+@if (a) { <p>a</p> } @else if (b) { <p>b</p> } @else { <p>c</p> }
+
+---
+
+(template
+  (if_block
+    condition: (identifier)
+    consequence: (block
+      (element
+        (start_tag
+          name: (tag_name))
+        (text)
+        (end_tag
+          name: (tag_name))))
+    alternative: (else_if_clause
+      condition: (identifier)
+      (block
+        (element
+          (start_tag
+            name: (tag_name))
+          (text)
+          (end_tag
+            name: (tag_name)))))
+    alternative: (else_clause
+      (block
+        (element
+          (start_tag
+            name: (tag_name))
+          (text)
+          (end_tag
+            name: (tag_name)))))))
+
+========================================
+if with as alias
+========================================
+
+@if (user$ | async; as u) { {{ u.name }} }
+
+---
+
+(template
+  (if_block
+    condition: (pipe_expression
+      expression: (identifier)
+      name: (identifier))
+    alias: (identifier)
+    consequence: (block
+      (interpolation
+        expression: (member_expression
+          object: (identifier)
+          property: (identifier))))))
+
+========================================
+for with track and empty
+========================================
+
+@for (i of items; track i.id) { <li>{{ i.n }}</li> } @empty { <li>none</li> }
+
+---
+
+(template
+  (for_block
+    binding: (for_binding
+      item: (identifier)
+      collection: (identifier)
+      track: (member_expression
+        object: (identifier)
+        property: (identifier)))
+    (block
+      (element
+        (start_tag
+          name: (tag_name))
+        (interpolation
+          expression: (member_expression
+            object: (identifier)
+            property: (identifier)))
+        (end_tag
+          name: (tag_name))))
+    empty: (empty_clause
+      (block
+        (element
+          (start_tag
+            name: (tag_name))
+          (text)
+          (end_tag
+            name: (tag_name)))))))
+
+========================================
+for with contextual aliases
+========================================
+
+@for (r of rows; track r.id; let idx = $index, last = $last) { <i>{{ idx }}</i> }
+
+---
+
+(template
+  (for_block
+    binding: (for_binding
+      item: (identifier)
+      collection: (identifier)
+      track: (member_expression
+        object: (identifier)
+        property: (identifier))
+      (for_alias_group
+        (for_alias
+          name: (identifier)
+          value: (identifier))
+        (for_alias
+          name: (identifier)
+          value: (identifier))))
+    (block
+      (element
+        (start_tag
+          name: (tag_name))
+        (interpolation
+          expression: (identifier))
+        (end_tag
+          name: (tag_name))))))
+
+========================================
+switch
+========================================
+
+@switch (s) { @case ('a') { <p>A</p> } @default { <p>D</p> } }
+
+---
+
+(template
+  (switch_block
+    value: (identifier)
+    (case_clause
+      value: (string)
+      (block
+        (element
+          (start_tag
+            name: (tag_name))
+          (text)
+          (end_tag
+            name: (tag_name)))))
+    (default_clause
+      (block
+        (element
+          (start_tag
+            name: (tag_name))
+          (text)
+          (end_tag
+            name: (tag_name)))))))

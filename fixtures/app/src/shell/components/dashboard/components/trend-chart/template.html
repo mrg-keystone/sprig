@@ -1,0 +1,11 @@
+<!-- SVG sparkline of completed points/day; click to reveal the peak caption -->
+<figure class="spark" (click)="toggle()">
+  <svg class="spark__svg" viewBox="0 0 140 48" role="img" [attr.aria-label]="'completed points trend'">
+    @for (b of bars(); track b.i) {
+      <rect class="spark__bar" [attr.x]="b.i * 20" [attr.y]="48 - b.h" width="14" [attr.height]="b.h" [class.spark__bar--last]="b.i === bars().length - 1"></rect>
+    }
+  </svg>
+  @if (open()) {
+    <figcaption class="spark__cap">peak {{ max() }} pts/day</figcaption>
+  }
+</figure>
