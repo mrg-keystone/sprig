@@ -119,7 +119,7 @@
           <button type="button" class="tool-ico" [class.on]="grid()" title="toggle grid" (click)="toggleGrid()">▦</button>
           <input type="color" class="swatch" title="stage background" [value]="bg()" (input)="onBg($event)" />
           @if (activeCase()) {
-            <a class="stage-open tool-ico" [attr.href]="active()" target="_blank" title="open this preview in its own tab">↗</a>
+            <a class="stage-open tool-ico" [attr.href]="frameSrc()" target="_blank" title="open this preview in its own tab">↗</a>
           }
         </div>
       </div>
@@ -127,7 +127,7 @@
       <div class="stage-host" [class.grid]="grid()" [attr.style]="hostStyle()">
         @if (active()) {
           <div class="stage-canvas" [class.with-kbd]="kbd()" [class.kbd-overlay]="kbd() && kbdMode() === 'ios'" [class.kbd-resize]="kbd() && kbdMode() === 'android'" [attr.style]="canvasStyle()">
-            <iframe class="stage-frame" [src]="active()"></iframe>
+            <iframe class="stage-frame" [src]="frameSrc()"></iframe>
             @if (kbd()) {
               <div class="kbd" aria-hidden="true">
                 <div class="kbd-row">

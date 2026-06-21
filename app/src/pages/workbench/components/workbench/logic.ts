@@ -34,11 +34,14 @@ function groupBy<T>(arr: T[], keyFn: (x: T) => string): Record<string, T[]> {
 const isClient = typeof document !== "undefined";
 
 export default defineComponent({
-  inputs: ["cases", "problems"],
+  inputs: ["cases", "problems", "previewBase"],
   setup: (ctx) => {
     const cases = ctx.input<Case[]>("cases", []);
     const problems = ctx.input<Problem[]>("problems", []);
+    const previewBase = ctx.input<string>("previewBase", "");
     const all = (): Case[] => cases() ?? [];
+    // the iframe / open-in-tab URL: previewBase (a running host app) + the case route.
+    const frameSrc = computed(() => (previewBase() ?? "") + active());
 
     const active = signal(all().length ? all()[0].route : "");
     const search = signal("");
@@ -385,7 +388,7 @@ export default defineComponent({
       nav, navEmpty, palItems, activeCase, hasAny: computed(() => all().length > 0),
       testFiles, testNames, showSpecList, tests, conTypes, conVisible,
       zoomPct, canvasStyle, canvasKbdClass, hostStyle, dockStyle, hasControls, controlsEmpty,
-      conHidden, caseStatus, events,
+      conHidden, caseStatus, events, previewBase, frameSrc,
       // methods
       go, toggleCat, onSearch, openPalette, onPalInput, onPalKey, palBackdrop,
       runAll, runTests, setVp, setKbdMode, toggleKbd, toggleGrid, zoomOut, zoomReset, zoomIn, onBg,
