@@ -1,0 +1,12 @@
+.counter { display: flex; gap: 32px; padding: 24px 0; align-items: center; }
+.tabular-nums { font-size: 30px; font-variant-numeric: tabular-nums; margin: 0; }
+.cbtn {
+  padding: 4px 10px;
+  border: 2px solid #6b7280;
+  border-radius: 2px;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  transition: background-color 0.12s;
+}
+.cbtn:hover { background: #e5e7eb; }

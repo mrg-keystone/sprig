@@ -1,0 +1,13 @@
+.btn {
+  padding: 4px 8px;
+  border: 2px solid #6b7280;
+  border-radius: 2px;
+  background: #fff;
+  cursor: pointer;
+  transition: background-color 0.12s;
+  font: inherit;
+}
+.btn:hover:not(:disabled) { background: #e5e7eb; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn--sm { font-size: 12px; padding: 2px 6px; }
+.btn--lg { font-size: 18px; padding: 8px 14px; }

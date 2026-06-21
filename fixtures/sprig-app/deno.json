@@ -1,0 +1,11 @@
+{
+  "name": "@fixtures/sprig-app",
+  "version": "0.0.0",
+  "compilerOptions": {
+    "lib": ["dom", "deno.ns", "esnext"]
+  },
+  "imports": {
+    "@sprig/core": "../../framework/.sprig/core.ts",
+    "@preact/signals-core": "npm:@preact/signals-core@^1.8.0"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "_name": "Disabled",
+  "_innerHtml": "Can&apos;t touch this",
+  "disabled": true,
+  "id": "disabled"
+}

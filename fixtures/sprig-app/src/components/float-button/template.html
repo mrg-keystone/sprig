@@ -1,0 +1,3 @@
+<!-- button — a static sprig component. Inputs: id, disabled, size, label (the
+     case's _innerHtml maps to [innerHTML]). -->
+<button class="btn" [attr.id]="id" [class.btn--sm]="size === 'sm'" [class.btn--lg]="size === 'lg'" [disabled]="disabled" [innerHTML]="label"></button>
