@@ -4,7 +4,8 @@
   "exports": "./src/main.ts",
   "compilerOptions": {
     "experimentalDecorators": true,
-    "emitDecoratorMetadata": true
+    "emitDecoratorMetadata": true,
+    "lib": ["dom", "dom.asynciterable", "dom.iterable", "deno.ns", "esnext"]
   },
   "imports": {
     "@sprig/core": "../framework/.sprig/core.ts",

@@ -28,3 +28,72 @@ export interface Manifest {
   problems: Problem[];
   count: number;
 }
+
+// ── workbench shell view-model (the stage bridge + dock) ─────────────────────
+
+export type DotStatus = "idle" | "running" | "pass" | "fail" | "island" | "page" | string;
+
+export interface Toast {
+  id: number;
+  tone: string; // "ok" | "fail" | "info"
+  title: string;
+  text: string;
+}
+
+export interface SpecResult {
+  ok: boolean;
+  title: string;
+  error?: string;
+}
+
+export interface TestState {
+  status: "idle" | "running" | "done";
+  results: SpecResult[];
+  error: string | null;
+}
+
+export interface RunResponse {
+  ok?: boolean;
+  results?: SpecResult[];
+  error?: string;
+}
+
+export interface StageEvent {
+  id: number;
+  time: string;
+  source: string;
+  type: string;
+  detail: string;
+}
+
+/** A single editable control bridged from the iframe stage. */
+export interface ControlDef {
+  type?: string;
+  options?: unknown[];
+  min?: number;
+  max?: number;
+  step?: number;
+}
+
+export interface ControlView {
+  scope: string; // "prop" | "signal" | "sub" | "html"
+  key: string;
+  instKey?: string;
+  value: unknown;
+  def?: ControlDef;
+}
+
+export interface InstanceView {
+  key: string;
+  id?: string;
+  name: string;
+  controls: ControlView[];
+}
+
+export interface Surface {
+  name: string;
+  background?: string;
+  html?: string;
+  controls: ControlView[];
+  instances: InstanceView[];
+}

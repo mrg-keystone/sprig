@@ -20,6 +20,10 @@ import { scopeId } from "./scope.ts";
 export interface IslandEntry {
   setup: (ctx: ComponentCtx) => Record<string, unknown>;
   template: SerializedTemplate;
+  /** the component's view-encapsulation marker (path-derived, from the build) so
+   *  the client re-render stamps the SAME scope attribute the SSR + scoped CSS use.
+   *  Falls back to scopeId(selector) for older chunks that didn't carry it. */
+  scope?: string;
 }
 /** Read from the SSR'd <script id="__sprig_config"> — where chunks live + cache version. */
 export interface SprigConfig {
@@ -370,8 +374,10 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
   el.dataset.sprigHydrated = "1";
 
   const scope = entry.setup(clientCtx(inputs)); // the signals here ARE the island's state
-  // re-emit the view-encapsulation marker so the re-rendered DOM keeps its scoped styles
-  const scopeAttr = scopeId(sel);
+  // re-emit the view-encapsulation marker so the re-rendered DOM keeps its scoped
+  // styles. Prefer the build-supplied (path-derived) scope so it matches the SSR
+  // markup + the scoped app.css; fall back to scopeId(sel) for chunks without it.
+  const scopeAttr = entry.scope ?? scopeId(sel);
   // swappable across HMR; the SAME `scope` is kept so state survives a template swap
   let nodes = named(fromSerialized(entry.template));
   let source = entry.template.source;

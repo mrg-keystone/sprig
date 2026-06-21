@@ -1,29 +1,56 @@
 /* Document-root styling escapes view encapsulation via :global. The terracotta/
-   paper design tokens are ported from the isolate UI's styles.css. */
+   paper design tokens + the v0.4 shell palette are ported from ui/assets/styles.css. */
 :global(:root) {
   --iso-ink: #17150f;
-  --iso-ink-2: #6b6453;
-  --iso-ink-3: #9b927c;
   --iso-paper: #f7f3ea;
-  --iso-surface: #fffdf8;
   --iso-line: #e4ddcc;
-  --iso-line-2: #d8cfb8;
   --iso-accent: #c2410c;
-  --iso-accent-soft: #f4e3d6;
   --iso-ok: #15803d;
   --iso-fail: #b91c1c;
-  --iso-island: #7c3aed;
-  --iso-page: #a16207;
-  --iso-r: 8px;
-  --iso-r-sm: 6px;
+
+  /* isolate shell (v0.4) palette */
+  --ink: #17150f;
+  --ink-2: #6b6453;
+  --ink-3: #9b927c;
+  --paper: #f3eee2;
+  --surface: #fffdf8;
+  --surface-2: #faf6ec;
+  --line: #e4ddcc;
+  --line-2: #d6ccb4;
+  --accent: #c2410c;
+  --accent-2: #9a3412;
+  --accent-soft: #f7e7dd;
+  --ok: #15803d;
+  --fail: #b91c1c;
+  --fail-soft: #fdeceb;
+  --island: #7c3aed;
+  --page: #a16207;
+  --r: 8px;
+  --r-sm: 6px;
+  --r-lg: 12px;
+  --shadow: 0 1px 2px rgba(23, 21, 15, .06), 0 8px 24px -12px rgba(23, 21, 15, .18);
+  --shadow-lg: 0 12px 40px -12px rgba(23, 21, 15, .32);
+  --sb-w: 250px;
 }
+:global(*) { box-sizing: border-box; }
+:global(html),
+:global(body) { height: 100%; }
 :global(body) {
   margin: 0;
-  background: var(--iso-paper);
-  color: var(--iso-ink);
+  background: var(--paper);
+  color: var(--ink);
   font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
   -webkit-font-smoothing: antialiased;
 }
-.app-root {
-  min-height: 100vh;
+:global(a) { color: inherit; }
+:global(*::-webkit-scrollbar) { width: 9px; height: 9px; }
+:global(*::-webkit-scrollbar-thumb) {
+  background: var(--line-2);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
+:global(*::-webkit-scrollbar-thumb:hover) { background: var(--ink-3); }
+@keyframes pulse { 50% { opacity: .35; } }
+
+.app-root { min-height: 100vh; }

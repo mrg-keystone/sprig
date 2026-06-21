@@ -1,0 +1,362 @@
+<!-- workbench — the isolate v0.4 persistent shell (ported from Shell.tsx). One
+     island; all interactivity lives in logic.ts. Derived nav/palette/console
+     views are computed there so this template iterates plain arrays. String
+     literals in expressions use single quotes (template grammar requirement). -->
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◧</span>
+      <span>isolate</span>
+      <span class="ver">v0.4</span>
+    </div>
+    <button type="button" class="kbd-search" (click)="openPalette()">
+      <span>⌕</span>
+      <span>Jump to a case…</span>
+      <span class="k">⌘K</span>
+    </button>
+    <div class="spacer"></div>
+    <button type="button" class="tbtn" (click)="runAll()" [disabled]="running()">
+      <span class="dot"></span>
+      {{ running() ? 'Running…' : 'Run all tests' }}
+    </button>
+  </header>
+
+  <div class="body">
+    <nav class="sidebar">
+      <div class="sb-search">
+        <input [value]="search()" (input)="onSearch($event)" placeholder="Filter components…  ( / )" autocomplete="off" />
+      </div>
+      <div class="sb-scroll">
+        @if (navEmpty()) {
+          <div class="sb-empty">
+            @if (hasAny()) {
+              No cases match your filter.
+            } @else {
+              No components yet. Drop an isolate/ folder next to any component to see it here.
+            }
+          </div>
+        } @else {
+          @for (sec of nav(); track sec.target) {
+            <div class="sb-section">
+              <div class="sb-section__h" [class.is-comp]="sec.isComp">{{ sec.label }}</div>
+              @for (cat of sec.cats; track cat.ck) {
+                <div class="sb-cat" [class.collapsed]="cat.collapsed">
+                  <button type="button" class="sb-cat__h" (click)="toggleCat(cat.ck)">
+                    <span class="sb-cat__caret">▸</span>
+                    <span>{{ cat.cat }}</span>
+                    <span class="sb-cat__count">{{ cat.count }}</span>
+                  </button>
+                  <div class="sb-cases">
+                    @for (cg of cat.comps; track cg.comp) {
+                      <div class="sb-comp-group">
+                        <div class="sb-comp">{{ cg.comp }}</div>
+                        @for (c of cg.cases; track c.route) {
+                          <button type="button" class="sb-case" [class.active]="c.isActive" (click)="go(c.route)">
+                            <span class="sb-case__label">{{ c.label }}</span>
+                            <span
+                              class="sb-case__status"
+                              [class.island]="c.status === 'island'"
+                              [class.page]="c.status === 'page'"
+                              [class.pass]="c.status === 'pass'"
+                              [class.fail]="c.status === 'fail'"
+                              [class.running]="c.status === 'running'"
+                              [attr.title]="c.status"
+                            ></span>
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
+        }
+      </div>
+    </nav>
+
+    <main class="main">
+      @if (bannerOpen() && problems().length > 0) {
+        <div class="banner">
+          <span>⚠</span>
+          <div>
+            <b>{{ problems().length }} config problem(s)</b> — these previews are broken.
+            @for (p of problems(); track p.path) {
+              <div><code>{{ p.path }}</code> {{ p.detail }}</div>
+            }
+          </div>
+          <button type="button" class="x" (click)="closeBanner()">×</button>
+        </div>
+      }
+
+      <div class="stage-head">
+        @if (activeCase(); as cur) {
+          <div class="crumb">
+            <span class="seg">{{ cur.category }}</span>
+            <span class="sep">/</span>
+            <span class="cur">{{ cur.component }} · {{ cur.label }}</span>
+            <span class="kind" [class.island]="cur.kind === 'island'" [class.page]="cur.kind === 'page'" [class.component]="cur.kind === 'component'">{{ cur.kind }}</span>
+          </div>
+        } @else {
+          <div class="crumb"><span class="seg">nothing selected</span></div>
+        }
+        <div class="stage-tools">
+          <div class="seg-group">
+            @for (v of vpModes; track v) {
+              <button type="button" [class.on]="vp() === v" (click)="setVp(v)">{{ v }}</button>
+            }
+          </div>
+          <button type="button" class="tool-ico" [class.on]="kbd()" title="toggle emulated mobile keyboard" (click)="toggleKbd()">⌨</button>
+          @if (kbd()) {
+            <div class="seg-group">
+              <button type="button" [class.on]="kbdMode() === 'ios'" (click)="setKbdMode('ios')">iOS</button>
+              <button type="button" [class.on]="kbdMode() === 'android'" (click)="setKbdMode('android')">Android</button>
+            </div>
+          }
+          <button type="button" class="tool-ico" title="zoom out" (click)="zoomOut()">−</button>
+          <button type="button" class="tool-ico" title="reset zoom" (click)="zoomReset()">{{ zoomPct() }}</button>
+          <button type="button" class="tool-ico" title="zoom in" (click)="zoomIn()">+</button>
+          <button type="button" class="tool-ico" [class.on]="grid()" title="toggle grid" (click)="toggleGrid()">▦</button>
+          <input type="color" class="swatch" title="stage background" [value]="bg()" (input)="onBg($event)" />
+          @if (activeCase()) {
+            <a class="stage-open tool-ico" [attr.href]="active()" target="_blank" title="open this preview in its own tab">↗</a>
+          }
+        </div>
+      </div>
+
+      <div class="stage-host" [class.grid]="grid()" [attr.style]="hostStyle()">
+        @if (active()) {
+          <div class="stage-canvas" [class.with-kbd]="kbd()" [class.kbd-overlay]="kbd() && kbdMode() === 'ios'" [class.kbd-resize]="kbd() && kbdMode() === 'android'" [attr.style]="canvasStyle()">
+            <iframe class="stage-frame" [src]="active()"></iframe>
+            @if (kbd()) {
+              <div class="kbd" aria-hidden="true">
+                <div class="kbd-row">
+                  @for (k of kbdR1; track k) { <span class="kbd-key">{{ k }}</span> }
+                </div>
+                <div class="kbd-row">
+                  @for (k of kbdR2; track k) { <span class="kbd-key">{{ k }}</span> }
+                </div>
+                <div class="kbd-row">
+                  <span class="kbd-key dark wide">⇧</span>
+                  @for (k of kbdR3; track k) { <span class="kbd-key">{{ k }}</span> }
+                  <span class="kbd-key dark wide">⌫</span>
+                </div>
+                <div class="kbd-row">
+                  <span class="kbd-key dark">123</span>
+                  <span class="kbd-key dark">🌐</span>
+                  <span class="kbd-key space">space</span>
+                  <span class="kbd-key return">return</span>
+                </div>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="stage-empty">Select a case from the navigator to preview it here.</div>
+        }
+      </div>
+
+      <section class="dock" [class.collapsed]="!dockOpen()" [attr.style]="dockStyle()">
+        @if (dockOpen()) {
+          <div class="dock-resize" (pointerdown)="startDockResize($event)"></div>
+        }
+        <div class="dock-tabs">
+          <button type="button" class="dock-tab" [class.on]="dockTab() === 'controls'" (click)="setDock('controls')">controls</button>
+          <button type="button" class="dock-tab" [class.on]="dockTab() === 'console'" (click)="setDock('console')">
+            console
+            @if (events().length > 0) { <span class="badge accent">{{ events().length }}</span> }
+          </button>
+          <button type="button" class="dock-tab" [class.on]="dockTab() === 'tests'" (click)="setDock('tests')">
+            tests
+            @if (activeCase() && activeCase().tests.length > 0) { <span class="badge">{{ activeCase().tests.length }}</span> }
+          </button>
+          <button type="button" class="dock-collapse" [attr.title]="dockOpen() ? 'collapse' : 'expand'" (click)="toggleDock()">{{ dockOpen() ? '▾' : '▴' }}</button>
+        </div>
+        @if (dockOpen()) {
+          <div class="dock-body">
+            <!-- controls tab -->
+            @if (dockTab() === 'controls') {
+              @if (!surface()) {
+                <div class="ctrl-empty">Loading the stage…</div>
+              } @else if (controlsEmpty()) {
+                <div class="ctrl-empty">no editable props</div>
+              } @else {
+                <div class="ctrls-body">
+                  @if (hasControls()) {
+                    <div class="ctrl-group">
+                      <div class="ctrl-group__h">{{ surface().name }}</div>
+                      @for (c of surface().controls; track c.scope + c.key) {
+                        <div class="ctrl-row">
+                          <label>{{ c.key }} @if (c.scope === 'signal') { <span class="sig">signal</span> }</label>
+                          @if (controlType(c) === 'select') {
+                            <select class="ci" [value]="c.value == null ? '' : c.value" (change)="editText(c, $event)">
+                              @for (o of (c.def && c.def.options ? c.def.options : []); track o) { <option [attr.value]="o">{{ o }}</option> }
+                            </select>
+                          }
+                          @if (controlType(c) === 'range') {
+                            <span class="crange">
+                              <input type="range" [attr.min]="c.def && c.def.min != null ? c.def.min : 0" [attr.max]="c.def && c.def.max != null ? c.def.max : 100" [attr.step]="c.def && c.def.step != null ? c.def.step : 1" [value]="c.value == null ? 0 : c.value" (input)="editNumber(c, $event)" />
+                              <span class="val">{{ c.value == null ? 0 : c.value }}</span>
+                            </span>
+                          }
+                          @if (controlType(c) === 'color') {
+                            <input type="color" class="swatch" [value]="c.value == null ? '#000000' : c.value" (input)="editText(c, $event)" />
+                          }
+                          @if (controlType(c) === 'boolean') {
+                            <input type="checkbox" class="cbox" [checked]="!!c.value" (change)="editBool(c, $event)" />
+                          }
+                          @if (controlType(c) === 'number') {
+                            <input type="number" class="ci" [value]="c.value == null ? 0 : c.value" (input)="editNumber(c, $event)" />
+                          }
+                          @if (controlType(c) === 'text') {
+                            <input type="text" class="ci" [value]="c.value == null ? '' : c.value" (input)="editText(c, $event)" />
+                          }
+                        </div>
+                      }
+                      @if (surface().html != null) {
+                        <div class="ctrl-row">
+                          <label>_innerHtml</label>
+                          <input class="ci" [value]="surface().html" (input)="editHtml($event)" />
+                        </div>
+                      }
+                    </div>
+                  }
+                  @for (inst of surface().instances; track inst.key) {
+                    <div class="ctrl-group">
+                      <div class="ctrl-group__h">
+                        {{ inst.id ? inst.name + ' #' + inst.id : inst.name }}
+                        <span class="pill">instance</span>
+                      </div>
+                      @for (c of inst.controls; track c.key) {
+                        <div class="ctrl-row">
+                          <label>{{ c.key }}</label>
+                          @if (controlType(c) === 'boolean') {
+                            <input type="checkbox" class="cbox" [checked]="!!c.value" (change)="editBool(c, $event)" />
+                          } @else if (controlType(c) === 'number') {
+                            <input type="number" class="ci" [value]="c.value == null ? 0 : c.value" (input)="editNumber(c, $event)" />
+                          } @else {
+                            <input type="text" class="ci" [value]="c.value == null ? '' : c.value" (input)="editText(c, $event)" />
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            }
+
+            <!-- console tab -->
+            @if (dockTab() === 'console') {
+              <div class="con">
+                <div class="con-head">
+                  <input class="con-filter" placeholder="filter…" [value]="conQ()" (input)="onConFilter($event)" />
+                  <div class="con-types">
+                    @for (ty of conTypes(); track ty) {
+                      <button type="button" class="con-type" [class.off]="conHidden()[ty]" (click)="toggleConType(ty)">{{ ty }}</button>
+                    }
+                  </div>
+                  <span class="con-count">{{ conVisible().length }} / {{ events().length }}</span>
+                  @if (events().length > 0) {
+                    <button type="button" class="con-clear" (click)="clearEvents()">clear</button>
+                  }
+                </div>
+                <div class="con-list">
+                  @if (conVisible().length === 0) {
+                    <div class="con-empty">
+                      @if (events().length > 0) { nothing matches the filter } @else { no events yet — interact with the component on the stage }
+                    </div>
+                  }
+                  @for (e of conVisible(); track e.id) {
+                    <div class="con-row">
+                      <span class="con-time">{{ e.time }}</span>
+                      <span class="con-src">{{ e.source }}</span>
+                      <span class="con-type-c">{{ e.type }}</span>
+                      <span class="con-detail">{{ e.detail }}</span>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+
+            <!-- tests tab -->
+            @if (dockTab() === 'tests') {
+              <div class="tests">
+                <div class="tests-bar">
+                  <button type="button" class="run-btn" (click)="runTests()" [disabled]="testFiles().length === 0 || tests().status === 'running'">
+                    {{ tests().status === 'running' ? 'running…' : '▸ run tests' }}
+                  </button>
+                  <span class="tests-summary">
+                    @if (testFiles().length > 0) {
+                      {{ testNames().length }} spec(s) · {{ testFiles().length }} file(s)
+                    } @else {
+                      no tests for this case
+                    }
+                  </span>
+                </div>
+                @if (tests().error) {
+                  <div class="spec-err"><span class="lbl">run error</span>
+{{ tests().error }}</div>
+                }
+                @if (tests().results.length > 0) {
+                  <div class="spec-file">
+                    <div class="spec-file__h">results</div>
+                    @for (r of tests().results; track r.title) {
+                      <div class="spec">
+                        <span class="ico" [class.pass]="r.ok" [class.fail]="!r.ok">{{ r.ok ? '✓' : '✗' }}</span>
+                        <span class="name">{{ r.title }}</span>
+                      </div>
+                    }
+                  </div>
+                } @else if (showSpecList()) {
+                  <div class="spec-file">
+                    <div class="spec-file__h">specs</div>
+                    @for (n of testNames(); track n) {
+                      <div class="spec"><span class="ico idle">○</span><span class="name">{{ n }}</span></div>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+      </section>
+    </main>
+  </div>
+
+  @if (palOpen()) {
+    <div class="palette-back" (click)="palBackdrop($event)">
+      <div class="palette">
+        <input placeholder="Jump to a case — type a component, category, or case name…" [value]="palQ()" (input)="onPalInput($event)" (keydown)="onPalKey($event)" />
+        <div class="palette-list">
+          @if (palItems().length === 0) {
+            <div class="pal-empty">No matches.</div>
+          } @else {
+            @for (c of palItems(); track c.route) {
+              <div class="pal-item" [class.sel]="active() === c.route" (click)="go(c.route)">
+                <span>{{ c.component }} · {{ c.label }}</span>
+                <span class="crumbs">{{ c.category }}</span>
+                <span class="pk">{{ c.kind }}</span>
+              </div>
+            }
+          }
+        </div>
+        <div class="pal-foot">
+          <span><span class="k">↑↓</span> navigate</span>
+          <span><span class="k">↵</span> open</span>
+          <span><span class="k">esc</span> close</span>
+        </div>
+      </div>
+    </div>
+  }
+
+  <div class="toasts">
+    @for (t of toasts(); track t.id) {
+      <div class="toast" [class.ok]="t.tone === 'ok'" [class.fail]="t.tone === 'fail'" [class.info]="t.tone === 'info'">
+        <div>
+          <div class="tt">{{ t.title }}</div>
+          <div class="tx">{{ t.text }}</div>
+        </div>
+        <button type="button" class="x" (click)="dismissToast(t.id)">×</button>
+      </div>
+    }
+  </div>
+</div>

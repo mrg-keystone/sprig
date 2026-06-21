@@ -1,22 +1,3 @@
-<!-- WS2 placeholder: a static SSR list proving in-process discovery works. WS3
-     replaces this body with the full <workbench> island shell. -->
-<main class="wb-min">
-  <h1>isolate · {{ count }} cases</h1>
-  @if (problems.length > 0) {
-    <ul class="wb-min__problems">
-      @for (p of problems; track p.path) {
-        <li>{{ p.kind }}: {{ p.detail }} <code>{{ p.path }}</code></li>
-      }
-    </ul>
-  }
-  <ul class="wb-min__cases">
-    @for (c of cases; track c.route) {
-      <li>
-        <a [attr.href]="c.route">{{ c.category }} / {{ c.label }}</a>
-        <span class="wb-min__kind">{{ c.kind }}</span>
-      </li>
-    } @empty {
-      <li>No cases discovered.</li>
-    }
-  </ul>
-</main>
+<!-- The workbench page mounts the full shell island, passing the SSR-resolved
+     discovery data (cases + problems) as inputs. -->
+<workbench [cases]="cases" [problems]="problems"></workbench>
