@@ -1,22 +1,54 @@
-<!-- Flat gallery index (fallback view). WS4 ports the full grouped gallery +
-     per-case <run-tests> islands; this is the minimal SSR scaffold. -->
-<main class="gallery">
-  <h1>isolate <span class="gallery__count">{{ count }} cases</span></h1>
+<!-- Flat gallery index (fallback view), ported from gallery.tsx. Static SSR;
+     each case embeds the <run-tests> island. -->
+<main class="iso-gallery">
+  <h1>isolate</h1>
+  <p class="iso-sub">
+    @if (only) { <a class="iso-sub__link" href="/ui/">← all</a> · }
+    {{ count }} case(s)
+  </p>
+
   @if (problems.length > 0) {
-    <section class="gallery__problems">
-      @for (p of problems; track p.path) {
-        <p>{{ p.kind }}: {{ p.detail }}</p>
+    <section class="iso-problems">
+      <h2 class="iso-problems__title">⚠ {{ problems.length }} config problem(s) — these previews are broken</h2>
+      <ul class="iso-problems__list">
+        @for (p of problems; track p.path) {
+          <li class="iso-problems__row">
+            <code class="iso-problems__path">{{ p.path }}</code>
+            <span class="iso-problems__detail">{{ p.detail }}</span>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
+  @if (sections.length === 0) {
+    <p class="ctrl-empty">nothing here yet</p>
+  }
+
+  @for (sec of sections; track sec.target) {
+    <section class="iso-target-sec">
+      <h2 class="iso-target"><a [attr.href]="sec.href">{{ sec.title }}</a></h2>
+      @for (cat of sec.cats; track cat.cat) {
+        <details class="iso-zip" open>
+          <summary class="iso-zip__head">{{ cat.cat }}</summary>
+          <div class="iso-zip__body">
+            @for (f of cat.folders; track f.folder) {
+              <details class="iso-zip iso-zip--sub" open>
+                <summary class="iso-zip__head">{{ f.folder }}</summary>
+                <ul class="iso-cases">
+                  @for (c of f.cases; track c.route) {
+                    <li class="iso-case">
+                      <a class="iso-case__link" [attr.href]="c.route">{{ c.label }}</a>
+                      <span class="iso-badge" [class.iso-badge--island]="c.kind === 'island'">{{ c.kind }}</span>
+                      <run-tests [tests]="c.testFiles"></run-tests>
+                    </li>
+                  }
+                </ul>
+              </details>
+            }
+          </div>
+        </details>
       }
     </section>
   }
-  <ul class="gallery__grid">
-    @for (c of cases; track c.route) {
-      <li class="gallery__card">
-        <a [attr.href]="c.route">{{ c.label }}</a>
-        <span class="gallery__badge">{{ c.kind }}</span>
-      </li>
-    } @empty {
-      <li>No cases.</li>
-    }
-  </ul>
 </main>

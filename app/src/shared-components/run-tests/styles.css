@@ -1,0 +1,11 @@
+/* run-tests — ported from ui/assets/styles.css (.iso-run …). */
+.iso-run { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: auto; min-width: 0; }
+.iso-run--none { opacity: 0.3; font-size: 0.7rem; margin-left: auto; }
+.iso-run__btn { font: inherit; font-size: 0.7rem; cursor: pointer; border: 1px solid var(--iso-line);
+  background: #fff; border-radius: 6px; padding: 0.22rem 0.6rem; transition: border-color 0.12s ease; }
+.iso-run__btn:hover:not(:disabled) { border-color: var(--iso-ink); }
+.iso-run__btn:disabled { opacity: 0.5; cursor: default; }
+.iso-run__results { display: inline-flex; gap: 0.6rem; font-size: 0.7rem; }
+.iso-dot.ok { color: var(--iso-ok); }
+.iso-dot.fail { color: var(--iso-fail); }
+.iso-run__error { max-width: 24rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

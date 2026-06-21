@@ -1,0 +1,23 @@
+<!-- run-tests island — embedded per gallery case. -->
+@if (!hasTests()) {
+  <span class="iso-run iso-run--none">no tests</span>
+} @else {
+  <span class="iso-run">
+    <button type="button" class="iso-run__btn" (click)="run()" [disabled]="status() === 'running'">
+      {{ status() === 'running' ? 'running…' : '▸ run' }}
+    </button>
+    @if (status() === 'done') {
+      <span class="iso-run__results">
+        @if (results().length > 0) {
+          @for (r of results(); track r.title) {
+            <span class="iso-dot" [class.ok]="r.ok" [class.fail]="!r.ok" [attr.title]="r.error || r.title">{{ r.ok ? '✓' : '✗' }} {{ r.title }}</span>
+          }
+        } @else if (ok()) {
+          <span class="iso-dot ok">✓ ok</span>
+        } @else {
+          <span class="iso-dot fail iso-run__error" [attr.title]="error() || 'error'">✗ {{ errorFirstLine() }}</span>
+        }
+      </span>
+    }
+  </span>
+}

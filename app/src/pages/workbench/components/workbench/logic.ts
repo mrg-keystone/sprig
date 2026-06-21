@@ -172,7 +172,7 @@ export default defineComponent({
           body: JSON.stringify({ files: c.testFiles }),
         });
         const j: RunResponse = await res.json();
-        const results = j.results || [];
+        const results = j.testResults || j.results || [];
         const pass = !!j.ok && results.length > 0 && results.every((r) => r.ok);
         caseStatus.set({ ...caseStatus(), [c.route]: pass ? "pass" : "fail" });
         return { pass, results, error: (!j.ok && !results.length) ? (j.error || "run failed") : null };
@@ -213,7 +213,7 @@ export default defineComponent({
           body: JSON.stringify({ files }),
         });
         const j: RunResponse = await res.json();
-        const results = j.results || [];
+        const results = j.testResults || j.results || [];
         const pass = !!j.ok && results.length > 0 && results.every((r) => r.ok);
         tests.set({ status: "done", results, error: (!j.ok && !results.length) ? (j.error || "run failed") : null });
         caseStatus.set({ ...caseStatus(), [c.route]: pass ? "pass" : "fail" });

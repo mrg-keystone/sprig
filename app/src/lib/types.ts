@@ -54,6 +54,8 @@ export interface TestState {
 
 export interface RunResponse {
   ok?: boolean;
+  /** keep's TestReportDto field; the Fresh /api/run proxy renamed it to `results`. */
+  testResults?: SpecResult[];
   results?: SpecResult[];
   error?: string;
 }
