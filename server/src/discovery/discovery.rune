@@ -1,0 +1,95 @@
+[MOD] discovery
+
+[REQ] discovery.scan(RootDto): DiscoverResultDto
+    [NEW] discovery
+    fs:project.scan(projectRoot): DiscoverResultDto
+      scan-failed
+    discovery.collect(DiscoverResultDto): DiscoverResultDto
+
+
+[REQ] manifest.build(RootDto): ManifestDto
+    fs:project.scan(projectRoot): DiscoverResultDto
+      scan-failed
+    [NEW] manifest
+    manifest.fromDiscovery(DiscoverResultDto): manifest
+    manifest.toDto(): ManifestDto
+
+
+[ENT] http.getDiscovery(RootDto): DiscoverResultDto
+[ENT] http.getManifest(RootDto): ManifestDto
+
+
+[TYP:example=.] projectRoot: string
+    host project root to scan; defaults to the server's cwd
+[TYP] slug: string
+    root-qualified id, e.g. islands__counter
+[TYP] label: string
+    human label (the folder name)
+[TYP] kind: string
+    "static" or "island"
+[TYP] sourceRoot: string
+    source root: components, islands, or pages
+[TYP] target: string
+    "component" or "page"
+[TYP] dir: string
+    absolute path to the component directory
+[TYP] isolateDir: string
+    absolute path to the isolate/ folder
+[TYP] componentFile: string
+    resolved .tsx file for the component (or "")
+[TYP] exportName: string
+    PascalCase export expected from componentFile
+[TYP] category: string
+    gallery group + URL segment
+[TYP] folder: string
+    optional sub-group + URL segment ("" when absent)
+[TYP] background: string
+    stage background behind the component
+[TYP] controlDefs: Record<string, unknown>
+    top-level control widget definitions, keyed by prop name
+[TYP] subControlDefs: Record<string, unknown>
+    per-sub-component control defs, keyed by function name
+[TYP] name: string
+    a case or test name
+[TYP] jsonPath: string
+    absolute path to the case JSON file
+[TYP] props: Record<string, unknown>
+    bare-key props passed to the component
+[TYP] innerHtml: string
+    children via dangerouslySetInnerHTML
+[TYP] signals: Record<string, unknown>
+    signal-typed values, keyed by name
+[TYP] mocks: Record<string, unknown>
+    sub-component mock/force directives, keyed by name
+[TYP] route: string
+    preview route, e.g. /components/buttons/primary
+[TYP] file: string
+    absolute file path
+[TYP] path: string
+    the offending file or directory for a problem
+[TYP] detail: string
+    human-readable explanation of a problem
+
+
+[DTO] RootDto: projectRoot
+    the host project root to scan
+[DTO] EntryDto: slug, label, kind, sourceRoot, target, dir, isolateDir, componentFile, exportName, category, folder, background?, controlDefs, subControlDefs, case(s)
+    a discovered component, island, or page composition
+[DTO] CaseDto: name, label, jsonPath, props, innerHtml?, signals?, mocks?, route, test(s)
+    one preview scenario for a component
+[DTO] TestDto: name, file
+    a Playwright spec belonging to a case
+[DTO] ProblemDto: kind, path, detail
+    a discovery config problem (fixture/case/file/export)
+[DTO] DiscoverResultDto: entry(s), problem(s)
+    the full discovery result: entries plus problems
+[DTO] ManifestDto: entry(s), problem(s)
+    the gallery view model derived from discovery
+
+
+[NON] project
+    the host Fresh project being scanned for isolate/ folders
+
+
+[SRV] sc:fs: ISOLATE_ROOT
+    local filesystem scan of the host project (sidecar/local; no network)

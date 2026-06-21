@@ -1,0 +1,5 @@
+{
+  "_name": "Buttons forced disabled",
+  "_signals": { "count": 5 },
+  "_mocks": { "Button": { "props": { "disabled": true } } }
+}

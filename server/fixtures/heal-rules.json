@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "slugs": {
+    "scan-failed": [
+      {
+        "kind": "note",
+        "label": "Check the project root is a readable Fresh project",
+        "why": "Discovery could not scan the project. Confirm the root points at a Fresh project (has components/, islands/, or pages/) and that the directory is readable, then retry."
+      }
+    ],
+    "no-match": [
+      {
+        "kind": "note",
+        "label": "No tests matched the filter/files",
+        "why": "The filter or files list selected zero runnable specs. Run `isolate list` to see each case's route and test names, then adjust the filter (it matches a spec file path OR `component/case`)."
+      }
+    ],
+    "provision-failed": [
+      {
+        "kind": "note",
+        "label": "Could not provision ~/.isolate-runner",
+        "why": "Provisioning the Playwright runner failed. Ensure Node/npm are on PATH and the home dir is writable, then retry — ensureRunner installs @playwright/test (version-matched) + rxjs + isolate-events.",
+        "retryAfter": true
+      }
+    ],
+    "runner-unavailable": [
+      {
+        "kind": "note",
+        "label": "Provision the runner, then retry",
+        "why": "The Playwright runner under ~/.isolate-runner is missing or incomplete. Call GET /runner-status (runner.ensure) or run any `isolate` command once to provision it, then retry.",
+        "retryAfter": true
+      }
+    ]
+  }
+}

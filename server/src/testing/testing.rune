@@ -1,0 +1,82 @@
+[MOD] testing
+
+[REQ] test.run(TestRunRequestDto): TestReportDto
+    [NEW] test
+    os:runner.run(TestRunRequestDto): TestReportDto
+      runner-unavailable no-match timeout
+    test.collect(TestReportDto): TestReportDto
+
+
+[REQ] runner.ensure(RootDto): RunnerStatusDto
+    [NEW] runner
+    os:runner.provision(projectRoot): RunnerStatusDto
+      provision-failed
+    runner.collect(RunnerStatusDto): RunnerStatusDto
+
+
+[ENT] http.postTestRun(TestRunRequestDto): TestReportDto
+[ENT] http.getRunnerStatus(RootDto): RunnerStatusDto
+
+
+[TYP:example=.] projectRoot: string
+    host project root; defaults to the server's cwd
+[TYP] filter: string
+    matches a spec file path OR component/case
+[TYP] file: string
+    absolute file path
+[TYP] baseUrl: string
+    reuse an already-running preview server
+[TYP] caseName: string
+    the case a test result belongs to
+[TYP] route: string
+    the preview route the spec ran against
+[TYP] title: string
+    the test title
+[TYP] line: number
+    source line of the test
+[TYP] ok: boolean
+    pass/fail flag
+[TYP] error: string
+    error message text
+[TYP] screenshot: string
+    path to a failure screenshot
+[TYP] ran: boolean
+    whether the run actually executed
+[TYP] total: number
+    total test count
+[TYP] passed: number
+    passing test count
+[TYP] failed: number
+    failing test count
+[TYP] kind: string
+    the problem kind (fixture/case/file/export)
+[TYP] path: string
+    the offending file or directory for a problem
+[TYP] detail: string
+    human-readable explanation of a problem
+[TYP] version: string
+    the provisioned Playwright version
+[TYP] message: string
+    human-readable runner status detail
+
+
+[DTO] RootDto: projectRoot
+    the host project root (for runner status)
+[DTO] TestRunRequestDto: filter?, file(s)?, baseUrl?, projectRoot?
+    selectors for a test run; omit all to run everything
+[DTO] ProblemDto: kind, path, detail
+    a discovery config problem surfaced by a run
+[DTO] TestResultDto: caseName?, route?, title, file, line?, ok, error?, screenshot?
+    one test outcome from a Playwright run
+[DTO] TestReportDto: ok, ran, total, passed, failed, testResult(s)?, problem(s)?, error?
+    the aggregate report a run returns
+[DTO] RunnerStatusDto: ok, version?, path, message?
+    health of the ~/.isolate-runner Playwright runner
+
+
+[NON] runner
+    the Playwright runner provisioned under ~/.isolate-runner
+
+
+[SRV] sc:os: ISOLATE_RUNNER_HOME
+    spawn the Playwright subprocess (sidecar/local; no network)

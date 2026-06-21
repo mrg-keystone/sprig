@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<!-- @dsCard group="Showcase" name="Dashboard showcase" subtitle="full themed dashboard" viewport="1280x900" -->
+<!-- TEMPLATE: replace {{...}} copy. Keep BOTH CDN tags (daisyUI link + Tailwind browser) — see below. -->
+<html data-theme="brand" lang="{{lang}}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{Brand}} · {{Panel}}</title>
+  <link rel="stylesheet" href="../theme.cdn.css" />
+  <!-- BOTH required: daisyUI = components+colors; tailwind/browser = layout utilities (flex/grid/w-*). -->
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+</head>
+<body class="bg-base-200 text-base-content min-h-screen">
+  <div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <aside class="w-60 shrink-0 bg-base-100 border-r border-base-300 hidden md:flex flex-col">
+      <div class="px-6 py-5 font-display text-2xl font-extrabold">{{Brand}}</div>
+      <ul class="menu w-full grow gap-1 px-3">
+        <li><a class="active font-medium">{{Nav 1}}</a></li>
+        <li><a>{{Nav 2}}</a></li>
+        <li><a>{{Nav 3}}</a></li>
+        <li><a>{{Nav 4}}</a></li>
+      </ul>
+      <div class="p-3">
+        <div class="card bg-accent text-accent-content rounded-box">
+          <div class="card-body p-4">
+            <p class="font-display font-bold">{{Upsell title}}</p>
+            <p class="text-sm opacity-90">{{Upsell line}}</p>
+            <button class="btn btn-sm bg-base-100 text-base-content border-0 mt-1">{{CTA}}</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <!-- Main -->
+    <div class="flex-1 flex flex-col min-w-0">
+      <nav class="navbar bg-base-100 border-b border-base-300 px-6 gap-2">
+        <div class="navbar-start">
+          <span class="uppercase tracking-widest text-accent" style="font-size:var(--step--2)">{{Eyebrow}}</span>
+          <h1 class="font-display font-extrabold ml-3" style="font-size:var(--step-2)">{{Greeting}}</h1>
+        </div>
+        <div class="navbar-end gap-2">
+          <input type="text" placeholder="{{Search}}" class="input input-sm w-40" />
+          <label class="swap swap-rotate btn btn-ghost btn-circle" title="theme">
+            <input type="checkbox" id="darktoggle" /><span class="swap-off">🌞</span><span class="swap-on">🌙</span>
+          </label>
+          <button class="btn btn-primary btn-sm">{{Primary CTA}}</button>
+        </div>
+      </nav>
+      <main class="p-6 grid gap-6">
+        <div class="stats stats-vertical lg:stats-horizontal bg-base-100 shadow-md rounded-box">
+          <div class="stat"><div class="stat-title">{{KPI 1}}</div><div class="stat-value text-primary">{{v}}</div><div class="stat-desc text-success">↗︎ {{x}}</div></div>
+          <div class="stat"><div class="stat-title">{{KPI 2}}</div><div class="stat-value">{{v}}</div><div class="stat-desc text-success">↗︎ {{x}}</div></div>
+          <div class="stat"><div class="stat-title">{{KPI 3}}</div><div class="stat-value">{{v}}</div><div class="stat-desc text-error">↘︎ {{x}}</div></div>
+          <div class="stat"><div class="stat-title">{{KPI 4}}</div><div class="stat-value text-accent">{{v}}</div><div class="stat-desc">{{note}}</div></div>
+        </div>
+        <div class="grid lg:grid-cols-3 gap-6">
+          <div class="card bg-base-100 shadow-md rounded-box lg:col-span-2">
+            <div class="card-body"><h2 class="card-title font-display">{{Trend title}}</h2><div id="trend"></div></div>
+          </div>
+          <div class="card bg-base-100 shadow-md rounded-box">
+            <div class="card-body"><h2 class="card-title font-display">{{Breakdown title}}</h2><div id="breakdown"></div></div>
+          </div>
+        </div>
+        <div class="card bg-base-100 shadow-md rounded-box">
+          <div class="card-body">
+            <h2 class="card-title font-display mb-2">{{Table title}}</h2>
+            <div class="overflow-x-auto">
+              <table class="table table-zebra">
+                <thead><tr><th>{{Col 1}}</th><th>{{Col 2}}</th><th>{{Col 3}}</th><th>{{Status}}</th></tr></thead>
+                <tbody>
+                  <tr><td>{{row}}</td><td>{{v}}</td><td>{{v}}</td><td><span class="badge badge-success">{{ok}}</span></td></tr>
+                  <tr><td>{{row}}</td><td>{{v}}</td><td>{{v}}</td><td><span class="badge badge-warning">{{warn}}</span></td></tr>
+                  <tr><td>{{row}}</td><td>{{v}}</td><td>{{v}}</td><td><span class="badge badge-error">{{bad}}</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div role="alert" class="alert alert-success"><span>{{Signature success line, e.g. ¡Bien hecho!}}</span></div>
+      </main>
+    </div>
+  </div>
+  <script>
+    const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+    let trend, breakdown;
+    function draw() {
+      const primary = css('--color-primary'), accent = css('--color-accent'),
+            secondary = css('--color-secondary'), neutral = css('--color-neutral'), base200 = css('--color-base-200');
+      if (trend) trend.destroy(); if (breakdown) breakdown.destroy();
+      trend = new ApexCharts(document.getElementById('trend'), {
+        chart: { type: 'area', height: 260, fontFamily: '{{DisplayFont}}, sans-serif', toolbar: { show: false } },
+        series: [{ name: '{{series}}', data: [31,40,28,51,42,68] }],
+        xaxis: { categories: ['{{1}}','{{2}}','{{3}}','{{4}}','{{5}}','{{6}}'] },
+        colors: [primary], stroke: { curve: 'smooth', width: 3 }, dataLabels: { enabled: false },
+        fill: { type: 'gradient', gradient: { opacityFrom: .4, opacityTo: .05 } }, grid: { borderColor: base200 },
+      });
+      trend.render();
+      breakdown = new ApexCharts(document.getElementById('breakdown'), {
+        chart: { type: 'donut', height: 260, fontFamily: '{{DisplayFont}}, sans-serif' },
+        series: [40,20,20,20], labels: ['{{A}}','{{B}}','{{C}}','{{D}}'],
+        colors: [primary, accent, secondary, neutral], stroke: { colors: [base200], width: 2 },
+        legend: { position: 'bottom' }, dataLabels: { enabled: false },
+      });
+      breakdown.render();
+    }
+    draw();
+    document.getElementById('darktoggle').addEventListener('change', (e) => {
+      document.documentElement.setAttribute('data-theme', e.target.checked ? 'brand-dark' : 'brand');
+      setTimeout(draw, 50);
+    });
+  </script>
+</body>
+</html>

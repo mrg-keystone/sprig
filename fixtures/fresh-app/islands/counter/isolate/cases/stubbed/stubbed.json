@@ -1,0 +1,5 @@
+{
+  "_name": "Buttons stubbed",
+  "_signals": { "count": 3 },
+  "_mocks": { "Button": "stub" }
+}

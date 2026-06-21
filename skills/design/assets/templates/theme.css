@@ -1,0 +1,116 @@
+/* =========================================================================
+   {{BRAND}} Design System — theme.css  ·  SINGLE SOURCE OF TRUTH
+   -------------------------------------------------------------------------
+   TEMPLATE. Replace every {{PLACEHOLDER}}. Pull the required variable set
+   from the daisyUI MCP (daisyUI-Snippets { themes: { custom-theme, colors } })
+   and confirm it matches the keys below before filling values.
+
+   Everything else in the artifact is DERIVED from this file:
+     theme.cdn.css · manifest.json · adherence.oxlintrc.json · preview/*.html
+   Edit tokens HERE only, then re-derive.
+
+   Syntax: Tailwind 4 + daisyUI 5, CSS-first (@plugin, NOT tailwind.config.js).
+   Color values may be hex or oklch.
+   ========================================================================= */
+
+@import "tailwindcss";
+@plugin "daisyui";
+
+/* ---- Brand theme · light (default) ------------------------------------ */
+@plugin "daisyui/theme" {
+  name: "brand";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+
+  --color-base-100: {{surface}};        /* page surface */
+  --color-base-200: {{surface-2}};      /* elevation / hover */
+  --color-base-300: {{surface-3}};      /* borders / dividers */
+  --color-base-content: {{ink}};        /* body + heading text */
+
+  --color-primary: {{primary}};         /* the one precious CTA color */
+  --color-primary-content: {{on-primary}};
+  --color-secondary: {{secondary}};
+  --color-secondary-content: {{on-secondary}};
+  --color-accent: {{accent}};
+  --color-accent-content: {{on-accent}};
+  --color-neutral: {{neutral}};
+  --color-neutral-content: {{on-neutral}};
+
+  --color-info: {{info}};      --color-info-content: {{on-info}};
+  --color-success: {{success}};--color-success-content: {{on-success}};
+  --color-warning: {{warning}};--color-warning-content: {{on-warning}};
+  --color-error: {{error}};    --color-error-content: {{on-error}};
+
+  --radius-selector: {{radius-pill}};   /* pills, toggles, badges */
+  --radius-field: {{radius-field}};     /* buttons, inputs, tabs  */
+  --radius-box: {{radius-box}};         /* cards, modals, alerts  */
+
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;     /* 0 or 1 */
+  --noise: 0;     /* 0 or 1 */
+}
+
+/* ---- Brand theme · dark ----------------------------------------------- */
+@plugin "daisyui/theme" {
+  name: "brand-dark";
+  default: false;
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-base-100: {{dark-surface}};
+  --color-base-200: {{dark-surface-2}};
+  --color-base-300: {{dark-surface-3}};
+  --color-base-content: {{dark-ink}};
+
+  --color-primary: {{dark-primary}};   --color-primary-content: {{dark-on-primary}};
+  --color-secondary: {{dark-secondary}};--color-secondary-content: {{dark-on-secondary}};
+  --color-accent: {{dark-accent}};     --color-accent-content: {{dark-on-accent}};
+  --color-neutral: {{dark-neutral}};   --color-neutral-content: {{dark-on-neutral}};
+
+  --color-info: {{dark-info}};      --color-info-content: {{dark-on-info}};
+  --color-success: {{dark-success}};--color-success-content: {{dark-on-success}};
+  --color-warning: {{dark-warning}};--color-warning-content: {{dark-on-warning}};
+  --color-error: {{dark-error}};    --color-error-content: {{dark-on-error}};
+
+  --radius-selector: {{radius-pill}};
+  --radius-field: {{radius-field}};
+  --radius-box: {{radius-box}};
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+/* ---- Non-color layer (daisyUI carries none of this) -------------------
+   Distinctive fonts (NOT Inter/Roboto/system — they trip prototype's
+   design-lint), a modular type scale, motion, and color-mix shade tokens. */
+@import url('https://fonts.googleapis.com/css2?family={{DisplayFont}}:wght@400;700;800&family={{BodyFont}}:wght@400;500;600;700&display=swap');
+
+:root {
+  --font-display: '{{DisplayFont}}', system-ui, sans-serif;
+  --font-body:    '{{BodyFont}}',    system-ui, sans-serif;
+  --font-mono:    ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --step--2: 0.75rem;  --step--1: 0.875rem; --step-0: 1rem;   --step-1: 1.25rem;
+  --step-2: 1.5rem;    --step-3: 2rem;      --step-4: 2.5rem; --step-5: 3.5rem;
+
+  --ease-bounce:   cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-standard: cubic-bezier(0.20, 0, 0, 1);
+  --dur-micro: 120ms; --dur-fast: 200ms; --dur-base: 320ms;
+
+  --color-base-content-30: color-mix(in oklch, var(--color-base-content) 30%, transparent);
+  --color-base-content-50: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+}
+
+body                          { font-family: var(--font-body); }
+h1, h2, h3, h4, .font-display { font-family: var(--font-display); }
+
+@keyframes brand-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
