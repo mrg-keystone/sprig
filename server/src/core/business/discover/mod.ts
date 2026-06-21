@@ -1,7 +1,11 @@
-// Discovery: scan a Fresh project for components/pages with an `isolate/` folder.
+// Discovery: scan a SPRIG project for folder-components/pages with an `isolate/`
+// folder. A sprig component is a folder with a `template.html`; it's an island if
+// it also has a `logic.ts`. (No .tsx export scanning — the selector IS the folder
+// basename.)
 //
-// Scanned roots: components/ + islands/ are single components (routed under
-// /components/…); pages/ holds page compositions (routed under /pages/…).
+// Scanned roots (under <projectRoot>/src/): components/ + islands/ are single
+// components (routed under /components/…); pages/ holds page compositions (routed
+// under /pages/…).
 //
 //   <component-or-page>/isolate/
 //     fixture.json                 { category, folder, background?, controls, components }
@@ -93,7 +97,7 @@ export interface ComponentEntry {
 
 /** A config problem found during discovery — surfaced up front, not swallowed. */
 export interface Problem {
-  kind: "fixture-json" | "case-json" | "component-file" | "component-export";
+  kind: "fixture-json" | "case-json" | "component-file" | "component-export" | "unsupported";
   /** The offending file (fixture/case JSON) or component directory. */
   path: string;
   /** Human-readable explanation: a JSON parse message, or what resolution did. */
@@ -313,6 +317,15 @@ async function collectCases(
       }
     }
     const v = parseCaseValues(raw);
+    // Sub-component mocking (_mocks) isn't supported in sprig previews yet — surface
+    // it as a problem so it's visible (the case still renders, just without mocking).
+    if (v.mocks && Object.keys(v.mocks).length) {
+      problems.push({
+        kind: "unsupported",
+        path: jsonPath,
+        detail: "_mocks (sub-component stub / force-props) is not yet supported in sprig previews — the case renders without it.",
+      });
+    }
     const props = { ...v.props };
     const signals = { ...(v.signals ?? {}) };
     let innerHtml = v.innerHtml;
@@ -358,7 +371,7 @@ export async function discover(projectRoot: string): Promise<DiscoverResult> {
 
   for (const { dir: root, target } of roots) {
     const prefix = target === "page" ? "pages" : "components";
-    const rootAbs = `${projectRoot}/${root}`;
+    const rootAbs = `${projectRoot}/src/${root}`;
     for await (const dir of walkDirs(rootAbs)) {
       const rel = dir.slice(rootAbs.length + 1);
       // Skip the isolate/ folder itself and anything inside it — checked relative
@@ -366,9 +379,13 @@ export async function discover(projectRoot: string): Promise<DiscoverResult> {
       if (rel.split("/").includes("isolate")) continue;
       const isolateDir = `${dir}/isolate`;
       if (!(await exists(isolateDir))) continue;
+      // A sprig folder-component is a folder with a template.html. Skip anything
+      // with an isolate/ folder but no template (not a previewable component).
+      const templatePath = `${dir}/template.html`;
+      if (!(await exists(templatePath))) continue;
 
       const label = rel.split("/").pop() ?? rel;
-      const exportName = pascal(label);
+      const exportName = label; // sprig selector = folder basename (no PascalCase)
 
       let fixture: Record<string, unknown> = {};
       const fixturePath = `${isolateDir}/fixture.json`;
@@ -424,12 +441,14 @@ export async function discover(projectRoot: string): Promise<DiscoverResult> {
         // collide on the generated preview-island filename.
         slug: `${root}__${rel.replaceAll("/", "__")}`,
         label,
-        kind: root === "islands" ? "island" : "static",
+        // island ⇔ the folder-component has client logic (a logic.ts), not the
+        // dir it lives in — a static component under islands/ would still be static.
+        kind: (await exists(`${dir}/logic.ts`)) ? "island" : "static",
         root,
         target,
         dir,
         isolateDir,
-        componentFile: await findComponentFile(dir, exportName, problems),
+        componentFile: templatePath, // the sprig folder-component's template
         exportName,
         category,
         folder,
