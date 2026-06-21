@@ -192,3 +192,17 @@ Deno.test("gate: a page (folder directly under pages/) cannot be an island", asy
     await Deno.remove(tmp, { recursive: true });
   }
 });
+
+import { computed as coreComputed, isSignal, signal as coreSignal } from "../core.ts";
+import { onIslandMounted } from "./hydrate.ts";
+
+Deno.test("isSignal: picks writable signals out of a scope (harness introspection)", () => {
+  assertEquals(isSignal(coreSignal(0)), true); // writable signal → editable control
+  assertEquals(isSignal(coreComputed(() => 1)), false); // computed is read-only
+  assertEquals(isSignal(5), false);
+  assertEquals(isSignal(() => 5), false); // a plain function is not a signal
+  assertEquals(isSignal({ set: 1, signal: 2 }), false); // not callable
+  // the preview harness can register a mount listener (no-op without a DOM here)
+  assertEquals(typeof onIslandMounted, "function");
+  onIslandMounted(null);
+});

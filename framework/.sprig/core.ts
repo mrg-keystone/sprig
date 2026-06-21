@@ -47,6 +47,14 @@ export function computed<T>(fn: () => T): Accessor<T> {
   return acc;
 }
 
+/** True if `v` is a writable signal accessor (callable + .set + .signal). Lets a
+ *  harness pick the editable signals out of an island's setup() scope. A computed
+ *  is read-only (no .set) so it is excluded. */
+// deno-lint-ignore no-explicit-any
+export function isSignal(v: unknown): v is WritableAccessor<any> {
+  return typeof v === "function" && "set" in (v as object) && "signal" in (v as object);
+}
+
 // ─────────────────────────── Dependency Injection ───────────────────────────
 export type Scope = "server" | "client" | "both";
 export type Side = "server" | "client";

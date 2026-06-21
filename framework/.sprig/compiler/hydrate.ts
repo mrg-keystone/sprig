@@ -39,6 +39,22 @@ const registry = new Map<string, IslandEntry>();
 // selectors whose chunk import() is in flight (de-dupe concurrent triggers)
 export const loading = new Set<string>();
 
+/** Fired right after an island's setup() runs, handing external tooling a live
+ *  handle on the mounted island — its element, selector, raw inputs, and the
+ *  reactive `scope` setup() returned (whose signals ARE the island's state). The
+ *  preview/inspection harness uses this to build an editable control surface by
+ *  introspection (see isSignal in @sprig/core). No-op for normal apps. */
+export interface IslandMount {
+  el: HTMLElement;
+  sel: string;
+  inputs: Scope;
+  scope: Record<string, unknown>;
+}
+let islandMountedCb: ((m: IslandMount) => void) | null = null;
+export function onIslandMounted(cb: ((m: IslandMount) => void) | null): void {
+  islandMountedCb = cb;
+}
+
 // ─────────────────────────── teardown bookkeeping ───────────────────────────
 // Soft-nav replaces an outlet's innerHTML wholesale, which detaches every island
 // (and any armed-but-not-yet-fired trigger) inside it. Without explicit teardown the
@@ -374,6 +390,12 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
   el.dataset.sprigHydrated = "1";
 
   const scope = entry.setup(clientCtx(inputs)); // the signals here ARE the island's state
+  // hand external tooling (the preview harness) a live handle on this island
+  if (islandMountedCb) {
+    try {
+      islandMountedCb({ el, sel, inputs, scope: scope as Record<string, unknown> });
+    } catch { /* harness errors must never break hydration */ }
+  }
   // re-emit the view-encapsulation marker so the re-rendered DOM keeps its scoped
   // styles. Prefer the build-supplied (path-derived) scope so it matches the SSR
   // markup + the scoped app.css; fall back to scopeId(sel) for chunks without it.
