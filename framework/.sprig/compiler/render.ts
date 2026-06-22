@@ -56,10 +56,34 @@ export interface RenderOpts {
   /** view-encapsulation marker for the CURRENT component — every native element it
    *  emits carries this bare attribute, and the component's scoped CSS requires it. */
   scopeAttr?: string;
+  /** preview overrides for child components, keyed by selector: force props onto every
+   *  instance, or replace it with a placeholder ("stub"). Threaded SSR → client. */
+  mocks?: Record<string, MockSpec>;
 }
+
+/** A child-component override: "stub" (or { stub:true }) renders a placeholder;
+ *  { props } forces those props onto every instance of that selector. */
+export type MockSpec = "stub" | { stub?: boolean; props?: Record<string, unknown> };
 
 const VOID = new Set([
   "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
+]);
+
+// Native HTML element names — these ALWAYS render as native elements and are never
+// resolved to a registered component, so a component must not be named like one
+// (e.g. name it `ui-button`, not `button`). This is the web-component rule: it lets a
+// component safely use native <button>/<input>/… in its own template.
+const NATIVE = new Set([
+  "a", "abbr", "address", "area", "article", "aside", "audio", "b", "base", "bdi", "bdo", "blockquote",
+  "body", "br", "button", "canvas", "caption", "cite", "code", "col", "colgroup", "data", "datalist", "dd",
+  "del", "details", "dfn", "dialog", "div", "dl", "dt", "em", "embed", "fieldset", "figcaption", "figure",
+  "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hgroup", "hr", "html", "i",
+  "iframe", "img", "input", "ins", "kbd", "label", "legend", "li", "link", "main", "map", "mark", "menu",
+  "meta", "meter", "nav", "noscript", "object", "ol", "optgroup", "option", "output", "p", "param", "picture",
+  "pre", "progress", "q", "rp", "rt", "ruby", "s", "samp", "script", "section", "select", "slot", "small",
+  "source", "span", "strong", "style", "sub", "summary", "sup", "table", "tbody", "td", "template", "textarea",
+  "tfoot", "th", "thead", "time", "title", "tr", "track", "u", "ul", "var", "video", "wbr",
+  "svg", "path", "circle", "rect", "line", "g", "polyline", "polygon", "text", "defs", "use",
 ]);
 
 export function renderNodes(nodes: Node[], opts: RenderOpts): string {
@@ -132,7 +156,8 @@ function renderElement(node: Node, opts: RenderOpts): string {
   if (tag === "ng-content") return renderContent(attrs, opts);
   if (tag === "ng-container") return renderNodes(children, opts);
 
-  const comp = opts.registry.get(tag);
+  // a custom (non-native) tag may resolve to a registered component
+  const comp = NATIVE.has(tag) ? undefined : opts.registry.get(tag);
   if (comp) return renderComponent(comp, attrs, children, opts);
 
   // native element — carries the current component's view-encapsulation marker
@@ -170,24 +195,61 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
       if (v) inputs[field(attr, "name")!.text] = quotedText(v, opts.scope);
     }
   }
+  // preview overrides (mocks): "stub" → a labelled placeholder; { props } → force
+  // those props onto this instance (e.g. force a child button disabled).
+  const mock = opts.mocks?.[comp.selector];
+  if (mock === "stub" || (typeof mock === "object" && mock.stub)) {
+    const sc = opts.scopeAttr ? ` ${opts.scopeAttr}` : "";
+    return `<span${sc} class="iso-stub" data-stub="${escapeAttr(comp.selector)}">${escapeAttr(comp.selector)}</span>`;
+  }
+  if (typeof mock === "object" && mock.props) Object.assign(inputs, mock.props);
+
   const tpl = comp.template;
   if (comp.island) {
     // an island: build the reactive scope from setup(), render its initial state.
     const scope = comp.island.scope(inputs);
     const inner = renderNodes(named(tpl), {
-      scope, registry: opts.registry, outlet: opts.outlet, source: tpl.text, handlers: opts.handlers, projected, scopeAttr: childScope,
+      scope, registry: opts.registry, outlet: opts.outlet, source: tpl.text, handlers: opts.handlers, projected, scopeAttr: childScope, mocks: opts.mocks,
     });
     // CLIENT mode (handlers present) renders the island body for re-paint; SERVER
     // mode wraps it as a hydration boundary with a JSON prop bridge.
-    if (opts.handlers) return inner;
-    const props = JSON.stringify(inputs).replace(/</g, "\\u003c");
+    if (opts.handlers) return injectRootAttrs(inner, eventAttrs(attrs, opts));
+    // carry mocks into the client via the props bridge so the island's own re-render
+    // applies them to its children too (the SSR-only force-props would otherwise be lost).
+    const propsObj = opts.mocks ? { ...inputs, __mocks: opts.mocks } : inputs;
+    const props = JSON.stringify(propsObj).replace(/</g, "\\u003c");
     // selectors/triggers are trusted compile-time idents, but escape for consistency
     // with every other attribute (defense-in-depth on the loader's import() URL). The
     // wrapper carries the island's own marker so its :host styles target it.
     return `<sprig-island ${childScope} data-sel="${escapeAttr(comp.selector)}" data-trigger="${escapeAttr(comp.island.trigger)}">` +
       `<script type="application/json" class="sprig-props">${props}</script>${inner}</sprig-island>`;
   }
-  return renderNodes(named(tpl), { scope: inputs, registry: opts.registry, outlet: opts.outlet, source: tpl.text, projected, scopeAttr: childScope });
+  // static child: render its template; in CLIENT mode, wire (event) bindings on the
+  // component tag onto the child's root element so they delegate to the host island.
+  const html = renderNodes(named(tpl), { scope: inputs, registry: opts.registry, outlet: opts.outlet, source: tpl.text, projected, scopeAttr: childScope, mocks: opts.mocks });
+  return injectRootAttrs(html, eventAttrs(attrs, opts));
+}
+
+/** CLIENT mode: collect (event) bindings on a component tag into the host's handler
+ *  table and return the data-sprig-* markers to stamp on the child's root element. */
+function eventAttrs(attrs: Node[], opts: RenderOpts): string {
+  if (!opts.handlers) return "";
+  const marks: Record<string, string> = {};
+  for (const attr of attrs) {
+    if (attr.type !== "event_binding") continue;
+    const name = field(attr, "name")!.text;
+    if (name.startsWith("@")) continue;
+    const [base, ...modifiers] = name.split(".");
+    const key = `data-sprig-${base}`;
+    marks[key] = marks[key] ? `${marks[key]} ${opts.handlers.length}` : String(opts.handlers.length);
+    opts.handlers.push({ base, modifiers, body: field(attr, "handler")!, scope: opts.scope });
+  }
+  return Object.entries(marks).map(([k, v]) => ` ${k}="${v}"`).join("");
+}
+
+/** Inject extra attributes into the first opening tag of a rendered HTML fragment. */
+function injectRootAttrs(html: string, extra: string): string {
+  return extra ? html.replace(/^(\s*<[a-zA-Z][\w-]*)/, `$1${extra}`) : html;
 }
 
 // render <ng-content> by emitting the projected nodes (in the parent's scope)

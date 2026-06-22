@@ -15,6 +15,7 @@ interface CaseData {
   props: Record<string, unknown>;
   signals: Record<string, unknown>;
   innerHtml?: string | null;
+  mocks?: Record<string, unknown>;
 }
 
 /** Coerce a query string back to a primitive (true/false/number/string). */
@@ -35,5 +36,7 @@ export function previewResolve(meta: Meta, base: CaseData, ctx: ResolveCtx) {
       else props[k] = coerce(v);
     }
   }
-  return { meta, caseData: { props, signals: base.signals, innerHtml } };
+  // __mocks (child-component overrides) are read by the renderer (renderDocument →
+  // renderComponent) and threaded to the client so the island re-render applies them.
+  return { meta, caseData: { props, signals: base.signals, innerHtml }, __mocks: base.mocks ?? {} };
 }

@@ -13,7 +13,7 @@
 import { type Accessor, type ComponentCtx, effect, signal, type WritableAccessor } from "@sprig/core";
 import { fromSerialized, type SerializedTemplate } from "./serialize.ts";
 import { evalStatement, type Scope } from "./expr.ts";
-import { type ComponentDef, type Handler, type Registry, renderNodes } from "./render.ts";
+import { type ComponentDef, type Handler, type MockSpec, type Registry, renderNodes } from "./render.ts";
 import { named } from "./node.ts";
 import { scopeId } from "./scope.ts";
 
@@ -404,6 +404,8 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
   // permanently-flagged dead island.
   let inputs: Scope = {};
   if (propsEl?.textContent) inputs = JSON.parse(propsEl.textContent);
+  // preview child-component overrides carried across the wire (see renderComponent)
+  const mocks = inputs.__mocks as Record<string, MockSpec> | undefined;
   el.dataset.sprigHydrated = "1";
 
   const scope = entry.setup(clientCtx(inputs)); // the signals here ARE the island's state
@@ -451,7 +453,7 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
   const dispose = effect(() => {
     tick?.(); // tracked only in HMR mode, so hotTemplate() can force a re-render
     const hs: Handler[] = [];
-    const html = renderNodes(nodes, { scope, registry: COMPONENTS, source, handlers: hs, scopeAttr });
+    const html = renderNodes(nodes, { scope, registry: COMPONENTS, source, handlers: hs, scopeAttr, mocks });
     patchInnerHtml(el, html); // morph (preserves focus/caret/scroll) instead of wholesale replace
     handlers = hs;
     wire(); // (re)attach delegated listeners for any event base this render introduced

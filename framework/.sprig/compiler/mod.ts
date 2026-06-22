@@ -124,8 +124,12 @@ export async function createRenderer(
       if (opts.dev) version = await readVersion();
       const page = global.get(basename(pageLoad));
       const pageReg = registryForPage(page ? basename(pageLoad) : null);
+      // a preview page may carry `__mocks` (child-component overrides) in its inputs
+      const mocks = (inputs as Record<string, unknown>).__mocks as
+        | Record<string, import("./render.ts").MockSpec>
+        | undefined;
       const pageHtml = page
-        ? renderNodes(named(page.template), { scope: inputs, registry: pageReg, source: page.template.text, scopeAttr: page.scope })
+        ? renderNodes(named(page.template), { scope: inputs, registry: pageReg, source: page.template.text, scopeAttr: page.scope, mocks })
         : "";
       const shell = global.get(shellSelector);
       const body = shell

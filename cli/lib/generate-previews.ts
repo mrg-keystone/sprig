@@ -76,14 +76,14 @@ export async function generatePreviews(entries: ComponentEntry[], appSrcDir: str
   let pages = 0;
 
   for (const e of entries) {
-    const alias = "x-" + sanitize(e.label); // dash-cased → never shadows a native element
+    const selector = sanitize(e.label); // real selector (the renderer guards native names)
 
-    // copy the target folder-component (template + styles + logic) under its alias,
-    // then copy every component its template references (e.g. the counter's <count-display>).
-    await copyComponent(e.dir, alias, targetsDir);
+    // copy the target folder-component (template + styles + logic), then copy every
+    // component its template references (e.g. the counter's <ui-button>/<count-display>).
+    await copyComponent(e.dir, selector, targetsDir);
     await copyDeps(e.dir, projectSrc, targetsDir, copiedDeps);
 
-    const meta = { name: e.label, selector: alias, background: e.background, controlDefs: e.controlDefs };
+    const meta = { name: e.label, selector, background: e.background, controlDefs: e.controlDefs };
 
     for (const c of e.cases) {
       const pageId = "pv-" + sanitize(e.slug) + "-" + sanitize(c.name);
@@ -92,10 +92,10 @@ export async function generatePreviews(entries: ComponentEntry[], appSrcDir: str
       // the target rendered directly + the bridge as a sibling
       await Deno.writeTextFile(
         join(pDir, "template.html"),
-        `<div class="iso-stage-page">\n  ${targetTag(alias, e, c)}\n  ` +
+        `<div class="iso-stage-page">\n  ${targetTag(selector, e, c)}\n  ` +
           `<stage-bridge [meta]="meta" [caseData]="caseData"></stage-bridge>\n</div>\n`,
       );
-      const baseCase = { props: c.props, signals: c.signals ?? {}, innerHtml: c.innerHtml ?? null };
+      const baseCase = { props: c.props, signals: c.signals ?? {}, innerHtml: c.innerHtml ?? null, mocks: c.mocks ?? {} };
       routes.push({ path: c.route.replace(/^\//, ""), load: `./pages/_preview/${pageId}` });
       moduleLines.push(
         `  ${JSON.stringify("./pages/_preview/" + pageId)}: { resolve: (ctx) => previewResolve(${JSON.stringify(meta)}, ${JSON.stringify(baseCase)}, ctx) },`,

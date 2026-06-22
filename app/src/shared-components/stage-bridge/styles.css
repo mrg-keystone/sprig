@@ -10,3 +10,11 @@
   padding: 2rem;
   box-sizing: border-box;
 }
+
+/* a stubbed child component placeholder (a _mocks "stub") */
+:global(.iso-stub) {
+  display: inline-flex; align-items: center; padding: 4px 10px;
+  font: 12px ui-monospace, monospace; color: #9a6b00;
+  background: repeating-linear-gradient(45deg, #fdf6e3, #fdf6e3 6px, #faedcc 6px, #faedcc 12px);
+  border: 1px dashed #d9b441; border-radius: 4px;
+}

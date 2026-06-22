@@ -6,7 +6,7 @@
     "count": { "type": "range", "min": 0, "max": 20, "step": 1, "signal": true }
   },
   "components": {
-    "Button": {
+    "ui-button": {
       "controls": {
         "disabled": { "type": "boolean" }
       }
