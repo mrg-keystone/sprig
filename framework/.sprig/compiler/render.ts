@@ -248,8 +248,44 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
   }
   // static child: render its template; in CLIENT mode, wire (event) bindings on the
   // component tag onto the child's root element so they delegate to the host island.
+  // CACHE: a leaf static component (SSR, no projected children, no mocks) is a pure
+  // function of its inputs → memoize the HTML across renders and requests. (Assumes a
+  // static component contains no <router-outlet>, which only the shell should.)
+  const cacheable = !opts.handlers && children.length === 0 && !opts.mocks;
+  let key = "";
+  if (cacheable) {
+    try {
+      key = `${comp.selector} ${JSON.stringify(inputs)}`;
+      const hit = staticCache.get(key);
+      if (hit !== undefined) {
+        staticCacheHits++;
+        return hit;
+      }
+    } catch {
+      key = ""; // non-serializable inputs → don't cache
+    }
+  }
   const html = renderNodes(named(tpl), { scope: inputs, registry: opts.registry, outlet: opts.outlet, source: tpl.text, projected, scopeAttr: childScope, mocks: opts.mocks });
-  return injectRootAttrs(html, eventAttrs(attrs, opts));
+  const out = injectRootAttrs(html, eventAttrs(attrs, opts));
+  if (key) {
+    if (staticCache.size >= STATIC_CACHE_MAX) staticCache.clear(); // crude bound
+    staticCache.set(key, out);
+  }
+  return out;
+}
+
+// memoized SSR output for pure leaf static components (selector + inputs → html)
+const STATIC_CACHE_MAX = 10_000;
+const staticCache = new Map<string, string>();
+let staticCacheHits = 0;
+/** Clear the static-component HTML cache — call when a template changes (dev HMR). */
+export function clearStaticCache(): void {
+  staticCache.clear();
+  staticCacheHits = 0;
+}
+/** Cache stats (tests/diagnostics). */
+export function staticCacheStats(): { size: number; hits: number } {
+  return { size: staticCache.size, hits: staticCacheHits };
 }
 
 /** SERVER async pre-pass: await each class-island's onServerInit BEFORE the sync render,

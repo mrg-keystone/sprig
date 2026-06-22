@@ -3,7 +3,7 @@
 // SSR body that bootstrap() used to fake with a JSON dump is now real markup.
 import { basename, dirname, join, relative } from "@std/path";
 import { walk } from "@std/fs/walk";
-import { type ComponentDef, type Registry, renderNodes, resolveIslands } from "./render.ts";
+import { clearStaticCache, type ComponentDef, type Registry, renderNodes, resolveIslands } from "./render.ts";
 import type { Node } from "./node.ts";
 import { hasParseError, parseCached, parseTemplate } from "./parse.ts";
 import { named } from "./parse.ts";
@@ -216,6 +216,7 @@ export async function createRenderer(
       if (hasParseError(tpl)) return false;
       cur.template = tpl; // defs are shared by reference across all registries
       lastSource.set(selector, source);
+      clearStaticCache(); // a template changed → stale memoized static HTML must go
       return true;
     },
     astFor(selector) {
