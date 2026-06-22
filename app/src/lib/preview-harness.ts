@@ -108,11 +108,31 @@ function controlDefault(def: ControlDef): unknown {
   return "";
 }
 
-/** Read a targeted instance's current control value off its DOM node. */
-function readDomControl(el: Element, key: string, def: ControlDef): unknown {
-  if (def.type === "boolean") return el.hasAttribute(key) || (el as unknown as Record<string, unknown>)[key] === true;
-  const attr = el.getAttribute(key);
-  return attr !== null ? attr : controlDefault(def);
+/** Read a targeted instance's current value, preferring the LIVE DOM property (.value,
+ *  .checked, .disabled) over the attribute so non-reflected state (an input's value, a
+ *  checkbox's checked) is read correctly; falls back to the attribute, then the default. */
+export function readDomControl(el: Element, key: string, def: ControlDef): unknown {
+  const e = el as unknown as Record<string, unknown>;
+  const hasProp = key in el && typeof e[key] !== "function";
+  if (def.type === "boolean") return hasProp ? !!e[key] : el.hasAttribute(key);
+  const raw = hasProp ? e[key] : el.getAttribute(key);
+  if (raw == null) return controlDefault(def);
+  if (def.type === "number" || def.type === "range") {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : controlDefault(def);
+  }
+  return raw;
+}
+
+/** Apply a targeted control edit to a DOM element, preferring the LIVE property so the
+ *  change shows immediately (.value on an input, .checked on a checkbox, .disabled on a
+ *  button); a custom key with no matching property falls back to set/removeAttribute. */
+export function writeDomControl(el: Element, key: string, value: unknown): void {
+  const e = el as unknown as Record<string, unknown>;
+  if (key in el && typeof e[key] !== "function") e[key] = value; // live property
+  else if (value === true) el.setAttribute(key, "");
+  else if (value === false || value == null) el.removeAttribute(key);
+  else el.setAttribute(key, String(value));
 }
 
 export default defineComponent({
@@ -185,9 +205,7 @@ export default defineComponent({
         // an unmatched selector is a component instance → mock + server re-render.
         const el = typeof document !== "undefined" ? document.querySelector(d.instKey) : null;
         if (el) {
-          if (d.value === true) el.setAttribute(d.key, "");
-          else if (d.value === false) el.removeAttribute(d.key);
-          else el.setAttribute(d.key, String(d.value));
+          writeDomControl(el, d.key, d.value);
           publish();
         } else {
           reloadWith(`_m.${d.instKey}.${d.key}`, d.value);

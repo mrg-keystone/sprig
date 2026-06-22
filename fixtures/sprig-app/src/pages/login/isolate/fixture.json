@@ -6,6 +6,7 @@
     "heading": { "type": "text", "value": "Welcome back" }
   },
   "components": {
+    "Email":   { "target": "#email",  "controls": { "value": { "type": "text" } } },
     "Sign in": { "target": "#submit", "controls": { "disabled": { "type": "boolean" } } },
     "Cancel":  { "target": "#cancel", "controls": { "disabled": { "type": "boolean" } } }
   }
