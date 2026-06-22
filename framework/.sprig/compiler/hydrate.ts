@@ -402,7 +402,10 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
 
   const scope = entry.setup(clientCtx(inputs)); // the signals here ARE the island's state
   // hand external tooling (the preview harness) a live handle on this island,
-  // recording it so late subscribers are replayed (see onIslandMounted).
+  // recording it so late subscribers are replayed (see onIslandMounted). Also stash
+  // the scope on the element itself — the DOM is shared even if a tool's chunk got a
+  // separate copy of this module, so a harness can always read it off the node.
+  (el as unknown as { __sprigScope?: unknown }).__sprigScope = scope;
   const mount: IslandMount = { el, sel, inputs, scope: scope as Record<string, unknown> };
   islandMounts.push(mount);
   for (const cb of islandMountSubs) {

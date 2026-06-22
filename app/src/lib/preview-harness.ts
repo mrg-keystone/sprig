@@ -11,7 +11,6 @@
 //   • speaks the shell's postMessage bridge (ready/event up; set/request down).
 // Generated `shared-components/stage-bridge/logic.ts` re-exports this default.
 import { defineComponent, isSignal } from "@sprig/core";
-import { onIslandMounted } from "../../../framework/.sprig/compiler/hydrate.ts";
 import type { ControlView, Surface } from "./types.ts";
 
 interface ControlDef {
@@ -94,16 +93,25 @@ export default defineComponent({
     };
 
     if (isClient) {
-      // grab the target island's scope (replayed if it mounted first), apply the
-      // case's initial signal values, then publish the surface.
-      onIslandMounted((m) => {
-        if (m.sel !== meta.selector || target) return;
-        target = m.scope;
-        for (const [k, v] of Object.entries(cas.signals)) {
-          if (isSignal(target[k])) (target[k] as { set: (x: unknown) => void }).set(v);
+      // grab the target island's reactive scope off its DOM node (the framework
+      // stashes it as el.__sprigScope on hydration — robust to chunk boundaries),
+      // apply the case's initial _signals, then publish the surface. Retry briefly
+      // since the target may hydrate just after this bridge.
+      const tryAttach = (tries = 0) => {
+        if (target) return;
+        const el = document.querySelector(`sprig-island[data-sel="${meta.selector}"]`);
+        const sc = el && (el as unknown as { __sprigScope?: Record<string, unknown> }).__sprigScope;
+        if (sc) {
+          target = sc;
+          for (const [k, v] of Object.entries(cas.signals)) {
+            if (isSignal(target[k])) (target[k] as { set: (x: unknown) => void }).set(v);
+          }
+          ready();
+        } else if (tries < 60) {
+          setTimeout(() => tryAttach(tries + 1), 40);
         }
-        ready();
-      });
+      };
+      tryAttach();
 
       const describe = (el: Element) =>
         el.id ? `${el.tagName.toLowerCase()}#${el.id}` : el.tagName.toLowerCase();
