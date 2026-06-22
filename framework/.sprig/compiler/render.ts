@@ -22,6 +22,10 @@ export interface IslandDef {
   /** class-based component: snapshot the instance's serializable state into the props
    *  bridge so the browser instance is re-seeded before onBrowserInit (see lifecycle.ts). */
   snapshot?: boolean;
+  /** async resolution — instantiate + AWAIT onServerInit (class components). The server
+   *  pre-pass (resolveIslands) calls this in parallel; the sync render reads the result.
+   *  Absent for { setup } islands (resolved synchronously by `scope`). */
+  resolve?: (inputs: Scope) => Promise<Scope>;
 }
 export interface ComponentDef {
   selector: string;
@@ -63,6 +67,9 @@ export interface RenderOpts {
   /** preview overrides for child components, keyed by selector: force props onto every
    *  instance, or replace it with a placeholder ("stub"). Threaded SSR → client. */
   mocks?: Record<string, MockSpec>;
+  /** server pre-pass results: an island's AST node → its already-(onServerInit-)resolved
+   *  scope, so the sync render uses it instead of re-resolving. Populated by resolveIslands. */
+  resolved?: Map<Node, Scope>;
 }
 
 /** A child-component override: "stub" (or { stub:true }) renders a placeholder;
@@ -162,7 +169,7 @@ function renderElement(node: Node, opts: RenderOpts): string {
 
   // a custom (non-native) tag may resolve to a registered component
   const comp = NATIVE.has(tag) ? undefined : opts.registry.get(tag);
-  if (comp) return renderComponent(comp, attrs, children, opts);
+  if (comp) return renderComponent(comp, attrs, children, opts, node);
 
   // native element — carries the current component's view-encapsulation marker
   const built = buildAttrs(attrs, opts);
@@ -175,7 +182,24 @@ function renderElement(node: Node, opts: RenderOpts): string {
   return `${open}${inner}</${tag}>`;
 }
 
-function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], opts: RenderOpts): string {
+/** Compute a child component's @inputs from its tag's bindings, in the parent scope. */
+function computeInputs(attrs: Node[], scope: Scope): Scope {
+  const inputs: Scope = {};
+  for (const attr of attrs) {
+    if (attr.type === "property_binding") {
+      const name = field(attr, "name")!.text;
+      if (!name.includes(".") && !name.startsWith("@")) inputs[name] = evalExpr(field(attr, "value"), scope);
+    } else if (attr.type === "two_way_binding") {
+      inputs[field(attr, "name")!.text] = evalExpr(field(attr, "value"), scope);
+    } else if (attr.type === "attribute") {
+      const v = field(attr, "value");
+      if (v) inputs[field(attr, "name")!.text] = quotedText(v, scope);
+    }
+  }
+  return inputs;
+}
+
+function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], opts: RenderOpts, node?: Node): string {
   const childScope = comp.scope ?? scopeId(comp.selector); // this component's view-encapsulation marker
   // content the parent placed between the component's tags, projected via <ng-content>;
   // it keeps the PARENT's scope (it was authored there), like Angular emulated encapsulation.
@@ -187,18 +211,7 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
     scopeAttr: opts.scopeAttr,
   };
   // compute the child's @inputs from the parent's bindings, evaluated in the parent scope
-  const inputs: Scope = {};
-  for (const attr of attrs) {
-    if (attr.type === "property_binding") {
-      const name = field(attr, "name")!.text;
-      if (!name.includes(".") && !name.startsWith("@")) inputs[name] = evalExpr(field(attr, "value"), opts.scope);
-    } else if (attr.type === "two_way_binding") {
-      inputs[field(attr, "name")!.text] = evalExpr(field(attr, "value"), opts.scope);
-    } else if (attr.type === "attribute") {
-      const v = field(attr, "value");
-      if (v) inputs[field(attr, "name")!.text] = quotedText(v, opts.scope);
-    }
-  }
+  const inputs: Scope = computeInputs(attrs, opts.scope);
   // preview overrides (mocks): "stub" → a labelled placeholder; { props } → force
   // those props onto this instance (e.g. force a child button disabled).
   const mock = opts.mocks?.[comp.selector];
@@ -210,8 +223,9 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
 
   const tpl = comp.template;
   if (comp.island) {
-    // an island: build the reactive scope from setup(), render its initial state.
-    const scope = comp.island.scope(inputs);
+    // an island: use the scope the async pre-pass already resolved for this node (its
+    // onServerInit has run + awaited); else build it synchronously now.
+    const scope = (node && opts.resolved?.get(node)) ?? comp.island.scope(inputs);
     const inner = renderNodes(named(tpl), {
       scope, registry: opts.registry, outlet: opts.outlet, source: tpl.text, handlers: opts.handlers, projected, scopeAttr: childScope, mocks: opts.mocks,
     });
@@ -236,6 +250,43 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
   // component tag onto the child's root element so they delegate to the host island.
   const html = renderNodes(named(tpl), { scope: inputs, registry: opts.registry, outlet: opts.outlet, source: tpl.text, projected, scopeAttr: childScope, mocks: opts.mocks });
   return injectRootAttrs(html, eventAttrs(attrs, opts));
+}
+
+/** SERVER async pre-pass: await each class-island's onServerInit BEFORE the sync render,
+ *  in PARALLEL across independent subtrees (siblings concurrent; a child only after its
+ *  parent island resolves, since its inputs may depend on it). Populates `resolved`
+ *  (node → scope) for the sync render. Walks element/component structure; islands behind
+ *  control-flow blocks or inside { setup } islands fall back to sync onServerInit. */
+export async function resolveIslands(nodes: Node[], opts: RenderOpts, resolved: Map<Node, Scope>): Promise<void> {
+  const tasks: Promise<void>[] = [];
+  for (const node of nodes) {
+    if (node.type !== "element" && node.type !== "self_closing_element") continue;
+    const { tag, attrs, children } = tagInfo(node);
+    if (tag === "router-outlet") continue;
+    if (tag === "ng-content" || tag === "ng-container") {
+      if (children.length) tasks.push(resolveIslands(children, opts, resolved));
+      continue;
+    }
+    const comp = NATIVE.has(tag) ? undefined : opts.registry.get(tag);
+    if (comp?.island?.resolve) {
+      const inputs = computeInputs(attrs, opts.scope);
+      // resolve THIS island, then recurse its body with the resolved scope (parent→child
+      // ordered); the whole task runs concurrently with its siblings via Promise.all.
+      tasks.push((async () => {
+        const scope = await comp.island!.resolve!(inputs);
+        resolved.set(node, scope);
+        await resolveIslands(named(comp.template), { ...opts, scope, source: comp.template.text }, resolved);
+      })());
+    } else if (comp?.island) {
+      /* { setup } island: resolved synchronously by render; don't re-run setup here */
+    } else if (comp) {
+      // static component: recurse into its body with its computed inputs
+      tasks.push(resolveIslands(named(comp.template), { ...opts, scope: computeInputs(attrs, opts.scope), source: comp.template.text }, resolved));
+    } else if (children.length) {
+      tasks.push(resolveIslands(children, opts, resolved)); // native element → recurse children
+    }
+  }
+  await Promise.all(tasks);
 }
 
 /** CLIENT mode: collect (event) bindings on a component tag into the host's handler

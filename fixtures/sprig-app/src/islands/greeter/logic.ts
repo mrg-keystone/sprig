@@ -1,19 +1,20 @@
 import { signal } from "@sprig/core";
 
-// A CLASS-based island (export default class). Exercises the full lifecycle:
-// onServerInit runs on the server, its state snapshots across the wire, the browser
-// instance is re-seeded from it, onBrowserInit fires, and `this`-bound methods drive
-// interactivity.
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// A CLASS-based island with an ASYNC onServerInit — proves the server render awaits
+// the fetch before producing HTML (phase 5), snapshots the result, and the browser
+// re-seeds from it.
 export default class Greeter {
   greeting = "(unset)";
   count = signal(0);
 
-  onServerInit() {
-    // server-only work (a DB/API call in real life) — here a deterministic value
+  async onServerInit() {
+    await sleep(60); // stand-in for a DB / API call
     this.greeting = "Hello from the server";
   }
 
-  inc() { this.count.set(this.count() + 1); } // uses `this` → needs class-scope binding
+  inc() { this.count.set(this.count() + 1); }
 
   onBrowserInit() {
     // deno-lint-ignore no-explicit-any

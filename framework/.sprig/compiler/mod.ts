@@ -3,7 +3,8 @@
 // SSR body that bootstrap() used to fake with a JSON dump is now real markup.
 import { basename, dirname, join, relative } from "@std/path";
 import { walk } from "@std/fs/walk";
-import { type ComponentDef, type Registry, renderNodes } from "./render.ts";
+import { type ComponentDef, type Registry, renderNodes, resolveIslands } from "./render.ts";
+import type { Node } from "./node.ts";
 import { hasParseError, parseCached, parseTemplate } from "./parse.ts";
 import { named } from "./parse.ts";
 import { serialize, type SerializedTemplate } from "./serialize.ts";
@@ -65,12 +66,20 @@ export async function createRenderer(
         // deno-lint-ignore no-explicit-any
         const Cls = def as new (ctx: any) => Record<string, unknown>;
         island = {
+          // sync fallback (islands behind control flow / not pre-resolved): runs
+          // onServerInit synchronously (an async one isn't awaited on this path).
           scope: (inputs) =>
             withServerInjector(() => {
               const inst = new Cls(makeServerCtx(inputs));
               (inst as { onServerInit?: () => unknown }).onServerInit?.();
               return inst as Scope;
             }),
+          // the async pre-pass path: construct (DI available in the constructor), then
+          // AWAIT onServerInit so a fetch resolves before render.
+          resolve: (inputs) => {
+            const inst = withServerInjector(() => new Cls(makeServerCtx(inputs))) as Record<string, unknown>;
+            return Promise.resolve((inst as { onServerInit?: () => unknown }).onServerInit?.()).then(() => inst as Scope);
+          },
           trigger: (Cls as { trigger?: string }).trigger ?? "load",
           snapshot: true, // carry instance state across the wire
         };
@@ -148,8 +157,13 @@ export async function createRenderer(
       const mocks = (inputs as Record<string, unknown>).__mocks as
         | Record<string, import("./render.ts").MockSpec>
         | undefined;
+      // async pre-pass: await class-island onServerInit (in parallel) before the sync
+      // render, so a component can fetch on the server and the data is in the HTML.
+      const baseOpts = { scope: inputs, registry: pageReg, source: page?.template.text ?? "", scopeAttr: page?.scope, mocks };
+      const resolved = new Map<Node, Scope>();
+      if (page) await resolveIslands(named(page.template), baseOpts, resolved);
       const pageHtml = page
-        ? renderNodes(named(page.template), { scope: inputs, registry: pageReg, source: page.template.text, scopeAttr: page.scope, mocks })
+        ? renderNodes(named(page.template), { ...baseOpts, resolved })
         : "";
       const shell = global.get(shellSelector);
       const body = shell
