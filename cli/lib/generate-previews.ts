@@ -83,7 +83,13 @@ export async function generatePreviews(entries: ComponentEntry[], appSrcDir: str
     await copyComponent(e.dir, selector, targetsDir);
     await copyDeps(e.dir, projectSrc, targetsDir, copiedDeps);
 
-    const meta = { name: e.label, selector, background: e.background, controlDefs: e.controlDefs };
+    const meta = {
+      name: e.label,
+      selector,
+      background: e.background,
+      controlDefs: e.controlDefs,
+      subControlDefs: e.subControlDefs, // per-child-component control widgets
+    };
 
     for (const c of e.cases) {
       const pageId = "pv-" + sanitize(e.slug) + "-" + sanitize(c.name);

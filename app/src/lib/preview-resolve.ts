@@ -11,11 +11,12 @@ interface Meta {
   background?: string;
   controlDefs: Record<string, unknown>;
 }
+type Mock = "stub" | { stub?: boolean; props?: Record<string, unknown> };
 interface CaseData {
   props: Record<string, unknown>;
   signals: Record<string, unknown>;
   innerHtml?: string | null;
-  mocks?: Record<string, unknown>;
+  mocks?: Record<string, Mock>;
 }
 
 /** Coerce a query string back to a primitive (true/false/number/string). */
@@ -36,7 +37,20 @@ export function previewResolve(meta: Meta, base: CaseData, ctx: ResolveCtx) {
       else props[k] = coerce(v);
     }
   }
-  // __mocks (child-component overrides) are read by the renderer (renderDocument →
-  // renderComponent) and threaded to the client so the island re-render applies them.
-  return { meta, caseData: { props, signals: base.signals, innerHtml }, __mocks: base.mocks ?? {} };
+  // child-component overrides: the base case's mocks, plus any live edits arriving as
+  // `_m.<selector>.<key>=value` query params (the bridge reloads with them).
+  const mocks: Record<string, Mock> = structuredClone(base.mocks ?? {});
+  if (q) {
+    for (const [k, v] of q) {
+      const m = k.match(/^_m\.([^.]+)\.(.+)$/);
+      if (!m) continue;
+      const [, sel, key] = m;
+      const cur = mocks[sel];
+      const entry = (cur && typeof cur === "object") ? cur : (mocks[sel] = {});
+      (entry.props ??= {})[key] = coerce(v);
+    }
+  }
+  // __mocks is read by the renderer (renderDocument → renderComponent) and threaded to
+  // the client so the island re-render applies them; caseData.mocks feeds the panel.
+  return { meta, caseData: { props, signals: base.signals, innerHtml, mocks }, __mocks: mocks };
 }

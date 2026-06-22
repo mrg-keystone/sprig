@@ -27,11 +27,22 @@ interface Meta {
   selector: string;
   background?: string;
   controlDefs: Record<string, ControlDef>;
+  subControlDefs?: Record<string, Record<string, ControlDef>>;
 }
 interface CaseData {
   props: Record<string, unknown>;
   signals: Record<string, unknown>;
   innerHtml?: string | null;
+  mocks?: Record<string, { props?: Record<string, unknown> } | string>;
+}
+
+function controlDefault(def: ControlDef): unknown {
+  if (def.value !== undefined) return def.value;
+  if (def.type === "boolean") return false;
+  if (def.type === "number" || def.type === "range") return def.min ?? 0;
+  if (def.type === "select") return def.options?.[0] ?? "";
+  if (def.type === "color") return "#000000";
+  return "";
 }
 
 const STAGE_EVENTS = [
@@ -67,12 +78,29 @@ export default defineComponent({
           controls.push({ scope: "prop", key, def, value: props[key] });
         }
       }
+      // child-component control groups: one per declared sub-component, its prop
+      // values read from the case's force-props mocks (else the control default).
+      const instances = Object.entries(meta.subControlDefs ?? {}).map(([sel, defs]) => {
+        const mock = cas.mocks?.[sel];
+        const forced = (typeof mock === "object" && mock.props) ? mock.props : {};
+        return {
+          key: sel,
+          name: sel,
+          controls: Object.entries(defs).map(([key, def]): ControlView => ({
+            scope: "sub",
+            key,
+            instKey: sel,
+            def,
+            value: key in forced ? forced[key] : controlDefault(def),
+          })),
+        };
+      });
       return {
         name: meta.name,
         background: meta.background,
         html: hasHtml ? html : null,
         controls,
-        instances: [],
+        instances,
       };
     };
 
@@ -88,7 +116,7 @@ export default defineComponent({
       u.searchParams.set(key, String(value));
       location.replace(u.href);
     };
-    const applySet = (d: { scope: string; key: string; value: unknown }) => {
+    const applySet = (d: { scope: string; key: string; value: unknown; instKey?: string }) => {
       if (d.scope === "signal" && target && isSignal(target[d.key])) {
         (target[d.key] as { set: (v: unknown) => void }).set(d.value); // live (island signal)
         ready();
@@ -98,6 +126,8 @@ export default defineComponent({
       } else if (d.scope === "html") {
         html = String(d.value);
         reloadWith("_html", d.value);
+      } else if (d.scope === "sub" && d.instKey) {
+        reloadWith(`_m.${d.instKey}.${d.key}`, d.value); // child-component prop → re-render with the mock
       }
     };
 
