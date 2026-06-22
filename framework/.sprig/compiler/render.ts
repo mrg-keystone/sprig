@@ -226,6 +226,12 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
     // an island: use the scope the async pre-pass already resolved for this node (its
     // onServerInit has run + awaited); else build it synchronously now.
     const scope = (node && opts.resolved?.get(node)) ?? comp.island.scope(inputs);
+    // Snapshot the post-onServerInit state NOW, BEFORE rendering the body. The body's
+    // @let declarations mutate the scope object, and those template-locals must not leak
+    // into the snapshot (they'd be restored as bogus instance fields on the client).
+    const snap = (!opts.handlers && comp.island.snapshot)
+      ? snapshotOf(scope as Record<string, unknown>)
+      : undefined;
     const inner = renderNodes(named(tpl), {
       scope, registry: opts.registry, outlet: opts.outlet, source: tpl.text, handlers: opts.handlers, projected, scopeAttr: childScope, mocks: opts.mocks,
     });
@@ -233,12 +239,11 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
     // mode wraps it as a hydration boundary with a JSON prop bridge.
     if (opts.handlers) return injectRootAttrs(inner, eventAttrs(attrs, opts));
     // carry mocks into the client via the props bridge so the island's own re-render
-    // applies them to its children too (the SSR-only force-props would otherwise be lost).
-    // For a class component, also carry a snapshot of the (post-onServerInit) instance
-    // state so the browser instance is re-seeded before onBrowserInit.
+    // applies them to its children too (the SSR-only force-props would otherwise be lost),
+    // plus the pre-render snapshot so a class instance re-seeds before onBrowserInit.
     const propsObj: Record<string, unknown> = { ...inputs };
     if (opts.mocks) propsObj.__mocks = opts.mocks;
-    if (comp.island.snapshot) propsObj.__snapshot = snapshotOf(scope as Record<string, unknown>);
+    if (snap) propsObj.__snapshot = snap;
     const props = JSON.stringify(propsObj).replace(/</g, "\\u003c");
     // selectors/triggers are trusted compile-time idents, but escape for consistency
     // with every other attribute (defense-in-depth on the loader's import() URL). The
@@ -251,11 +256,11 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
   // CACHE: a leaf static component (SSR, no projected children, no mocks) is a pure
   // function of its inputs → memoize the HTML across renders and requests. (Assumes a
   // static component contains no <router-outlet>, which only the shell should.)
-  const cacheable = !opts.handlers && children.length === 0 && !opts.mocks;
+  const cacheable = !opts.handlers && children.length === 0 && !opts.mocks && !templateHasOutlet(comp);
   let key = "";
   if (cacheable) {
     try {
-      key = `${comp.selector} ${JSON.stringify(inputs)}`;
+      key = `${comp.selector} ${childScope} ${JSON.stringify(inputs)}`;
       const hit = staticCache.get(key);
       if (hit !== undefined) {
         staticCacheHits++;
@@ -287,6 +292,16 @@ export function clearStaticCache(): void {
 export function staticCacheStats(): { size: number; hits: number } {
   return { size: staticCache.size, hits: staticCacheHits };
 }
+// a component whose template embeds <router-outlet> renders differently per opts.outlet,
+// so it must never be cached. Memoized per ComponentDef (the check is a substring scan).
+const outletCache = new WeakMap<ComponentDef, boolean>();
+function templateHasOutlet(comp: ComponentDef): boolean {
+  const cached = outletCache.get(comp);
+  if (cached !== undefined) return cached;
+  const has = (comp.template.text ?? "").includes("router-outlet");
+  outletCache.set(comp, has);
+  return has;
+}
 
 /** SERVER async pre-pass: await each class-island's onServerInit BEFORE the sync render,
  *  in PARALLEL across independent subtrees (siblings concurrent; a child only after its
@@ -304,7 +319,10 @@ export async function resolveIslands(nodes: Node[], opts: RenderOpts, resolved: 
       continue;
     }
     const comp = NATIVE.has(tag) ? undefined : opts.registry.get(tag);
-    if (comp?.island?.resolve) {
+    // a mocked island is left to the sync render path so its forced props/stub apply to
+    // the SAME scope the snapshot is taken from (pre-resolving would resolve unmocked
+    // inputs, desyncing the snapshot from the rendered output).
+    if (comp?.island?.resolve && !opts.mocks?.[tag]) {
       const inputs = computeInputs(attrs, opts.scope);
       // resolve THIS island, then recurse its body with the resolved scope (parent→child
       // ordered); the whole task runs concurrently with its siblings via Promise.all.

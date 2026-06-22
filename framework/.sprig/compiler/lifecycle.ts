@@ -25,7 +25,10 @@ export interface ComponentClass<P = any> {
 function isSerializable(v: unknown): boolean {
   if (v === null) return true;
   const t = typeof v;
-  if (t === "number" || t === "string" || t === "boolean") return true;
+  // NaN / ±Infinity survive typeof "number" but JSON turns them into null silently —
+  // drop them so the field keeps its constructor default on the client instead.
+  if (t === "number") return Number.isFinite(v);
+  if (t === "string" || t === "boolean") return true;
   if (t === "object") {
     try {
       JSON.stringify(v);

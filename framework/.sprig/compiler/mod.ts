@@ -78,12 +78,15 @@ export async function createRenderer(
               (inst as { onServerInit?: () => unknown }).onServerInit?.();
               return inst as Scope;
             }),
-          // the async pre-pass path: construct (DI available in the constructor), then
-          // AWAIT onServerInit so a fetch resolves before render.
-          resolve: (inputs) => {
-            const inst = withServerInjector(() => new Cls(makeServerCtx(inputs))) as Record<string, unknown>;
-            return Promise.resolve((inst as { onServerInit?: () => unknown }).onServerInit?.()).then(() => inst as Scope);
-          },
+          // the async pre-pass path: construct + start onServerInit INSIDE the injector
+          // (so inject() resolves in the constructor AND in onServerInit's synchronous
+          // part, matching the sync path), then AWAIT the result before render. DI across
+          // an await still needs async-aware context (documented limitation).
+          resolve: (inputs) =>
+            withServerInjector(() => {
+              const inst = new Cls(makeServerCtx(inputs)) as Record<string, unknown>;
+              return Promise.resolve((inst as { onServerInit?: () => unknown }).onServerInit?.()).then(() => inst as Scope);
+            }),
           trigger: (Cls as { trigger?: string }).trigger ?? "load",
           snapshot: true, // carry instance state across the wire
         };
@@ -163,9 +166,12 @@ export async function createRenderer(
     if (page) await resolveIslands(named(page.template), baseOpts, resolved);
     const pageHtml = page ? renderNodes(named(page.template), { ...baseOpts, resolved }) : "";
     const shell = global.get(shellSelector);
-    return shell
-      ? renderNodes(named(shell.template), { scope: {}, registry, outlet: pageHtml, source: shell.template.text, scopeAttr: shell.scope })
-      : pageHtml;
+    if (!shell) return pageHtml;
+    // the SHELL template can also embed islands — pre-resolve their async onServerInit too.
+    const shellOpts = { scope: {} as Scope, registry, outlet: pageHtml, source: shell.template.text, scopeAttr: shell.scope };
+    const shellResolved = new Map<Node, Scope>();
+    await resolveIslands(named(shell.template), shellOpts, shellResolved);
+    return renderNodes(named(shell.template), { ...shellOpts, resolved: shellResolved });
   };
 
   return {
@@ -183,11 +189,14 @@ export async function createRenderer(
         async start(ctrl) {
           try {
             if (opts.dev) version = await readVersion();
+            // snapshot the version so head and tail agree even if a concurrent dev rebuild
+            // mutates the module-level `version` during the body await.
+            const v = version;
             // flush the head NOW → the browser preloads app.css + client.js while we
             // await the body's onServerInit fetches.
-            ctrl.enqueue(enc.encode(documentHead(base, version)));
+            ctrl.enqueue(enc.encode(documentHead(base, v)));
             const body = await renderBody(pageLoad, inputs);
-            ctrl.enqueue(enc.encode(body + documentTail(base, version)));
+            ctrl.enqueue(enc.encode(body + documentTail(base, v)));
           } catch {
             // headers + head are already on the wire, so a render failure can't become a
             // 500 — emit a marker and close (matches the renderDocument 500's no-leak rule).
