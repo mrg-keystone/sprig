@@ -386,7 +386,9 @@ function ssrHeaders(extra?: Record<string, string>): Record<string, string> {
     "cache-control": "no-store",
     // defense-in-depth for pages embedding inline JSON islands
     "x-content-type-options": "nosniff",
-    "x-frame-options": "DENY",
+    // SAMEORIGIN (not DENY) so an app may frame its own pages (e.g. an isolated
+    // component preview in a stage iframe) while still blocking cross-origin clickjacking
+    "x-frame-options": "SAMEORIGIN",
     "referrer-policy": "no-referrer",
     ...extra,
   };

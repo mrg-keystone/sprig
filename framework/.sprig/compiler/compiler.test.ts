@@ -202,7 +202,10 @@ Deno.test("isSignal: picks writable signals out of a scope (harness introspectio
   assertEquals(isSignal(5), false);
   assertEquals(isSignal(() => 5), false); // a plain function is not a signal
   assertEquals(isSignal({ set: 1, signal: 2 }), false); // not callable
-  // the preview harness can register a mount listener (no-op without a DOM here)
+  // the preview harness can register a mount listener (no-op without a DOM here);
+  // it returns an unsubscribe fn and replays past mounts (none here).
   assertEquals(typeof onIslandMounted, "function");
-  onIslandMounted(null);
+  const unsub = onIslandMounted(() => {});
+  assertEquals(typeof unsub, "function");
+  unsub();
 });

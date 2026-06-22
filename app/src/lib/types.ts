@@ -95,7 +95,7 @@ export interface InstanceView {
 export interface Surface {
   name: string;
   background?: string;
-  html?: string;
+  html?: string | null;
   controls: ControlView[];
   instances: InstanceView[];
 }

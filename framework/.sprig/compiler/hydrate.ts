@@ -50,9 +50,20 @@ export interface IslandMount {
   inputs: Scope;
   scope: Record<string, unknown>;
 }
-let islandMountedCb: ((m: IslandMount) => void) | null = null;
-export function onIslandMounted(cb: ((m: IslandMount) => void) | null): void {
-  islandMountedCb = cb;
+const islandMountSubs = new Set<(m: IslandMount) => void>();
+const islandMounts: IslandMount[] = [];
+/** Subscribe to island mounts. The callback is REPLAYED for every island already
+ *  mounted (so a late subscriber — e.g. a harness island that hydrates after its
+ *  target — still sees it), then called for each future mount. Returns an
+ *  unsubscribe fn. Order-independent by design. */
+export function onIslandMounted(cb: (m: IslandMount) => void): () => void {
+  islandMountSubs.add(cb);
+  for (const m of islandMounts) {
+    try {
+      cb(m);
+    } catch { /* harness errors must never break hydration */ }
+  }
+  return () => islandMountSubs.delete(cb);
 }
 
 // ─────────────────────────── teardown bookkeeping ───────────────────────────
@@ -390,10 +401,13 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
   el.dataset.sprigHydrated = "1";
 
   const scope = entry.setup(clientCtx(inputs)); // the signals here ARE the island's state
-  // hand external tooling (the preview harness) a live handle on this island
-  if (islandMountedCb) {
+  // hand external tooling (the preview harness) a live handle on this island,
+  // recording it so late subscribers are replayed (see onIslandMounted).
+  const mount: IslandMount = { el, sel, inputs, scope: scope as Record<string, unknown> };
+  islandMounts.push(mount);
+  for (const cb of islandMountSubs) {
     try {
-      islandMountedCb({ el, sel, inputs, scope: scope as Record<string, unknown> });
+      cb(mount);
     } catch { /* harness errors must never break hydration */ }
   }
   // re-emit the view-encapsulation marker so the re-rendered DOM keeps its scoped

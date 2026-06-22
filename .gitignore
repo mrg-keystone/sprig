@@ -8,6 +8,10 @@ test-results/
 /static/
 /.sprig-manifest.json
 
+# generated sprig previews (isolate generates these per discovered case)
+/app/src/_preview/
+/app/src/pages/_preview/
+
 # scaffolding kept locally, not shipped — the old code lives in git history
 /reference/
 /spec/
