@@ -56,6 +56,11 @@ export function evalExpr(node: Node | null, scope: Scope): unknown {
         const recv = evalExpr(field(fnNode, "object"), scope);
         return typeof fn === "function" ? (fn as (...a: unknown[]) => unknown).apply(recv, args) : undefined;
       }
+      // a bare call naming a scope member (e.g. a class-component method) → bind `this`
+      // to the scope so class-style methods can use `this`; plain closures ignore it.
+      if (fnNode.type === "identifier" && (fnNode.text in (scope as object))) {
+        return typeof fn === "function" ? (fn as (...a: unknown[]) => unknown).apply(scope, args) : undefined;
+      }
       return typeof fn === "function" ? (fn as (...a: unknown[]) => unknown)(...args) : undefined;
     }
     case "unary_expression": {
@@ -287,7 +292,10 @@ import { named as _named } from "./node.ts";
  *  `event_binding` node here to run EVERY statement; a bare single statement node
  *  is also accepted (it runs on its own). Supports calls and assignments. */
 export function evalStatement(handler: Node, scope: Scope, event: unknown): void {
-  const s: Scope = { ...scope, $event: event };
+  // inherit from scope (don't spread) so a class-instance scope keeps its prototype
+  // methods resolvable in handlers; $event is an own prop and the scope isn't mutated.
+  const s: Scope = Object.create(scope as object);
+  (s as Record<string, unknown>).$event = event;
   // When handed the event_binding parent, the statements are its named children
   // minus the leading `binding_name`. A lone statement node runs by itself.
   const stmts = handler.type === "event_binding"
