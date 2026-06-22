@@ -89,6 +89,7 @@ export async function generatePreviews(entries: ComponentEntry[], appSrcDir: str
       background: e.background,
       controlDefs: e.controlDefs,
       subControlDefs: e.subControlDefs, // per-child-component control widgets
+      subTargets: e.subTargets, // CSS selector per instance group (direct-DOM controls)
     };
 
     for (const c of e.cases) {

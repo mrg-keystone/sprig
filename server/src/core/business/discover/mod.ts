@@ -90,8 +90,14 @@ export interface ComponentEntry {
   folder: string;
   background?: string;
   controlDefs: Record<string, ControlDef>;
-  /** Per-sub-component control widgets, keyed by the sub-component's function name. */
+  /** Per-sub-component control widgets, keyed by the sub-component's function name
+   *  (or, for per-instance controls, an instance label). */
   subControlDefs: Record<string, Record<string, ControlDef>>;
+  /** Optional CSS selector per `components` entry that targets a SPECIFIC rendered
+   *  instance (e.g. "#submit") — the panel shows it as its own named group and applies
+   *  edits directly to that element. Absent → the entry targets all instances of the
+   *  selector via the mock/re-render path. */
+  subTargets: Record<string, string>;
   cases: CaseDef[];
 }
 
@@ -404,25 +410,28 @@ export async function discover(projectRoot: string): Promise<DiscoverResult> {
       const folder = String(fixture.folder ?? "");
       const controlDefs = parseControlDefs(fixture.controls);
 
-      // Per-sub-component controls: fixture.components[name].controls.
+      // Per-sub-component controls: fixture.components[name].controls (+ optional target).
       const subControlDefs: Record<string, Record<string, ControlDef>> = {};
+      const subTargets: Record<string, string> = {};
       if (fixture.components && typeof fixture.components === "object") {
         for (
           const [name, spec] of Object.entries(
             fixture.components as Record<string, unknown>,
           )
         ) {
-          // Full form is `"Button": { "controls": {...} }`; the shorthand drops the
-          // wrapper: `"Button": { "disabled": {...} }`. Treat the object as the
-          // wrapper ONLY when it actually carries a `controls` key — otherwise the
-          // whole object IS the controls map. (Consequence: a control literally
-          // named "controls" must use the full-form wrapper, or it's read as one.)
+          // Full form is `"Button": { "controls": {...}, "target"?: "#submit" }`; the
+          // shorthand drops the wrapper: `"Button": { "disabled": {...} }`. Treat the
+          // object as the wrapper ONLY when it carries a `controls` key — otherwise the
+          // whole object IS the controls map. (Consequence: a control literally named
+          // "controls" must use the full-form wrapper, or it's read as one.)
           const isWrapper = spec != null && typeof spec === "object" &&
             !Array.isArray(spec) && "controls" in (spec as object);
           const ctrls = isWrapper
             ? (spec as { controls?: unknown }).controls
             : spec;
           subControlDefs[name] = parseControlDefs(ctrls);
+          const target = isWrapper ? (spec as { target?: unknown }).target : undefined;
+          if (typeof target === "string") subTargets[name] = target;
         }
       }
 
@@ -455,6 +464,7 @@ export async function discover(projectRoot: string): Promise<DiscoverResult> {
         background,
         controlDefs,
         subControlDefs,
+        subTargets,
         cases: await collectCases(
           isolateDir,
           controlDefs,

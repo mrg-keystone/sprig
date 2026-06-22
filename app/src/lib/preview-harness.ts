@@ -31,6 +31,9 @@ interface Meta {
   background?: string;
   controlDefs: Record<string, ControlDef>;
   subControlDefs?: Record<string, Record<string, ControlDef>>;
+  /** CSS selector per sub group that targets a specific rendered element (e.g. "#submit")
+   *  → the control reads/writes that DOM node directly. */
+  subTargets?: Record<string, string>;
 }
 interface CaseData {
   props: Record<string, unknown>;
@@ -105,6 +108,13 @@ function controlDefault(def: ControlDef): unknown {
   return "";
 }
 
+/** Read a targeted instance's current control value off its DOM node. */
+function readDomControl(el: Element, key: string, def: ControlDef): unknown {
+  if (def.type === "boolean") return el.hasAttribute(key) || (el as unknown as Record<string, unknown>)[key] === true;
+  const attr = el.getAttribute(key);
+  return attr !== null ? attr : controlDefault(def);
+}
+
 export default defineComponent({
   inputs: ["meta", "caseData"],
   setup: (ctx) => {
@@ -127,6 +137,10 @@ export default defineComponent({
         }
       }
       const instances = Object.entries(meta.subControlDefs ?? {}).map(([sel, defs]) => {
+        // a targeted instance (e.g. "#submit") reads its control values straight off the
+        // DOM node; an untargeted group reads them from the case's force-props mock.
+        const target = meta.subTargets?.[sel];
+        const el = (target && isClient) ? document.querySelector(target) : null;
         const mock = cas.mocks?.[sel];
         const forced = (typeof mock === "object" && mock.props) ? mock.props : {};
         return {
@@ -135,9 +149,9 @@ export default defineComponent({
           controls: Object.entries(defs).map(([key, def]): ControlView => ({
             scope: "sub",
             key,
-            instKey: sel,
+            instKey: target ?? sel,
             def,
-            value: key in forced ? forced[key] : controlDefault(def),
+            value: el ? readDomControl(el, key, def) : (key in forced ? forced[key] : controlDefault(def)),
           })),
         };
       });
@@ -167,7 +181,17 @@ export default defineComponent({
         html = String(d.value);
         reloadWith("_html", d.value);
       } else if (d.scope === "sub" && d.instKey) {
-        reloadWith(`_m.${d.instKey}.${d.key}`, d.value);
+        // a specific rendered element (e.g. "#submit") → set it directly, live, no reload;
+        // an unmatched selector is a component instance → mock + server re-render.
+        const el = typeof document !== "undefined" ? document.querySelector(d.instKey) : null;
+        if (el) {
+          if (d.value === true) el.setAttribute(d.key, "");
+          else if (d.value === false) el.removeAttribute(d.key);
+          else el.setAttribute(d.key, String(d.value));
+          publish();
+        } else {
+          reloadWith(`_m.${d.instKey}.${d.key}`, d.value);
+        }
       }
     };
 
