@@ -465,9 +465,25 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
     wire(); // (re)attach delegated listeners for any event base this render introduced
   });
 
+  // client lifecycle (duck-typed — a plain { setup } object simply omits these). The
+  // DOM is live after the first effect run, so onBrowserInit fires now with `this` = the
+  // scope; onBrowserDestroy folds into teardown so a component can release its own
+  // resources (timers/sockets/listeners) on unmount — the cleanup channel whose absence
+  // bit us before.
+  const life = scope as { onBrowserInit?: () => void; onBrowserDestroy?: () => void };
+  life.onBrowserInit?.();
+
   // register teardown so soft-nav (or any detach) can dispose the effect + its
   // subscriptions, so we never leak or write to a detached node.
-  mounted.push({ el, dispose });
+  mounted.push({
+    el,
+    dispose: () => {
+      dispose();
+      try {
+        life.onBrowserDestroy?.();
+      } catch { /* teardown cleanup must never throw past the unmount */ }
+    },
+  });
 
   if (hmrEnabled && tick) {
     live.push({
