@@ -1,5 +1,5 @@
 <div class="counter">
   <button id="decrement" class="cbtn" type="button" (click)="dec()">-1</button>
-  <p class="tabular-nums">{{ count() }}</p>
+  <count-display [value]="count()"></count-display>
   <button id="increment" class="cbtn" type="button" (click)="inc()">+1</button>
 </div>

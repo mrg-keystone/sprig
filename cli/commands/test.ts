@@ -73,7 +73,7 @@ export const testCmd = new Command()
     }
 
     // Generate the sprig previews + build the workbench app (so the specs have routes to hit).
-    await generatePreviews(entries, resolve(REPO, "app/src"));
+    await generatePreviews(entries, resolve(REPO, "app/src"), resolve(root, "src"));
     const build = await new Deno.Command("deno", {
       args: ["run", "-A", resolve(REPO, "framework/cli.ts"), "build", "app"],
       cwd: REPO,

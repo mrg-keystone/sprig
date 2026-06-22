@@ -13,7 +13,7 @@
 import { type Accessor, type ComponentCtx, effect, signal, type WritableAccessor } from "@sprig/core";
 import { fromSerialized, type SerializedTemplate } from "./serialize.ts";
 import { evalStatement, type Scope } from "./expr.ts";
-import { type Handler, type Registry, renderNodes } from "./render.ts";
+import { type ComponentDef, type Handler, type Registry, renderNodes } from "./render.ts";
 import { named } from "./node.ts";
 import { scopeId } from "./scope.ts";
 
@@ -31,8 +31,14 @@ export interface SprigConfig {
   v: string;
 }
 
-// islands don't compose child components in v1 (leaf interactivity); a no-op registry.
-const NO_COMPONENTS: Registry = { get: () => undefined };
+// Static (non-island) component templates shipped to the client by the build, so
+// an island's in-browser re-render can resolve child components instead of dropping
+// them. registerComponent() is called from the eager loader; islands compose these.
+const componentRegistry = new Map<string, ComponentDef>();
+export function registerComponent(sel: string, def: { template: SerializedTemplate; scope: string }): void {
+  componentRegistry.set(sel, { selector: sel, template: fromSerialized(def.template), scope: def.scope });
+}
+const COMPONENTS: Registry = { get: (sel) => componentRegistry.get(sel) };
 
 // selector → its loaded entry (filled when an island chunk calls registerIsland)
 const registry = new Map<string, IslandEntry>();
@@ -445,7 +451,7 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
   const dispose = effect(() => {
     tick?.(); // tracked only in HMR mode, so hotTemplate() can force a re-render
     const hs: Handler[] = [];
-    const html = renderNodes(nodes, { scope, registry: NO_COMPONENTS, source, handlers: hs, scopeAttr });
+    const html = renderNodes(nodes, { scope, registry: COMPONENTS, source, handlers: hs, scopeAttr });
     patchInnerHtml(el, html); // morph (preserves focus/caret/scroll) instead of wholesale replace
     handlers = hs;
     wire(); // (re)attach delegated listeners for any event base this render introduced

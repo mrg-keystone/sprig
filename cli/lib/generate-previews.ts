@@ -7,11 +7,46 @@
 // never shadows a native element like <button>. A manifest.gen.ts of
 // { routes, modules } is spread into app/src/main.ts. The app then builds (islands
 // code-split) and serves under one serveSprig origin — no Vite, no Fresh.
-import { join } from "#std/path";
-import { ensureDir, exists } from "#std/fs";
+import { basename, dirname, join } from "#std/path";
+import { ensureDir, exists, walk } from "#std/fs";
 import type { CaseDef, ComponentEntry } from "../../server/src/core/business/discover/mod.ts";
 
 const sanitize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+// framework tags that are never project components
+const RESERVED = new Set(["router-outlet", "ng-content", "ng-container", "stage-bridge"]);
+const DASH_TAG = /<([a-z][a-z0-9]*(?:-[a-z0-9]+)+)[\s/>]/g;
+
+/** Copy a folder-component (template + styles + logic) into <targetsDir>/<name>. */
+async function copyComponent(srcDir: string, name: string, targetsDir: string): Promise<void> {
+  const dest = join(targetsDir, name);
+  await ensureDir(dest);
+  await Deno.copyFile(join(srcDir, "template.html"), join(dest, "template.html"));
+  if (await exists(join(srcDir, "styles.css"))) await Deno.copyFile(join(srcDir, "styles.css"), join(dest, "styles.css"));
+  if (await exists(join(srcDir, "logic.ts"))) await Deno.copyFile(join(srcDir, "logic.ts"), join(dest, "logic.ts"));
+}
+
+/** Find a folder-component by selector (folder basename) anywhere under projectSrc. */
+async function findComponentDir(sel: string, projectSrc: string): Promise<string | null> {
+  for await (const e of walk(projectSrc, { includeDirs: false, match: [/template\.html$/] })) {
+    if (basename(dirname(e.path)) === sel) return dirname(e.path);
+  }
+  return null;
+}
+
+/** Copy every component a target's template references (custom dash-tags), recursively. */
+async function copyDeps(compDir: string, projectSrc: string, targetsDir: string, done: Set<string>): Promise<void> {
+  const src = await Deno.readTextFile(join(compDir, "template.html"));
+  for (const m of src.matchAll(DASH_TAG)) {
+    const tag = m[1];
+    if (RESERVED.has(tag) || done.has(tag)) continue;
+    const depDir = await findComponentDir(tag, projectSrc);
+    if (!depDir) continue;
+    done.add(tag);
+    await copyComponent(depDir, tag, targetsDir);
+    await copyDeps(depDir, projectSrc, targetsDir, done); // transitive deps
+  }
+}
 
 /** The target tag for a case: each static prop is bound to the resolver's caseData
  *  (so a control edit — arriving as a query override the resolver merges — re-renders
@@ -26,7 +61,7 @@ function targetTag(alias: string, e: ComponentEntry, c: CaseDef): string {
   return `<${alias} ${attrs.join(" ")}></${alias}>`.replace(/\s+>/, ">");
 }
 
-export async function generatePreviews(entries: ComponentEntry[], appSrcDir: string): Promise<number> {
+export async function generatePreviews(entries: ComponentEntry[], appSrcDir: string, projectSrc: string): Promise<number> {
   const previewPagesDir = join(appSrcDir, "pages", "_preview");
   const targetsDir = join(appSrcDir, "_preview", "targets");
   for (const d of [previewPagesDir, join(appSrcDir, "_preview")]) {
@@ -37,21 +72,16 @@ export async function generatePreviews(entries: ComponentEntry[], appSrcDir: str
 
   const routes: { path: string; load: string }[] = [];
   const moduleLines: string[] = [];
+  const copiedDeps = new Set<string>(); // dep selectors copied (shared across targets)
   let pages = 0;
 
   for (const e of entries) {
     const alias = "x-" + sanitize(e.label); // dash-cased → never shadows a native element
 
-    // copy the target folder-component (template + styles + logic)
-    const tDir = join(targetsDir, alias);
-    await ensureDir(tDir);
-    await Deno.copyFile(join(e.dir, "template.html"), join(tDir, "template.html"));
-    if (await exists(join(e.dir, "styles.css"))) {
-      await Deno.copyFile(join(e.dir, "styles.css"), join(tDir, "styles.css"));
-    }
-    if (e.kind === "island" && (await exists(join(e.dir, "logic.ts")))) {
-      await Deno.copyFile(join(e.dir, "logic.ts"), join(tDir, "logic.ts"));
-    }
+    // copy the target folder-component (template + styles + logic) under its alias,
+    // then copy every component its template references (e.g. the counter's <count-display>).
+    await copyComponent(e.dir, alias, targetsDir);
+    await copyDeps(e.dir, projectSrc, targetsDir, copiedDeps);
 
     const meta = { name: e.label, selector: alias, background: e.background, controlDefs: e.controlDefs };
 

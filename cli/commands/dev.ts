@@ -42,7 +42,7 @@ export const devCmd = new Command()
 
     // 2. generate one sprig preview per case into the workbench app (no Vite, no copy-a-Fresh-app)
     const appSrc = resolve(REPO, "app/src");
-    const n = await generatePreviews(entries, appSrc);
+    const n = await generatePreviews(entries, appSrc, resolve(root, "src"));
     console.log(`Generated ${n} preview page(s) for ${entries.length} component(s).`);
 
     // 3. build the workbench app (code-split islands + scope CSS) → static/
