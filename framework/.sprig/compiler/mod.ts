@@ -10,7 +10,7 @@ import { named } from "./parse.ts";
 import { serialize, type SerializedTemplate } from "./serialize.ts";
 import type { Scope } from "./expr.ts";
 import { makeServerCtx, withServerInjector } from "./island.ts";
-import { manifestPath } from "./build.ts";
+import { shortHash } from "./build.ts";
 import { componentScopeId } from "./scope.ts";
 import type { ComponentDef as CoreComponentDef } from "@sprig/core";
 
@@ -129,15 +129,15 @@ export async function createRenderer(
     return { get: (s) => (locals?.get(s)) ?? global.get(s) };
   };
 
-  // the build's manifest carries the client.js content hash for ?v= cache-busting.
-  // In dev we re-read it each render so a background rebuild's new hash is picked up.
-  // The manifest is a SERVER-ONLY build artifact, written OUTSIDE the public assets
-  // dir (static/) so it is never reachable under /_assets and never leaks build
-  // internals or pins a stale immutable cache (see build.ts manifestPath()).
-  const mfPath = manifestPath(join(Deno.cwd(), "static"));
+  // The ?v= asset cache-bust is the content hash of the built static/ dir, computed on
+  // demand — so there is NO separate manifest file beside the build. In dev we recompute
+  // each render so a background rebuild's new hash is picked up.
+  const staticDir = join(Deno.cwd(), "static");
   const readVersion = async () => {
     try {
-      return JSON.parse(await Deno.readTextFile(mfPath)).v ?? "dev";
+      const files: string[] = [];
+      for await (const e of Deno.readDir(staticDir)) if (e.isFile) files.push(join(staticDir, e.name));
+      return files.length ? await shortHash(files.sort()) : "dev";
     } catch {
       return "dev";
     }

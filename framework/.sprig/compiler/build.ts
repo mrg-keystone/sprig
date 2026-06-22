@@ -9,9 +9,8 @@
 //   <out>/client.js          the eager loader (scans DOM, lazy-loads islands by trigger)
 //   <out>/isl.<sel>.js       one tiny chunk per island (dynamic-imported on its trigger)
 //   <out>/chunk-<hash>.js    the shared runtime, loaded once
-//   <out>/../.sprig-manifest.json  { v, client, islands, chunks } — v drives ?v=
-//                            cache-busting; written OUTSIDE the public assets dir
-//                            (server-only artifact; never served under /_assets).
+// The ?v= cache-bust is the content hash of <out>/ recomputed by the SSR on demand
+// (mod.ts readVersion) — no manifest file is written; the build is self-contained in <out>.
 import { basename, dirname, fromFileUrl, join, relative } from "@std/path";
 import { walk } from "@std/fs/walk";
 import { parseTemplate } from "./parse.ts";
@@ -137,7 +136,7 @@ export async function buildClient(srcDir: string, outDir: string, opts: { dev?: 
   // 4. per-component styles.css → scoped (view encapsulation) → Tailwind → app.css
   await buildCss(srcDir, outDir);
 
-  // 5. collect outputs (.js + app.css), hash, write the manifest
+  // 5. collect outputs (.js + app.css) + hash them for the ?v= cache-bust
   const files: string[] = [];
   let total = 0;
   for await (const e of Deno.readDir(outDir)) {
@@ -147,11 +146,10 @@ export async function buildClient(srcDir: string, outDir: string, opts: { dev?: 
     }
   }
   const chunks = files.filter((f) => f.startsWith("chunk-")).sort();
+  // The cache-bust version is the static dir's content hash — the SSR recomputes it on
+  // demand (mod.ts readVersion), so the build leaves NO manifest file beside static/;
+  // everything the build produces lives inside the one output folder.
   const hash = await shortHash(files.slice().sort().map((f) => join(outDir, f)));
-  await Deno.writeTextFile(
-    manifestPath(outDir), // server-only artifact, OUTSIDE the public assets dir
-    JSON.stringify({ v: hash, client: "client.js", css: "app.css", islands: islands.map((i) => i.sel).sort(), chunks }, null, 2),
-  );
   return { islands: islands.map((i) => i.sel), chunks, out: join(outDir, "client.js"), bytes: total, hash };
 }
 
@@ -245,15 +243,6 @@ export async function shortHash(paths: string[]): Promise<string> {
   return [...new Uint8Array(digest)].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Where the SERVER-ONLY build manifest lives. It is written OUTSIDE the public
- *  assets dir (`outDir`/static) — sibling to it — so it is never reachable under
- *  /_assets (serveAsset blanket-serves the whole assets dir with an immutable
- *  one-year cache). The manifest leaks the island list + chunk hashes + build
- *  version and changes every build, so it must not be public or immutably cached.
- *  Only the SSR renderer reads it (mod.ts), from this same path. */
-export function manifestPath(outDir: string): string {
-  return join(dirname(outDir), ".sprig-manifest.json");
-}
 function q(s: string): string {
   return JSON.stringify(s);
 }

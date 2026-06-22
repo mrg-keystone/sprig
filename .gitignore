@@ -4,9 +4,8 @@ _fresh/
 test-results/
 .DS_Store
 
-# sprig build output (app/build.ts → static/) + server-only build manifest
+# sprig build output — self-contained in one folder (no stray manifest)
 /static/
-/.sprig-manifest.json
 
 # generated sprig previews (isolate generates these per discovered case)
 /app/src/_preview/
