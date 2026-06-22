@@ -55,14 +55,34 @@ export async function createRenderer(
     let island: ComponentDef["island"];
     const logicPath = join(dir, "logic.ts");
     if (await exists(logicPath)) {
-      const mod = await import(`file://${logicPath}`) as { default: CoreComponentDef };
+      const mod = await import(`file://${logicPath}`) as { default: unknown };
       const def = mod.default;
-      island = {
-        // wrap setup() in a server component injector so inject() resolves inside
-        // an island's setup() (DI scope "both"/"server") instead of throwing.
-        scope: (inputs) => withServerInjector(() => def.setup(makeServerCtx(inputs))) as Scope,
-        trigger: def.trigger ?? "load",
-      };
+      const isClass = typeof def === "function" && !!(def as { prototype?: unknown }).prototype;
+      if (isClass) {
+        // a class component: the instance IS the scope. Run sync onServerInit before
+        // render (async onServerInit arrives with the async render). withServerInjector
+        // lets inject() resolve in the constructor / onServerInit.
+        // deno-lint-ignore no-explicit-any
+        const Cls = def as new (ctx: any) => Record<string, unknown>;
+        island = {
+          scope: (inputs) =>
+            withServerInjector(() => {
+              const inst = new Cls(makeServerCtx(inputs));
+              (inst as { onServerInit?: () => unknown }).onServerInit?.();
+              return inst as Scope;
+            }),
+          trigger: (Cls as { trigger?: string }).trigger ?? "load",
+          snapshot: true, // carry instance state across the wire
+        };
+      } else {
+        // the { setup } model: wrap setup() in a server component injector so inject()
+        // resolves inside it (DI scope "both"/"server") instead of throwing.
+        const d = def as CoreComponentDef;
+        island = {
+          scope: (inputs) => withServerInjector(() => d.setup(makeServerCtx(inputs))) as Scope,
+          trigger: d.trigger ?? "load",
+        };
+      }
     }
     const template = await parseCached(source); // pre-parse → sync render
     const def: ComponentDef = { selector, template, island, scope: componentScopeId(relDir) };

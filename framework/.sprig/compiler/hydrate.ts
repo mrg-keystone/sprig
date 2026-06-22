@@ -16,6 +16,14 @@ import { evalStatement, type Scope } from "./expr.ts";
 import { type ComponentDef, type Handler, type MockSpec, type Registry, renderNodes } from "./render.ts";
 import { named } from "./node.ts";
 import { scopeId } from "./scope.ts";
+import { restore } from "./lifecycle.ts";
+
+/** Adapt a class default-export into the setup() contract: the instance IS the scope.
+ *  Snapshot restore + onBrowserInit/onBrowserDestroy are handled by hydrateIsland. */
+// deno-lint-ignore no-explicit-any
+export function makeClassSetup(Cls: new (ctx: any) => Record<string, unknown>) {
+  return (ctx: ComponentCtx) => new Cls(ctx);
+}
 
 export interface IslandEntry {
   setup: (ctx: ComponentCtx) => Record<string, unknown>;
@@ -415,6 +423,9 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
   el.dataset.sprigHydrated = "1";
 
   const scope = entry.setup(clientCtx(inputs)); // the signals here ARE the island's state
+  // class component: re-seed the instance from the server snapshot BEFORE the first
+  // render + onBrowserInit, so the client's first paint matches the server's.
+  if (inputs.__snapshot) restore(scope as Record<string, unknown>, inputs.__snapshot as Record<string, unknown>);
   // hand external tooling (the preview harness) a live handle on this island,
   // recording it so late subscribers are replayed (see onIslandMounted). Also stash
   // the scope on the element itself — the DOM is shared even if a tool's chunk got a

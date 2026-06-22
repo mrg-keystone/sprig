@@ -6,6 +6,7 @@
 import { field, named, type Node } from "./node.ts";
 import { evalExpr, type Scope } from "./expr.ts";
 import { scopeId } from "./scope.ts";
+import { snapshotOf } from "./lifecycle.ts";
 
 /** HTML-escape interpolated text (element content). */
 function escape(s: string): string {
@@ -18,6 +19,9 @@ export interface IslandDef {
   scope: (inputs: Scope) => Scope;
   /** is-land trigger, e.g. "load" | "visible" | "idle" | "interaction" */
   trigger: string;
+  /** class-based component: snapshot the instance's serializable state into the props
+   *  bridge so the browser instance is re-seeded before onBrowserInit (see lifecycle.ts). */
+  snapshot?: boolean;
 }
 export interface ComponentDef {
   selector: string;
@@ -216,7 +220,11 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
     if (opts.handlers) return injectRootAttrs(inner, eventAttrs(attrs, opts));
     // carry mocks into the client via the props bridge so the island's own re-render
     // applies them to its children too (the SSR-only force-props would otherwise be lost).
-    const propsObj = opts.mocks ? { ...inputs, __mocks: opts.mocks } : inputs;
+    // For a class component, also carry a snapshot of the (post-onServerInit) instance
+    // state so the browser instance is re-seeded before onBrowserInit.
+    const propsObj: Record<string, unknown> = { ...inputs };
+    if (opts.mocks) propsObj.__mocks = opts.mocks;
+    if (comp.island.snapshot) propsObj.__snapshot = snapshotOf(scope as Record<string, unknown>);
     const props = JSON.stringify(propsObj).replace(/</g, "\\u003c");
     // selectors/triggers are trusted compile-time idents, but escape for consistency
     // with every other attribute (defense-in-depth on the loader's import() URL). The
