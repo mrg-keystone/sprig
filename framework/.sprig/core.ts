@@ -371,6 +371,10 @@ export interface AppConfig {
   /** SSR renderer (the template compiler). main.ts wires it so @sprig/core stays
    *  decoupled from the wasm-backed compiler. Falls back to a JSON dump if absent. */
   render?: (pageLoad: string, inputs: Record<string, unknown>) => Promise<string>;
+  /** Streaming SSR — preferred when present: flushes the document head on the first
+   *  byte (browser preloads assets) and streams the body after its onServerInit fetches.
+   *  Byte-identical to render()'s output, just chunked. */
+  renderStream?: (pageLoad: string, inputs: Record<string, unknown>) => ReadableStream<Uint8Array>;
 }
 export interface SprigApp {
   fetch(req: Request, info?: Deno.ServeHandlerInfo, env?: { backend?: BackendClient }): Promise<Response>;
@@ -427,24 +431,34 @@ export function bootstrap(config: AppConfig): SprigApp {
 
       const mod = matched.load ? config.modules?.[matched.load] : undefined;
 
-      let html: string;
+      // resolve() runs BEFORE headers go out, so its failure (or a not-found status it
+      // sets) is honored on the response line; a render failure after this is a 500 in
+      // the buffered path, or a closed partial stream once the head has been flushed.
+      let inputs: Record<string, unknown> = {};
       try {
-        let inputs: Record<string, unknown> = {};
         if (mod?.resolve) {
           inputs = await runInInjector(routeInjector, () => mod.resolve!({ params: matched.params, url }));
         }
+      } catch {
+        return new Response("Internal Server Error", { status: 500, headers: ssrHeaders() });
+      }
+      // A resolve/service may have signalled a not-found (matched route, missing
+      // resource) by setting the request status; honor it on the response line.
+      const status = root.status ?? 200;
+
+      // Streaming SSR (preferred): flush the head now, stream the body after its fetches.
+      if (config.renderStream && matched.load && method !== "HEAD") {
+        return new Response(config.renderStream(matched.load, inputs), { status, headers: ssrHeaders() });
+      }
+
+      let html: string;
+      try {
         html = config.render && matched.load
           ? await config.render(matched.load, inputs)
           : renderDocument(matched, inputs, base);
       } catch {
-        // Any resolve()/render() failure becomes a controlled 500 — never an
-        // unhandled rejection and never leaking internal error text to the client.
         return new Response("Internal Server Error", { status: 500, headers: ssrHeaders() });
       }
-
-      // A resolve/service may have signalled a not-found (matched route, missing
-      // resource) by setting the request status; honor it on the response line.
-      const status = root.status ?? 200;
       return new Response(method === "HEAD" ? null : html, { status, headers: ssrHeaders() });
     },
   };

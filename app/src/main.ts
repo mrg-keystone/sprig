@@ -44,4 +44,5 @@ export const app: SprigApp = bootstrap({
     ...previewModules,
   },
   render: (load, inputs) => renderer.renderDocument(load, inputs),
+  renderStream: (load, inputs) => renderer.renderStream(load, inputs),
 });

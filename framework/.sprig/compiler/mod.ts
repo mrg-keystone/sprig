@@ -17,6 +17,10 @@ import type { ComponentDef as CoreComponentDef } from "@sprig/core";
 export interface SsrRenderer {
   /** Render `pageLoad`'s component into the shell, return a full HTML document. */
   renderDocument(pageLoad: string, inputs: Scope): Promise<string>;
+  /** Same document, STREAMED: the <head> (asset preloads) flushes on the first byte,
+   *  the body streams after its onServerInit fetches resolve. Byte-identical to
+   *  renderDocument's output, just chunked. */
+  renderStream(pageLoad: string, inputs: Scope): ReadableStream<Uint8Array>;
   /** Selectors discovered (for diagnostics/tests). */
   selectors(): string[];
   /** the scanned src root (for the dev server's watcher). */
@@ -144,6 +148,26 @@ export async function createRenderer(
     return defs && defs.length ? defs[0] : undefined;
   };
 
+  /** Build the <body> content: async pre-pass (await class-island onServerInit in
+   *  parallel) → sync render of the page → wrap in the shell. Shared by renderDocument
+   *  (returns the whole doc) and renderStream (flushes the head before this resolves). */
+  const renderBody = async (pageLoad: string, inputs: Scope): Promise<string> => {
+    const page = global.get(basename(pageLoad));
+    const pageReg = registryForPage(page ? basename(pageLoad) : null);
+    // a preview page may carry `__mocks` (child-component overrides) in its inputs
+    const mocks = (inputs as Record<string, unknown>).__mocks as
+      | Record<string, import("./render.ts").MockSpec>
+      | undefined;
+    const baseOpts = { scope: inputs, registry: pageReg, source: page?.template.text ?? "", scopeAttr: page?.scope, mocks };
+    const resolved = new Map<Node, Scope>();
+    if (page) await resolveIslands(named(page.template), baseOpts, resolved);
+    const pageHtml = page ? renderNodes(named(page.template), { ...baseOpts, resolved }) : "";
+    const shell = global.get(shellSelector);
+    return shell
+      ? renderNodes(named(shell.template), { scope: {}, registry, outlet: pageHtml, source: shell.template.text, scopeAttr: shell.scope })
+      : pageHtml;
+  };
+
   return {
     srcDir,
     // every registered component's selector (duplicates allowed: same-basename
@@ -151,25 +175,28 @@ export async function createRenderer(
     selectors: () => [...bySelector.values()].flatMap((defs) => defs.map((d) => d.selector)),
     async renderDocument(pageLoad, inputs) {
       if (opts.dev) version = await readVersion();
-      const page = global.get(basename(pageLoad));
-      const pageReg = registryForPage(page ? basename(pageLoad) : null);
-      // a preview page may carry `__mocks` (child-component overrides) in its inputs
-      const mocks = (inputs as Record<string, unknown>).__mocks as
-        | Record<string, import("./render.ts").MockSpec>
-        | undefined;
-      // async pre-pass: await class-island onServerInit (in parallel) before the sync
-      // render, so a component can fetch on the server and the data is in the HTML.
-      const baseOpts = { scope: inputs, registry: pageReg, source: page?.template.text ?? "", scopeAttr: page?.scope, mocks };
-      const resolved = new Map<Node, Scope>();
-      if (page) await resolveIslands(named(page.template), baseOpts, resolved);
-      const pageHtml = page
-        ? renderNodes(named(page.template), { ...baseOpts, resolved })
-        : "";
-      const shell = global.get(shellSelector);
-      const body = shell
-        ? renderNodes(named(shell.template), { scope: {}, registry, outlet: pageHtml, source: shell.template.text, scopeAttr: shell.scope })
-        : pageHtml;
-      return document(body, base, version);
+      return document(await renderBody(pageLoad, inputs), base, version);
+    },
+    renderStream(pageLoad, inputs) {
+      const enc = new TextEncoder();
+      return new ReadableStream<Uint8Array>({
+        async start(ctrl) {
+          try {
+            if (opts.dev) version = await readVersion();
+            // flush the head NOW → the browser preloads app.css + client.js while we
+            // await the body's onServerInit fetches.
+            ctrl.enqueue(enc.encode(documentHead(base, version)));
+            const body = await renderBody(pageLoad, inputs);
+            ctrl.enqueue(enc.encode(body + documentTail(base, version)));
+          } catch {
+            // headers + head are already on the wire, so a render failure can't become a
+            // 500 — emit a marker and close (matches the renderDocument 500's no-leak rule).
+            ctrl.enqueue(enc.encode("<!-- sprig: render error -->\n</body></html>"));
+          } finally {
+            ctrl.close();
+          }
+        },
+      });
     },
     async reparse(selector) {
       const cur = findBySelector(selector);
@@ -241,7 +268,11 @@ export async function assertStaticPage(templateDir: string): Promise<void> {
   );
 }
 
-function document(body: string, base: string, version: string): string {
+// The document is split head/tail so a streaming response can flush the HEAD on the
+// first byte — the browser preloads app.css + client.js (modulepreload) while the
+// server is still awaiting the body's onServerInit fetches. documentHead() + the body +
+// documentTail() concatenate to EXACTLY document()'s string (streaming is transparent).
+function documentHead(base: string, version: string): string {
   const client = `${base}/_assets/client.js?v=${version}`;
   return `<!DOCTYPE html>
 <html lang="en">
@@ -253,11 +284,18 @@ function document(body: string, base: string, version: string): string {
   <link rel="modulepreload" href="${client}" />
 </head>
 <body>
-${body}
+`;
+}
+function documentTail(base: string, version: string): string {
+  const client = `${base}/_assets/client.js?v=${version}`;
+  return `
 <script type="application/json" id="__sprig_config">${JSON.stringify({ base, v: version }).replace(/</g, "\\u003c")}</script>
 <script type="module" src="${client}"></script>
 </body>
 </html>`;
+}
+function document(body: string, base: string, version: string): string {
+  return documentHead(base, version) + body + documentTail(base, version);
 }
 
 export { join };
