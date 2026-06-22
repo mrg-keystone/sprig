@@ -32,7 +32,7 @@ export const resolve: Resolve = async (ctx) => {
       return {
         target,
         title: TITLE[target] ?? target,
-        href: "/ui/" + (TITLE[target] ?? target),
+        href: "/" + (TITLE[target] ?? target),
         cats: Object.keys(byCat).sort().map((cat) => {
           const byFolder = groupBy(byCat[cat], (c) => c.folder);
           return {

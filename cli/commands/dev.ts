@@ -1,102 +1,84 @@
 import { Command } from "@cliffy/command";
-import { resolve } from "#std/path";
-import { fromFileUrl } from "#std/path";
+import { fromFileUrl, resolve } from "#std/path";
 import { discover } from "../../server/src/core/business/discover/mod.ts";
+import { generatePreviews } from "../lib/generate-previews.ts";
 import { ensureRunner } from "../lib/runner.ts";
-import { materialize } from "../lib/materialize.ts";
-import { onShutdown, openBrowser, pump, URL_RE } from "../lib/process.ts";
+import { onShutdown, openBrowser } from "../lib/process.ts";
 import { formatProblems } from "../lib/format.ts";
 
-const SERVER_DIR = fromFileUrl(new URL("../../server", import.meta.url));
+const REPO = fromFileUrl(new URL("../../", import.meta.url)); // repo root (workbench app + framework live here)
 
 export const devCmd = new Command()
-  .description("Build & serve the preview app; open the browser.")
+  .description("Discover a sprig project's components, generate previews, and serve the workbench.")
   .option("--no-open", "Don't auto-open the browser.")
-  .option(
-    "-f, --force",
-    "Preview the valid components even if some configs are malformed.",
-  )
+  .option("-f, --force", "Preview the valid components even if some configs are malformed.")
   .action(async (opts) => {
-    const o = opts as unknown as {
-      root: string;
-      open: boolean;
-      force?: boolean;
-    };
+    const o = opts as unknown as { root: string; open: boolean; force?: boolean };
     const root = resolve(o.root);
+
+    // 1. discover the sprig folder-components + their isolate/ fixtures
     const { entries, problems } = await discover(root);
     if (entries.length === 0) {
-      console.log(
-        "Nothing to isolate — no component has an isolate/ folder yet.",
-      );
+      console.log("Nothing to isolate — no folder-component has an isolate/ folder yet.");
       return;
     }
-    if (problems.length) {
-      console.error(
-        `✗ isolate found ${problems.length} config problem(s):\n\n${
-          formatProblems(problems, root)
-        }\n`,
-      );
+    // "unsupported" notes (e.g. a case using the not-yet-supported _mocks) are
+    // advisory — the case still previews. Only real config errors are fatal.
+    const fatal = problems.filter((p) => p.kind !== "unsupported");
+    const advisory = problems.filter((p) => p.kind === "unsupported");
+    if (advisory.length) {
+      console.error(`ℹ ${advisory.length} case(s) use features not yet supported (rendered without them):\n\n${formatProblems(advisory, root)}\n`);
+    }
+    if (fatal.length) {
+      console.error(`✗ isolate found ${fatal.length} config problem(s):\n\n${formatProblems(fatal, root)}\n`);
       if (!o.force) {
-        console.error(
-          "Fix these and re-run, or `isolate dev --force` to preview the valid ones anyway.",
-        );
+        console.error("Fix these and re-run, or `isolate dev --force` to preview the valid ones anyway.");
         Deno.exit(1);
       }
       console.error("Continuing anyway (--force).\n");
     }
 
     await ensureRunner();
-    console.log(
-      `Setting up an isolate app for ${entries.length} component(s)…`,
-    );
-    const { appDir, scaffolded } = await materialize(root);
-    if (scaffolded) console.log(`Scaffolded a fresh app at ${appDir}`);
 
-    // The keep API server (the preview's /api/run proxies to it for the run button).
-    const keepPort = 9595;
-    const keep = new Deno.Command("deno", {
-      args: ["run", "-A", "bootstrap/mod.ts"],
-      cwd: SERVER_DIR,
-      env: { ...Deno.env.toObject(), PORT: String(keepPort) },
-      stdout: "null",
-      stderr: "null",
-    }).spawn();
+    // 2. generate one sprig preview per case into the workbench app (no Vite, no copy-a-Fresh-app)
+    const appSrc = resolve(REPO, "app/src");
+    const n = await generatePreviews(entries, appSrc);
+    console.log(`Generated ${n} preview page(s) for ${entries.length} component(s).`);
 
-    // The Fresh preview app (Vite), pointed at the keep server.
+    // 3. build the workbench app (code-split islands + scope CSS) → static/
+    const build = await new Deno.Command("deno", {
+      args: ["run", "-A", resolve(REPO, "framework/cli.ts"), "build", "app"],
+      cwd: REPO,
+      stdout: "inherit",
+      stderr: "inherit",
+    }).output();
+    if (!build.success) Deno.exit(build.code);
+
+    // 4. serve the single origin: the sprig shell + the generated previews + the
+    //    in-process keep backend (discovery for the sidebar + the test runner).
+    const port = Number(Deno.env.get("PORT") ?? 8000);
     const child = new Deno.Command("deno", {
-      args: ["task", "dev"],
-      cwd: appDir,
-      env: {
-        ...Deno.env.toObject(),
-        ISOLATE_KEEP_URL: `http://localhost:${keepPort}`,
-      },
-      stdout: "piped",
-      stderr: "piped",
+      args: ["serve", "-A", "--unstable-kv", `--port=${port}`, resolve(REPO, "serve.ts")],
+      cwd: REPO,
+      env: { ...Deno.env.toObject(), ISOLATE_PROJECT: root },
+      stdout: "inherit",
+      stderr: "inherit",
+      stdin: "inherit",
     }).spawn();
 
     const cleanup = onShutdown(() => {
-      for (const c of [child, keep]) {
-        try {
-          c.kill("SIGTERM");
-        } catch { /* already dead */ }
-      }
+      try {
+        child.kill("SIGTERM");
+      } catch { /* already dead */ }
     });
 
-    let opened = false;
-    const onLine = (line: string) => {
-      const m = line.match(URL_RE);
-      if (m && !opened) {
-        opened = true;
-        console.log(`\n  ◆ isolate ready → ${m[0]}\n     app: ${appDir}\n`);
-        if (o.open) openBrowser(m[0]);
-      }
-    };
+    const url = `http://localhost:${port}/`;
+    console.log(`\n  ◆ isolate ready → ${url}\n     project: ${root}\n`);
+    if (o.open) {
+      setTimeout(() => openBrowser(url), 1200);
+    }
 
     try {
-      await Promise.all([
-        pump(child.stdout, onLine),
-        pump(child.stderr, onLine),
-      ]);
       await child.status;
     } finally {
       cleanup();

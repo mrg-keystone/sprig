@@ -6,4 +6,7 @@ import { serveSprig } from "@sprig/keep";
 import { api } from "./server/bootstrap/mod.ts"; // keep: bootstrapServer already awaited at module scope
 import { app } from "./app/src/main.ts"; // sprig: bootstrap({ routes })
 
-export default serveSprig({ keep: api, app, base: "/ui" });
+// base "" → the shell at / and component previews at /components/… (so the
+// copied Playwright specs' `page.goto("/components/…")` resolve, and the stage
+// iframe is same-origin with no prefix).
+export default serveSprig({ keep: api, app, base: "" });

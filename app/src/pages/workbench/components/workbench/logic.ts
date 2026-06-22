@@ -172,7 +172,7 @@ export default defineComponent({
         const res = await fetch("/api/http/post-test-run", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ files: c.testFiles }),
+          body: JSON.stringify({ files: c.testFiles, baseUrl: location.origin }),
         });
         const j: RunResponse = await res.json();
         const results = j.testResults || j.results || [];
@@ -213,7 +213,7 @@ export default defineComponent({
         const res = await fetch("/api/http/post-test-run", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ files }),
+          body: JSON.stringify({ files, baseUrl: location.origin }),
         });
         const j: RunResponse = await res.json();
         const results = j.testResults || j.results || [];

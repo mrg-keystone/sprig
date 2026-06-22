@@ -29,13 +29,13 @@ export const routes: Route[] = defineRoutes([
 // scan app/src for folder-components and build the SSR renderer (once, at boot).
 export const renderer: SsrRenderer = await createRenderer(
   dirname(fromFileUrl(import.meta.url)),
-  "/ui",
+  "",
   { dev: !!Deno.env.get("SPRIG_DEV") },
 );
 
 export const app: SprigApp = bootstrap({
   routes,
-  base: "/ui",
+  base: "",
   modules: {
     "./pages/workbench": { resolve: workbenchResolve },
     "./pages/gallery": { resolve: galleryResolve },

@@ -29,7 +29,7 @@ export default defineComponent({
         const res = await fetch("/api/http/post-test-run", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ files: tests() }),
+          body: JSON.stringify({ files: tests(), baseUrl: location.origin }),
         });
         const j = await res.json();
         results.set(j.testResults || j.results || []);
