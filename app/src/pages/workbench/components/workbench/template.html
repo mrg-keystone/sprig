@@ -188,8 +188,8 @@
                         <div class="ctrl-row">
                           <label>{{ c.key }} @if (c.scope === 'signal') { <span class="sig">signal</span> }</label>
                           @if (controlType(c) === 'select') {
-                            <select class="ci" [value]="c.value == null ? '' : c.value" (change)="editText(c, $event)">
-                              @for (o of (c.def && c.def.options ? c.def.options : []); track o) { <option [attr.value]="o">{{ o }}</option> }
+                            <select class="ci" (change)="editText(c, $event)">
+                              @for (o of (c.def && c.def.options ? c.def.options : []); track o) { <option [attr.value]="o" [selected]="o === c.value">{{ o }}</option> }
                             </select>
                           }
                           @if (controlType(c) === 'range') {

@@ -52,6 +52,9 @@ export class DiscoveryService {
         testFiles: (c.tests ?? []).map((t) => t.file).filter(Boolean),
       }))
     );
-    return { cases, problems: raw.problems ?? [], count: cases.length };
+    // The "broken previews" banner is for real config errors only — drop the
+    // advisory "unsupported" notes (e.g. a case using the deferred _mocks feature).
+    const problems = (raw.problems ?? []).filter((p) => p.kind !== "unsupported");
+    return { cases, problems, count: cases.length };
   }
 }

@@ -1,0 +1,12 @@
+/* The preview page chrome (global): center the isolated component in the stage,
+   like the original isolate stage. The stage-bridge ships on every preview page,
+   so its (unscoped) :global rules land in app.css for the preview routes. */
+:global(html),
+:global(body) { height: 100%; margin: 0; }
+:global(.iso-stage-page) {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  box-sizing: border-box;
+}
