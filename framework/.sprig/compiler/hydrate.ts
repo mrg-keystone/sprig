@@ -110,6 +110,12 @@ export function teardownInside(root: ParentNode | null): void {
       mounted.splice(i, 1);
     }
   }
+  // prune the mount handles too, else islandMounts retains a detached element + its
+  // scope for every island EVER mounted (a soft-nav leak). Keeps it bounded to the
+  // currently-mounted set, which is also the correct replay set for late subscribers.
+  for (let i = islandMounts.length - 1; i >= 0; i--) {
+    if (gone(islandMounts[i].el)) islandMounts.splice(i, 1);
+  }
 }
 
 // ───────────────────────────── HMR (dev only) ───────────────────────────────
