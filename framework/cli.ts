@@ -44,21 +44,29 @@ async function serve(entry = "serve.ts"): Promise<void> {
   Deno.serve((req, info) => app.fetch!(req, info));
 }
 
-async function dev(appDir = "app", entry = "serve.ts", base = "/ui"): Promise<void> {
+async function dev(appDir = "app", base = "/ui"): Promise<void> {
   // State-preserving HMR (no Vite): build the dev bundle (HMR client + AST-fetching
   // island chunks), then wrap the app's production handler with the compiler's dev
   // server (Deno.watchFs + SSE + live AST). Template/CSS edits hot-swap in place
   // keeping island state; logic/server edits rebuild + reload.
   Deno.env.set("SPRIG_DEV", "1");
   await build(appDir, true);
-  const prod = (await import(`file://${join(Deno.cwd(), entry)}`)).default;
-  const { renderer } = await import(`file://${join(resolve(appDir), "src", "main.ts")}`);
+  // build the HMR base handler from the sprig APP itself — NOT the host's serve.ts (which
+  // may be a Danet/other host with no { fetch } export). `sprig dev` serves /ui with HMR;
+  // the host (serve.ts) is for `deno task start`.
+  const { renderer, app } = await import(`file://${join(resolve(appDir), "src", "main.ts")}`);
+  const { sprigUi } = await import(`file://${KEEP}`);
+  const ui = sprigUi({ app, base });
+  const handler = {
+    fetch: (req: Request, info: Deno.ServeHandlerInfo): Promise<Response> =>
+      ui(req, info).then((r: Response | null) => r ?? new Response("Not Found", { status: 404 })),
+  };
   const { createDevServer } = await import(join(SPRIG, "compiler", "dev.ts"));
   const devSrv = createDevServer({
     renderer,
     base,
     outDir: join(Deno.cwd(), "static"),
-    handler: prod,
+    handler,
   });
   const port = Number(Deno.env.get("PORT") ?? 8000);
   console.log(`sprig dev → http://localhost:${port}${base}  (HMR on; edit templates/CSS, island state is preserved)`);
@@ -230,7 +238,7 @@ switch (cmd) {
     await build(rest[0], rest.includes("--dev"));
     break;
   case "dev":
-    await dev(rest[0], rest[1], rest[2]);
+    await dev(rest[0], rest[1]);
     break;
   case "serve":
     await serve(rest[0]);
