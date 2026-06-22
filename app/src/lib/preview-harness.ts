@@ -43,10 +43,10 @@ const INTERACTIVE =
   "a, button, input, select, textarea, label, summary, [role], [tabindex], [contenteditable]";
 
 export default defineComponent({
-  inputs: ["meta", "case"],
+  inputs: ["meta", "caseData"],
   setup: (ctx) => {
     const meta = ctx.input<Meta>("meta", { name: "", selector: "", controlDefs: {} })();
-    const cas = ctx.input<CaseData>("case", { props: {}, signals: {}, innerHtml: null })();
+    const cas = ctx.input<CaseData>("caseData", { props: {}, signals: {}, innerHtml: null })();
 
     // mutable display state for the control surface (static-target props/innerHtml)
     const props: Record<string, unknown> = { ...cas.props };
@@ -81,15 +81,24 @@ export default defineComponent({
     };
     const ready = () => up({ type: "ready", ...surface() });
 
+    // Edit a static prop / innerHtml by reloading this preview with the value as a
+    // query override (the page resolver merges it, the server re-renders the target).
+    const reloadWith = (key: string, value: unknown) => {
+      const u = new URL(location.href);
+      u.searchParams.set(key, String(value));
+      location.replace(u.href);
+    };
     const applySet = (d: { scope: string; key: string; value: unknown }) => {
       if (d.scope === "signal" && target && isSignal(target[d.key])) {
-        (target[d.key] as { set: (v: unknown) => void }).set(d.value); // live
+        (target[d.key] as { set: (v: unknown) => void }).set(d.value); // live (island signal)
+        ready();
       } else if (d.scope === "prop") {
-        props[d.key] = d.value; // reflected in the panel (static targets re-render on reload)
+        props[d.key] = d.value;
+        reloadWith(d.key, d.value); // static prop → re-render via the server
       } else if (d.scope === "html") {
         html = String(d.value);
+        reloadWith("_html", d.value);
       }
-      ready();
     };
 
     if (isClient) {
