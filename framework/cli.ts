@@ -10,16 +10,15 @@
  *
  * The framework runtime lives next to this file at ./.sprig (core + compiler).
  */
-import { dirname, fromFileUrl, join, relative, resolve } from "@std/path";
+import { dirname, fromFileUrl, join, resolve, toFileUrl } from "@std/path";
 
 const HERE = dirname(fromFileUrl(import.meta.url)); // framework/
 const SPRIG = join(HERE, ".sprig"); // framework/.sprig
 const KEEP = join(HERE, "..", "packages", "keep", "mod.ts");
 
-const rel = (from: string, to: string): string => {
-  const r = relative(from, to).replace(/\\/g, "/");
-  return r.startsWith(".") ? r : "./" + r;
-};
+// an ABSOLUTE file:// specifier — stable regardless of where the app is scaffolded
+// (a relative path back to the framework breaks once the app moves; abs file:// doesn't).
+const fileUrl = (base: string, ...rest: string[]): string => toFileUrl(join(base, ...rest)).href;
 
 async function build(appDir = "app", dev = false): Promise<void> {
   const { buildClient } = await import(join(SPRIG, "compiler", "build.ts"));
@@ -69,10 +68,6 @@ async function dev(appDir = "app", entry = "serve.ts", base = "/ui"): Promise<vo
 async function init(dir = "."): Promise<void> {
   const appAbs = resolve(dir);
   const name = (dir === "." ? "sprig-app" : dir.split("/").pop()) || "sprig-app";
-  const coreRel = rel(appAbs, join(SPRIG, "core.ts"));
-  const keepRel = rel(appAbs, KEEP);
-  const compilerRel = rel(join(appAbs, "src"), join(SPRIG, "compiler", "mod.ts"));
-  const buildRel = rel(appAbs, join(SPRIG, "compiler", "build.ts"));
 
   const files: Record<string, string> = {
     "deno.json": JSON.stringify(
@@ -86,8 +81,12 @@ async function init(dir = "."): Promise<void> {
           lib: ["dom", "dom.asynciterable", "dom.iterable", "deno.ns", "esnext"],
         },
         imports: {
-          "@sprig/core": coreRel,
-          "@sprig/keep": keepRel,
+          // ABSOLUTE file:// — stable wherever this app is scaffolded (until @sprig/* is
+          // published to JSR, at which point these become jsr:@sprig/...).
+          "@sprig/core": fileUrl(SPRIG, "core.ts"),
+          "@sprig/keep": toFileUrl(KEEP).href,
+          "@sprig/compiler": fileUrl(SPRIG, "compiler", "mod.ts"),
+          "@sprig/build": fileUrl(SPRIG, "compiler", "build.ts"),
           "@preact/signals-core": "npm:@preact/signals-core@^1.8.0",
           "web-tree-sitter": "npm:web-tree-sitter@^0.25",
           "@std/path": "jsr:@std/path@^1",
@@ -95,8 +94,8 @@ async function init(dir = "."): Promise<void> {
           "@std/assert": "jsr:@std/assert@^1",
         },
         tasks: {
-          dev: `deno run -A ${rel(appAbs, join(HERE, "cli.ts"))} dev .`,
-          build: `deno run -A ${rel(appAbs, join(HERE, "cli.ts"))} build .`,
+          dev: `deno run -A ${toFileUrl(join(HERE, "cli.ts")).href} dev .`,
+          build: `deno run -A ${toFileUrl(join(HERE, "cli.ts")).href} build .`,
           start: "deno serve -A serve.ts",
         },
       },
@@ -106,7 +105,7 @@ async function init(dir = "."): Promise<void> {
 
     "build.ts": [
       `// Build this sprig app: code-split islands + scope CSS + Tailwind → static/.`,
-      `import { buildClient } from "${buildRel}";`,
+      `import { buildClient } from "@sprig/build";`,
       `import { dirname, fromFileUrl, join } from "@std/path";`,
       ``,
       `const here = dirname(fromFileUrl(import.meta.url));`,
@@ -118,28 +117,35 @@ async function init(dir = "."): Promise<void> {
     ].join("\n"),
 
     "serve.ts": [
-      `// The single-origin handler. serveSprig mounts the sprig UI at \`base\` and`,
-      `// serves the built assets. This starter has no backend, so it passes a no-op`,
-      `// keep; wire a real keep \`api\` here (serveSprig({ keep: api, app, base })) to`,
-      `// get an in-process Backend for resolve.ts + the /api/* network channel.`,
-      `import { serveSprig } from "@sprig/keep";`,
+      `// Mount the sprig UI at /ui as MIDDLEWARE inside any host server. \`sprigUi\` returns`,
+      `// a Response for anything under /ui (the built assets + SSR), or null to pass through.`,
+      `//`,
+      `// This starter uses a bare Deno.serve with a 404 fallback. To mount inside a host`,
+      `// framework, swap the fallback for its app.use(ui) — e.g. Danet/Oak:`,
+      `//   app.use(async (ctx, next) => {`,
+      `//     const r = await ui(ctx.request.source);`,
+      `//     if (r) { ctx.response.status = r.status; ctx.response.headers = r.headers; ctx.response.body = r.body; }`,
+      `//     else await next();`,
+      `//   });`,
+      `import { sprigUi } from "@sprig/keep";`,
       `import { app } from "./src/main.ts";`,
       ``,
-      `const keep = {`,
-      `  backend: { fetch: () => Promise.resolve(new Response("null", { headers: { "content-type": "application/json" } })) },`,
-      `  handler: () => new Response("Not Found", { status: 404 }),`,
-      `};`,
+      `const ui = sprigUi({ app, base: "/ui" });`,
       ``,
-      `export default serveSprig({ keep, app, base: "/ui" });`,
+      `export default {`,
+      `  fetch: (req: Request, info: Deno.ServeHandlerInfo) =>`,
+      `    ui(req, info).then((r) => r ?? new Response("Not Found", { status: 404 })),`,
+      `};`,
       ``,
     ].join("\n"),
 
     "src/main.ts": [
-      `// Route table + app. Each page's resolve.ts loads data; the wasm-backed`,
-      `// template compiler renders the matched folder-component into the shell outlet.`,
+      `// Route table + app. Each page's resolve.ts loads data; the prebuilt template`,
+      `// registry (static/templates.json) renders the matched folder-component — no`,
+      `// tree-sitter at runtime.`,
       `import { bootstrap, defineRoutes, type Route, type SprigApp } from "@sprig/core";`,
       `import { dirname, fromFileUrl } from "@std/path";`,
-      `import { createRenderer, type SsrRenderer } from "${compilerRel}";`,
+      `import { createRenderer, type SsrRenderer } from "@sprig/compiler";`,
       `import { resolve as homeResolve } from "./pages/home/resolve.ts";`,
       ``,
       `export const routes: Route[] = defineRoutes([`,
