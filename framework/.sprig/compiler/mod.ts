@@ -4,13 +4,17 @@
 import { basename, dirname, join, relative } from "@std/path";
 import { walk } from "@std/fs/walk";
 import { clearStaticCache, type ComponentDef, type Registry, renderNodes, resolveIslands } from "./render.ts";
-import type { Node } from "./node.ts";
-import { hasParseError, parseCached, parseTemplate } from "./parse.ts";
-import { named } from "./parse.ts";
-import { serialize, type SerializedTemplate } from "./serialize.ts";
+import { named, type Node } from "./node.ts";
+import { fromSerialized, serialize, type SerializedTemplate } from "./serialize.ts";
+
+// The wasm-backed parser is a BUILD/DEV concern only — loaded lazily so the prod runtime
+// (which renders prebuilt serialized ASTs from templates.json) never pulls tree-sitter
+// into its import graph. Only sprig dev / a missing prebuild ever triggers this import.
+let _parser: typeof import("./parse.ts") | null = null;
+const parser = async () => (_parser ??= await import("./parse.ts"));
 import type { Scope } from "./expr.ts";
 import { makeServerCtx, withServerInjector } from "./island.ts";
-import { shortHash } from "./build.ts";
+import { shortHash } from "./hash.ts";
 import { componentScopeId } from "./scope.ts";
 import type { ComponentDef as CoreComponentDef } from "@sprig/core";
 
@@ -51,6 +55,12 @@ export async function createRenderer(
   const srcPath = new Map<string, string>(); // relDir id → template.html path (for reparse)
   const lastSource = new Map<string, string>(); // selector → last parsed template source (HMR no-op detection)
   const bySelector = new Map<string, ComponentDef[]>(); // selector → all defs (diagnostics)
+  // PROD: the build's serialized template registry (relDir → AST). Render these prebuilt
+  // ASTs so the runtime never parses. Absent (no build / fresh dev) → parse live below.
+  let prebuilt: Record<string, SerializedTemplate> | null = null;
+  try {
+    prebuilt = JSON.parse(await Deno.readTextFile(join(Deno.cwd(), "static", "templates.json")));
+  } catch { /* no prebuild → live parse */ }
   for await (const entry of walk(srcDir, { includeDirs: false, match: [/template\.html$/] })) {
     const dir = dirname(entry.path);
     const relDir = relative(srcDir, dir).replace(/\\/g, "/");
@@ -100,7 +110,10 @@ export async function createRenderer(
         };
       }
     }
-    const template = await parseCached(source); // pre-parse → sync render
+    // render the prebuilt AST (no tree-sitter); live-parse only when there's no prebuild.
+    const template = prebuilt?.[relDir]
+      ? fromSerialized(prebuilt[relDir])
+      : await (await parser()).parseCached(source);
     const def: ComponentDef = { selector, template, island, scope: componentScopeId(relDir) };
     const local = pageLocalOf(relDir);
     if (local) {
@@ -136,7 +149,11 @@ export async function createRenderer(
   const readVersion = async () => {
     try {
       const files: string[] = [];
-      for await (const e of Deno.readDir(staticDir)) if (e.isFile) files.push(join(staticDir, e.name));
+      // hash the SERVED assets only (.js + app.css) — same set the build hashes, so
+      // templates.json / source maps don't perturb ?v=.
+      for await (const e of Deno.readDir(staticDir)) {
+        if (e.isFile && (e.name.endsWith(".js") || e.name === "app.css")) files.push(join(staticDir, e.name));
+      }
       return files.length ? await shortHash(files.sort()) : "dev";
     } catch {
       return "dev";
@@ -221,8 +238,9 @@ export async function createRenderer(
       // throwing. Don't push that garbage live (it would clobber mounted islands'
       // markup); suppress the swap and keep the last-good template until the next
       // clean save. (parseTemplate with allowError lets us inspect hasError.)
-      const tpl = await parseTemplate(source, { allowError: true });
-      if (hasParseError(tpl)) return false;
+      const p = await parser();
+      const tpl = await p.parseTemplate(source, { allowError: true });
+      if (p.hasParseError(tpl)) return false;
       cur.template = tpl; // defs are shared by reference across all registries
       lastSource.set(selector, source);
       clearStaticCache(); // a template changed → stale memoized static HTML must go

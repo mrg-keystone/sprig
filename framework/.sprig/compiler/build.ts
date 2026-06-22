@@ -17,6 +17,7 @@ import { parseTemplate } from "./parse.ts";
 import { serialize } from "./serialize.ts";
 import { componentScopeId, scopeCss } from "./scope.ts";
 import { assertStaticPage } from "./mod.ts";
+import { shortHash } from "./hash.ts";
 
 export interface BuildResult {
   islands: string[];
@@ -41,20 +42,24 @@ export async function buildClient(srcDir: string, outDir: string, opts: { dev?: 
   // static (non-island) components shipped to the client so an island's in-browser
   // re-render can compose them (keyed by selector; page roots are excluded).
   const statics = new Map<string, { sel: string; tpl: string; scope: string }>();
+  // every component's serialized template, keyed by relDir — emitted to templates.json
+  // so the SSR renders prebuilt ASTs and never runs tree-sitter at runtime.
+  const templates: Record<string, unknown> = {};
   const seen = new Map<string, string>(); // selector → relDir of the first island
   for await (const entry of walk(srcDir, { includeDirs: false, match: [/template\.html$/] })) {
     const dir = dirname(entry.path);
     await assertStaticPage(dir); // a pages/<name>/ folder cannot be an island
     const sel = basename(dir);
     const relDir = relative(srcDir, dir).replace(/\\/g, "/");
+    // parse + serialize ONCE (the only place tree-sitter runs); record for the SSR registry.
+    const ast = serialize(await parseTemplate(await Deno.readTextFile(entry.path)));
+    templates[relDir] = ast;
+    const tpl = JSON.stringify(ast);
     const logic = join(dir, "logic.ts");
     if (!(await fileExists(logic))) {
-      // not an island → a static component. Ship its template UNLESS it's a routed
-      // page root (a page isn't embedded as a child of an island).
-      if (!isPageRoot(relDir)) {
-        const root = await parseTemplate(await Deno.readTextFile(entry.path));
-        statics.set(sel, { sel, tpl: JSON.stringify(serialize(root)), scope: componentScopeId(relDir) });
-      }
+      // not an island → a static component. Ship its template to the client registry
+      // UNLESS it's a routed page root (a page isn't embedded as a child of an island).
+      if (!isPageRoot(relDir)) statics.set(sel, { sel, tpl, scope: componentScopeId(relDir) });
       continue;
     }
     const prev = seen.get(sel);
@@ -66,8 +71,7 @@ export async function buildClient(srcDir: string, outDir: string, opts: { dev?: 
       );
     }
     seen.set(sel, relDir);
-    const root = await parseTemplate(await Deno.readTextFile(entry.path));
-    islands.push({ sel, logic, tpl: JSON.stringify(serialize(root)), scope: componentScopeId(relDir) });
+    islands.push({ sel, logic, tpl, scope: componentScopeId(relDir) });
   }
 
   // 2. generate entries (the loader + one per island). In dev the loader also starts
@@ -135,6 +139,10 @@ export async function buildClient(srcDir: string, outDir: string, opts: { dev?: 
 
   // 4. per-component styles.css → scoped (view encapsulation) → Tailwind → app.css
   await buildCss(srcDir, outDir);
+
+  // 4b. the SSR registry: every component's serialized template, keyed by relDir, so the
+  //     server renders prebuilt ASTs and never loads the wasm parser at runtime.
+  await Deno.writeTextFile(join(outDir, "templates.json"), JSON.stringify(templates));
 
   // 5. collect outputs (.js + app.css) + hash them for the ?v= cache-bust
   const files: string[] = [];
@@ -211,38 +219,6 @@ function isPageRoot(relDir: string): boolean {
   const parts = relDir.split("/");
   return parts[0] === "pages" && parts[parts.length - 2] !== "components";
 }
-export async function shortHash(paths: string[]): Promise<string> {
-  // Frame each file as (name-len, name, content-len, content) before hashing, so the
-  // digest depends on the file BOUNDARIES and names, not just the raw byte stream.
-  // An unframed concatenation (the old `all.set(b, off)`) collided under boundary
-  // shifts — e.g. {a:"abc", b:"def"} and {a:"ab", b:"cdef"} hash to the same value,
-  // pinning the immutable client cache to stale JS/CSS. Length-prefix framing is
-  // unambiguous: any change to the output set (names, sizes, or content) changes `v`.
-  const enc = new TextEncoder();
-  const parts: Uint8Array[] = [];
-  const u32 = (n: number) => {
-    const b = new Uint8Array(4);
-    new DataView(b.buffer).setUint32(0, n >>> 0);
-    return b;
-  };
-  for (const p of paths) {
-    const name = enc.encode(basename(p));
-    const content = await Deno.readFile(p);
-    parts.push(u32(name.length), name, u32(content.length), content);
-  }
-  const total = parts.reduce((n, b) => n + b.length, 0);
-  const all = new Uint8Array(total);
-  let off = 0;
-  for (const b of parts) {
-    all.set(b, off);
-    off += b.length;
-  }
-  const digest = await crypto.subtle.digest("SHA-256", all);
-  // 8 bytes / 64-bit — `v` is the sole cache-buster for the stable-named, immutable-
-  // cached client.js + isl.*.js, so keep it collision-safe (matches esbuild's hashes).
-  return [...new Uint8Array(digest)].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 function q(s: string): string {
   return JSON.stringify(s);
 }
