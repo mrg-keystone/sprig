@@ -14,7 +14,9 @@ let previewRoutes: Route[] = [];
 // deno-lint-ignore no-explicit-any
 let previewModules: Record<string, any> = {};
 try {
-  const gen = await import("./pages/_preview/manifest.gen.ts");
+  // variable path so `deno check` doesn't require the generated file to exist
+  const genPath = "./pages/_preview/manifest.gen.ts";
+  const gen = await import(genPath);
   previewRoutes = gen.routes;
   previewModules = gen.modules;
 } catch { /* no previews generated yet */ }

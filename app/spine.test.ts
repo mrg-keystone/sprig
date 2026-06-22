@@ -21,19 +21,19 @@ const post = (path: string, body: unknown) =>
     info,
   );
 
-Deno.test("SSR /ui → 200, workbench shell rendered with discovery data", async () => {
-  const res = await get("/ui");
+Deno.test("SSR / → 200, workbench shell rendered with discovery data", async () => {
+  const res = await get("/");
   assertEquals(res.status, 200);
   const html = await res.text();
   assertStringIncludes(html, 'id="app"'); // shell root
   assertStringIncludes(html, "isolate"); // brand
   assertStringIncludes(html, 'class="topbar"');
   assertStringIncludes(html, 'data-sel="workbench"'); // the island is mounted
-  assertStringIncludes(html, "sb-case__label"); // discovery populated the navigator
+  assertStringIncludes(html, "sb-case__label"); // discovery populated the navigator (sprig fixture)
 });
 
-Deno.test("SSR /ui/components → 200, gallery rendered with run-tests islands", async () => {
-  const res = await get("/ui/components");
+Deno.test("SSR /components → 200, gallery rendered with run-tests islands", async () => {
+  const res = await get("/components");
   assertEquals(res.status, 200);
   const html = await res.text();
   assertStringIncludes(html, "iso-gallery");
@@ -49,6 +49,6 @@ Deno.test("network /api/* → keep handler reachable (post-test-run)", async () 
 });
 
 Deno.test("unknown UI route → 404", async () => {
-  const res = await get("/ui/does-not-exist");
+  const res = await get("/does-not-exist");
   assertEquals(res.status, 404);
 });

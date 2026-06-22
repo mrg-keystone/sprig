@@ -4,7 +4,7 @@ import { inject, type Resolve } from "@sprig/core";
 import { DiscoveryService } from "../../services/discovery/mod.ts";
 import type { Case } from "../../lib/types.ts";
 
-const PROJECT = Deno.env.get("ISOLATE_PROJECT") ?? "fixtures/fresh-app";
+const PROJECT = Deno.env.get("ISOLATE_PROJECT") ?? "fixtures/sprig-app";
 const TITLE: Record<string, string> = { component: "components", page: "pages" };
 
 function groupBy(arr: Case[], key: (c: Case) => string): Record<string, Case[]> {

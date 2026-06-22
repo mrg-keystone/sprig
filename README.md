@@ -56,9 +56,11 @@ app/                      # the isolate workbench, an example app built ON sprig
 tree-sitter-angular-template/  # grammar source (regenerate grammar.wasm from here)
 ```
 
-> The `cli/`, `server/`, `ui/`, and `skills/` directories are the **isolate** project (a
-> component testing workbench). `app/` is isolate's UI rebuilt on sprig — a worked example
-> of a real sprig app. See [`docs/guide.md`](docs/guide.md) for the full framework guide.
+> The `cli/`, `server/`, and `skills/` directories are the **isolate** project — a
+> sprig component testing workbench (`app/` is its UI). It discovers a sprig project's
+> folder-components, generates an isolated preview per case, and serves them under one
+> origin (no Vite, no Fresh): `deno run -A cli/main.ts dev -r fixtures/sprig-app`. See
+> [`docs/guide.md`](docs/guide.md) for the full framework guide.
 
 ## Documentation
 

@@ -12,6 +12,7 @@ const HEAD: Record<Problem["kind"], string> = {
   "case-json": "malformed case JSON",
   "component-file": "unresolved component file",
   "component-export": "component export not found",
+  "unsupported": "feature not yet supported",
 };
 
 const rel = (p: string, root: string) =>

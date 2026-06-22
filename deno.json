@@ -4,7 +4,7 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
   },
-  "workspace": ["./cli", "./server", "./ui", "./app"],
+  "workspace": ["./cli", "./server", "./app"],
   "imports": {
     "@sprig/core": "./framework/.sprig/core.ts",
     "@sprig/keep": "./packages/keep/mod.ts",

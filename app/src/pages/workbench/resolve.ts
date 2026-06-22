@@ -4,10 +4,10 @@
 import { inject, type Resolve } from "@sprig/core";
 import { DiscoveryService } from "../../services/discovery/mod.ts";
 
-const PROJECT = Deno.env.get("ISOLATE_PROJECT") ?? "fixtures/fresh-app";
+const PROJECT = Deno.env.get("ISOLATE_PROJECT") ?? "fixtures/sprig-app";
 
 // Where the iframe loads case previews from. Empty = same origin (the previews
-// must then be served here); set ISOLATE_PREVIEW_URL to a running materialized
+// must then be served here); set ISOLATE_PREVIEW_URL to a running
 // host app (e.g. the Vite dev server) to render real previews cross-origin.
 const PREVIEW_BASE = Deno.env.get("ISOLATE_PREVIEW_URL") ?? "";
 
