@@ -129,8 +129,13 @@ export function readDomControl(el: Element, key: string, def: ControlDef): unkno
  *  button); a custom key with no matching property falls back to set/removeAttribute. */
 export function writeDomControl(el: Element, key: string, value: unknown): void {
   const e = el as unknown as Record<string, unknown>;
-  if (key in el && typeof e[key] !== "function") e[key] = value; // live property
-  else if (value === true) el.setAttribute(key, "");
+  if (key in el && typeof e[key] !== "function") {
+    try {
+      e[key] = value; // live property
+      return;
+    } catch { /* read-only / getter-only property → best-effort attribute fallback below */ }
+  }
+  if (value === true) el.setAttribute(key, "");
   else if (value === false || value == null) el.removeAttribute(key);
   else el.setAttribute(key, String(value));
 }

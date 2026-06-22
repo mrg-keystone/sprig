@@ -50,6 +50,16 @@ Deno.test("number control coerces to a number", () => {
   assertEquals(readDomControl(input, "value", { type: "number" }), 9);
 });
 
+Deno.test("a read-only property key falls back to setAttribute instead of throwing", () => {
+  // a fixture typo could target a getter-only DOM property (tagName, parentElement);
+  // writeDomControl must NOT crash applySet (which would skip publish) — best-effort.
+  const el = fakeEl({});
+  Object.defineProperty(el, "tagName", { get: () => "DIV", configurable: true });
+  writeDomControl(el, "tagName", "SPAN"); // must not throw
+  assertEquals((el as unknown as { tagName: string }).tagName, "DIV", "read-only prop unchanged");
+  assertEquals(el.getAttribute("tagName"), "SPAN", "fell back to the attribute, no crash");
+});
+
 Deno.test("custom key with no matching property uses attributes", () => {
   const el = fakeEl({});
   writeDomControl(el, "aria-label", "Close");
