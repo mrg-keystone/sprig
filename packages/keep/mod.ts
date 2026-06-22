@@ -206,3 +206,52 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
     },
   };
 }
+
+export interface SprigUiConfig {
+  app: SprigApp;
+  /** where the UI mounts (default "/ui"); the build's assets live at <base>/_assets/*. */
+  base?: string;
+  /** directory the built assets are read from (default "static"). */
+  assetsDir?: string;
+  /** the HOST's in-process backend, threaded into resolve.ts for SSR data loading. */
+  backend?: { fetch: typeof fetch };
+}
+
+/**
+ * A framework-agnostic middleware CORE for mounting the sprig UI inside ANY host server.
+ * Returns a Response for any request under `base` (the assets + the SSR app), or `null`
+ * to pass through (not ours). Compose it however your host wants:
+ *
+ *   Deno:      Deno.serve((req, info) => ui(req, info).then(r => r ?? host(req)))
+ *   Danet/Oak: app.use(async (ctx, next) => {
+ *                const r = await ui(ctx.request.source);            // the raw Request
+ *                if (r) { ctx.response.status = r.status; ctx.response.headers = r.headers; ctx.response.body = r.body; }
+ *                else await next();
+ *              })
+ *   Hono:      app.use(async (c, next) => (await ui(c.req.raw)) ?? (await next()))
+ *
+ * The host owns /api, /docs, and every other route; the sprig middleware owns /ui/**.
+ */
+export function sprigUi(
+  config: SprigUiConfig,
+): (req: Request, info?: Deno.ServeHandlerInfo) => Promise<Response | null> {
+  const base = config.base ?? "/ui";
+  const assetsDir = config.assetsDir ?? "static";
+  const assetPrefix = `${base}/_assets`;
+  const backend = config.backend ? backendClient(config.backend.fetch) : undefined;
+
+  return (req, info) => {
+    const path = new URL(req.url).pathname;
+    // not under <base> → not ours; the host handles it (next()).
+    if (path !== base && !path.startsWith(base + "/")) return Promise.resolve(null);
+    if (FORBIDDEN_METHODS.has(req.method)) {
+      return Promise.resolve(
+        new Response("Method Not Allowed", { status: 405, headers: { "allow": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS" } }),
+      );
+    }
+    if (path.startsWith(assetPrefix + "/")) {
+      return serveAsset(assetsDir, path.slice(assetPrefix.length + 1), req);
+    }
+    return config.app.fetch(req, info, backend ? { backend } : undefined);
+  };
+}
