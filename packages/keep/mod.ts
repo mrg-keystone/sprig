@@ -8,6 +8,11 @@
  */
 import { backendClient, type SprigApp } from "@sprig/core";
 
+// The SSR renderer is server-only (Deno APIs) so it can't live in client-safe
+// @sprig/core; it belongs with the rest of the server glue. The actual COMPILER
+// (buildClient + the tree-sitter parser) is CLI-only and is NOT re-exported here.
+export { createRenderer, type SsrRenderer } from "../../framework/.sprig/compiler/mod.ts";
+
 /** The slice of keep's `bootstrapServer(...)` result that serveSprig consumes. */
 export interface KeepApi {
   /** the IN-PROCESS client: typeof fetch, dispatches relative paths through the

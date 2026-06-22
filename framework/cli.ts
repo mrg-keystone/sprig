@@ -82,11 +82,11 @@ async function init(dir = "."): Promise<void> {
         },
         imports: {
           // ABSOLUTE file:// — stable wherever this app is scaffolded (until @sprig/* is
-          // published to JSR, at which point these become jsr:@sprig/...).
+          // published to JSR, at which point these become jsr:@sprig/...). The app needs
+          // only these two: core (runtime primitives) + keep (server: the SSR renderer +
+          // the /ui mount). The compiler/build is CLI-internal — the app never imports it.
           "@sprig/core": fileUrl(SPRIG, "core.ts"),
           "@sprig/keep": toFileUrl(KEEP).href,
-          "@sprig/compiler": fileUrl(SPRIG, "compiler", "mod.ts"),
-          "@sprig/build": fileUrl(SPRIG, "compiler", "build.ts"),
           "@preact/signals-core": "npm:@preact/signals-core@^1.8.0",
           "web-tree-sitter": "npm:web-tree-sitter@^0.25",
           "@std/path": "jsr:@std/path@^1",
@@ -102,19 +102,6 @@ async function init(dir = "."): Promise<void> {
       null,
       2,
     ) + "\n",
-
-    "build.ts": [
-      `// Build this sprig app: code-split islands + scope CSS + Tailwind → static/.`,
-      `import { buildClient } from "@sprig/build";`,
-      `import { dirname, fromFileUrl, join } from "@std/path";`,
-      ``,
-      `const here = dirname(fromFileUrl(import.meta.url));`,
-      `const r = await buildClient(join(here, "src"), join(Deno.cwd(), "static"), {`,
-      `  dev: Deno.args.includes("--dev"),`,
-      `});`,
-      `console.log(\`sprig build: \${r.islands.length} island(s) [\${r.islands.join(", ")}], v=\${r.hash}\`);`,
-      ``,
-    ].join("\n"),
 
     "serve.ts": [
       `// Mount the sprig UI at /ui as MIDDLEWARE inside any host server. \`sprigUi\` returns`,
@@ -144,8 +131,8 @@ async function init(dir = "."): Promise<void> {
       `// registry (static/templates.json) renders the matched folder-component — no`,
       `// tree-sitter at runtime.`,
       `import { bootstrap, defineRoutes, type Route, type SprigApp } from "@sprig/core";`,
+      `import { createRenderer, type SsrRenderer } from "@sprig/keep";`,
       `import { dirname, fromFileUrl } from "@std/path";`,
-      `import { createRenderer, type SsrRenderer } from "@sprig/compiler";`,
       `import { resolve as homeResolve } from "./pages/home/resolve.ts";`,
       ``,
       `export const routes: Route[] = defineRoutes([`,

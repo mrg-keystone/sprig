@@ -1,9 +1,9 @@
 // The sprig UI member: route table + app. Each page's resolve.ts reads data
-// in-process via inject(Backend) (the isolate keep `server`); the wasm-backed
-// template compiler renders the matched folder-component into the shell outlet.
+// in-process via inject(Backend) (the isolate keep `server`); the SSR renderer renders
+// the matched folder-component (from the prebuilt template registry) into the shell.
 import { bootstrap, defineRoutes, type Route, type SprigApp } from "@sprig/core";
+import { createRenderer, type SsrRenderer } from "@sprig/keep";
 import { dirname, fromFileUrl } from "@std/path";
-import { createRenderer, type SsrRenderer } from "../../framework/.sprig/compiler/mod.ts";
 import { resolve as workbenchResolve } from "./pages/workbench/resolve.ts";
 import { resolve as galleryResolve } from "./pages/gallery/resolve.ts";
 
