@@ -10,12 +10,14 @@
  *
  * The framework runtime lives next to this file at ./.sprig (core + compiler).
  */
-import { dirname, join, resolve, toFileUrl } from "@std/path";
+import { basename, dirname, join, relative, resolve, toFileUrl } from "@std/path";
+import { walk } from "@std/fs/walk";
 // static relative imports of the package's own modules (computed-path dynamic imports
 // are unanalyzable + don't resolve once this is published to JSR).
 import { buildClient } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
-import { sprigUi } from "../packages/keep/mod.ts";
+import { createRenderer, sprigUi } from "../packages/keep/mod.ts";
+import { bootstrap, defineRoutes } from "./.sprig/core.ts";
 
 // the published-package version range a scaffolded app pins (core + its /keep + /cli
 // sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
@@ -237,18 +239,63 @@ async function init(dir = "."): Promise<void> {
   );
 }
 
-/** The component/page workbench. The full storybook UI (discovery + controls + preview
- *  bridge) is the sprig repo's `cli/main.ts`; packaging it to run against any app's
- *  `isolate/` fixtures is in progress, so this currently points the way rather than
- *  serving it. */
-function isolate(_appDir = "."): void {
-  console.error(
-    "sprig isolate is not packaged for standalone apps yet.\n\n" +
-      "The workbench (discover isolate/ fixtures → preview components/pages with live\n" +
-      "controls) currently runs from the sprig repo. Packaging it as `sprig isolate`\n" +
-      "(its own published entry) is the next step.",
+/** The component/page workbench: discover every folder-component, render each one in
+ *  ISOLATION (a generated wrapper page per component; pages render directly), and serve a
+ *  picker. Reuses the framework — no separate workbench app. Generated previews live in a
+ *  gitignorable `src/_isolate/`. */
+async function isolate(appDir = "."): Promise<void> {
+  Deno.env.set("SPRIG_DEV", "1");
+  const root = resolve(appDir);
+  const srcDir = join(root, "src");
+  const isoDir = join(srcDir, "_isolate");
+  await Deno.remove(isoDir, { recursive: true }).catch(() => {}); // clear stale previews
+
+  const found: { sel: string; load: string; kind: "page" | "component" }[] = [];
+  for await (const e of walk(srcDir, { match: [/[/\\]template\.html$/], includeDirs: false })) {
+    const dir = dirname(e.path);
+    const rel = relative(srcDir, dir).replace(/\\/g, "/");
+    const sel = basename(dir);
+    if (sel === "shell" || rel.startsWith("_isolate")) continue;
+    if (basename(dirname(dir)) === "pages") {
+      found.push({ sel, load: rel, kind: "page" }); // a page renders directly
+    } else {
+      // a component renders inside a generated wrapper page: <sel></sel>. The wrapper folder
+      // is `iso-<sel>` so its selector never collides with the real component's.
+      const pdir = join(isoDir, `iso-${sel}`);
+      await Deno.mkdir(pdir, { recursive: true });
+      await Deno.writeTextFile(join(pdir, "template.html"), `<main class="iso-stage"><${sel}></${sel}></main>\n`);
+      found.push({ sel, load: `_isolate/iso-${sel}`, kind: "component" });
+    }
+  }
+  found.sort((a, b) => a.sel.localeCompare(b.sel));
+  const links = found
+    .map((f) => `<li><a href="/ui/${f.sel}">${f.sel}</a> <small>${f.kind}</small></li>`)
+    .join("\n  ");
+  const idx = join(isoDir, "iso--index");
+  await Deno.mkdir(idx, { recursive: true });
+  await Deno.writeTextFile(
+    join(idx, "template.html"),
+    `<main class="iso-index"><h1>isolate</h1><p>${found.length} component(s)</p>\n<ul>\n  ${links}\n</ul></main>\n`,
   );
-  Deno.exit(1);
+
+  await build(appDir, true);
+  const renderer = await createRenderer(srcDir, "/ui", { dev: true });
+  const routes = defineRoutes([
+    { path: "", load: "_isolate/iso--index" },
+    ...found.map((f) => ({ path: f.sel, load: f.load })),
+  ]);
+  const app = bootstrap({ routes, base: "/ui", renderer });
+  const ui = sprigUi({ app, base: "/ui" });
+  const handler = {
+    fetch: (req: Request, info: Deno.ServeHandlerInfo): Promise<Response> =>
+      ui(req, info).then((r: Response | null) => r ?? new Response("Not Found", { status: 404 })),
+  };
+  // serve through the dev server so islands get their AST endpoint + HMR (edit a component
+  // and the isolated preview hot-reloads), exactly like `sprig dev`.
+  const devSrv = createDevServer({ renderer, base: "/ui", outDir: join(Deno.cwd(), "static"), handler });
+  const port = Number(Deno.env.get("PORT") ?? 8000);
+  console.log(`sprig isolate → http://localhost:${port}/ui  (${found.length} component(s) in isolation, HMR on)`);
+  Deno.serve({ port }, (req: Request, info: Deno.ServeHandlerInfo) => devSrv.fetch(req, info));
 }
 
 /** Re-install the global `sprig` command from the latest published CLI. */
