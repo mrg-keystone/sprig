@@ -33,6 +33,19 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
+/** The requested port, or the next free one above it (up to +50) if it's taken — so a
+ *  stale server on 8000 never makes `sprig dev`/`isolate` crash with a cryptic AddrInUse. */
+function freePort(start: number): number {
+  for (let p = start; p < start + 50; p++) {
+    try {
+      Deno.listen({ port: p }).close();
+      if (p !== start) console.log(`sprig: port ${start} in use → using ${p}`);
+      return p;
+    } catch { /* in use → try the next */ }
+  }
+  return start;
+}
+
 /** `dev`/`isolate` import the app's SSR renderer in-process, and that renderer dynamically
  *  imports the app's logic.ts — whose `$.*` aliases live in the APP's deno.json, not the
  *  installed CLI's (~/.sprig) config. So re-run under a MERGED config: the install's compiler
@@ -125,7 +138,7 @@ async function dev(appDir = ".", base = "/ui"): Promise<void> {
     outDir: join(Deno.cwd(), "static"),
     handler,
   });
-  const port = Number(Deno.env.get("PORT") ?? 8000);
+  const port = freePort(Number(Deno.env.get("PORT") ?? 8000));
   console.log(`sprig dev → http://localhost:${port}${base}  (HMR on; edit templates/CSS, island state is preserved)`);
   Deno.serve({ port }, (req: Request, info: Deno.ServeHandlerInfo) => devSrv.fetch(req, info));
 }
@@ -375,7 +388,7 @@ async function isolate(appDir = "."): Promise<void> {
   // serve through the dev server so islands get their AST endpoint + HMR (edit a component
   // and the isolated preview hot-reloads), exactly like `sprig dev`.
   const devSrv = createDevServer({ renderer, base: "/ui", outDir: join(Deno.cwd(), "static"), handler });
-  const port = Number(Deno.env.get("PORT") ?? 8000);
+  const port = freePort(Number(Deno.env.get("PORT") ?? 8000));
   console.log(`sprig isolate → http://localhost:${port}/ui  (${found.length} component(s) in isolation, HMR on)`);
   Deno.serve({ port }, (req: Request, info: Deno.ServeHandlerInfo) => devSrv.fetch(req, info));
 }
