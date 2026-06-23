@@ -3,7 +3,7 @@
  * `sprig` — the framework CLI.
  *
  *   sprig init [dir]            scaffold a minimal, runnable sprig app
- *   sprig dev  [appDir] [entry] state-preserving HMR dev server (no Vite)
+ *   sprig dev  [appDir]         state-preserving HMR dev server (no Vite)
  *   sprig build [appDir]        code-split islands + scope CSS + Tailwind → static/
  *   sprig serve [entry]         boot a serve.ts (its default export is a { fetch } handler)
  *   sprig help
@@ -21,7 +21,7 @@ import { sprigUi } from "../packages/keep/mod.ts";
 // sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
 const SPRIG_RANGE = "^0.1.0";
 
-async function build(appDir = "app", dev = false): Promise<void> {
+async function build(appDir = ".", dev = false): Promise<void> {
   const srcDir = join(resolve(appDir), "src");
   const outDir = join(Deno.cwd(), "static");
   const r = await buildClient(srcDir, outDir, { dev });
@@ -44,7 +44,7 @@ async function serve(entry = "serve.ts"): Promise<void> {
   Deno.serve((req, info) => app.fetch!(req, info));
 }
 
-async function dev(appDir = "app", base = "/ui"): Promise<void> {
+async function dev(appDir = ".", base = "/ui"): Promise<void> {
   // State-preserving HMR (no Vite): build the dev bundle (HMR client + AST-fetching
   // island chunks), then wrap the app's production handler with the compiler's dev
   // server (Deno.watchFs + SSE + live AST). Template/CSS edits hot-swap in place
@@ -218,8 +218,8 @@ async function init(dir = "."): Promise<void> {
 const USAGE = `sprig — the framework CLI
 
   sprig init  [dir]              scaffold a minimal, runnable sprig app (default: .)
-  sprig dev   [appDir] [entry]   state-preserving HMR dev server (default: app, serve.ts)
-  sprig build [appDir]           code-split islands + scope CSS + Tailwind → static/ (default: app)
+  sprig dev   [appDir]           state-preserving HMR dev server → /ui (default: .)
+  sprig build [appDir]           code-split islands + scope CSS + Tailwind → static/ (default: .)
   sprig serve [entry]            boot a serve.ts's default { fetch } handler (default: serve.ts)
   sprig help
 `;
