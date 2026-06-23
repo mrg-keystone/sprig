@@ -10,7 +10,7 @@
  *
  * The framework runtime lives next to this file at ./.sprig (core + compiler).
  */
-import { basename, dirname, join, relative, resolve, toFileUrl } from "@std/path";
+import { basename, dirname, fromFileUrl, join, relative, resolve, toFileUrl } from "@std/path";
 import { walk } from "@std/fs/walk";
 // static relative imports of the package's own modules (computed-path dynamic imports
 // are unanalyzable + don't resolve once this is published to JSR).
@@ -18,6 +18,7 @@ import { buildClient } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
 import { createRenderer, sprigUi } from "../packages/keep/mod.ts";
 import { bootstrap, defineRoutes } from "./.sprig/core.ts";
+import { installSkills, installSkillsFromDeployment } from "./.sprig/skills.ts";
 
 // the published-package version range a scaffolded app pins (core + its /keep + /cli
 // sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
@@ -298,7 +299,9 @@ async function isolate(appDir = "."): Promise<void> {
   Deno.serve({ port }, (req: Request, info: Deno.ServeHandlerInfo) => devSrv.fetch(req, info));
 }
 
-/** Re-install the global `sprig` command from the latest published CLI. */
+/** Re-install the global `sprig` command from the latest published CLI, then refresh
+ *  the bundled Claude Code skills from the DEPLOYMENT (the release's packaged skills/,
+ *  default branch as fallback) — NOT from any local checkout. */
 async function update(): Promise<void> {
   console.log("Updating the sprig CLI from jsr:@sprig/core/cli …");
   // the global install pins the resolved version in a lockfile; --reload busts the module
@@ -311,7 +314,39 @@ async function update(): Promise<void> {
     stderr: "inherit",
   }).output();
   if (code !== 0) Deno.exit(code);
-  console.log("✓ sprig is up to date.");
+  console.log("✓ sprig CLI is up to date.");
+  await installSkillsFromDeployment();
+  console.log("✓ sprig is up to date (CLI + skills).");
+}
+
+/** First-time install: the global `sprig` CLI + the Claude Code skills. With `--dev`,
+ *  wire the bin to THIS working tree and install the working-tree skills/ (for repo
+ *  devs, e.g. `deno task install`); otherwise install the published CLI from JSR and
+ *  the skills from the deployment. Both install skills with base-level whole-folder
+ *  replace into ${CLAUDE_SKILLS_DIR:-~/.claude/skills}. */
+async function install(dev: boolean): Promise<void> {
+  if (dev) {
+    const repoRoot = join(dirname(fromFileUrl(import.meta.url)), ".."); // framework/ -> repo root
+    const entry = join(repoRoot, "framework", "cli.ts");
+    console.log(`Installing the sprig CLI from the working tree (${entry}) …`);
+    const { code } = await new Deno.Command("deno", {
+      args: ["install", "-gAf", "-n", "sprig", "--config", join(repoRoot, "deno.json"), entry],
+      stdout: "inherit",
+      stderr: "inherit",
+    }).output();
+    if (code !== 0) Deno.exit(code);
+    await installSkills(join(repoRoot, "skills"));
+  } else {
+    console.log("Installing the sprig CLI from jsr:@sprig/core/cli …");
+    const { code } = await new Deno.Command("deno", {
+      args: ["install", "-gAf", "-n", "sprig", "jsr:@sprig/core/cli"],
+      stdout: "inherit",
+      stderr: "inherit",
+    }).output();
+    if (code !== 0) Deno.exit(code);
+    await installSkillsFromDeployment();
+  }
+  console.log("✓ sprig installed (CLI + skills). Run 'sprig --help'.");
 }
 
 const USAGE = `sprig — the framework CLI
@@ -321,7 +356,8 @@ const USAGE = `sprig — the framework CLI
   sprig build [appDir]           code-split islands + scope CSS + Tailwind → static/ (default: .)
   sprig isolate [appDir]         component/page workbench — develop in isolation (default: .)
   sprig serve [entry]            boot a serve.ts's default { fetch } handler (default: serve.ts)
-  sprig update                   re-install the global sprig CLI from the latest JSR release
+  sprig install [--dev]          install the global sprig CLI + Claude Code skills (--dev: from this checkout)
+  sprig update                   re-install the global sprig CLI + skills from the latest release
   sprig help
 `;
 
@@ -341,6 +377,9 @@ switch (cmd) {
     break;
   case "update":
     await update();
+    break;
+  case "install":
+    await install(rest.includes("--dev"));
     break;
   case "isolate":
     await isolate(rest[0]);

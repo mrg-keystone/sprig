@@ -20,6 +20,8 @@
   },
   "tasks": {
     "sprig": "deno run -A framework/cli.ts",
+    "install": "deno run -A jsr:@sprig/core/cli install",
+    "install:dev": "deno run -A framework/cli.ts install --dev",
     "dev": "deno run -A framework/cli.ts dev app",
     "build": "deno run -A framework/cli.ts build app",
     "start": "deno serve -A --unstable-kv serve.ts"
@@ -52,6 +54,7 @@
       "framework/.sprig/compiler/scope.ts",
       "framework/.sprig/compiler/serialize.ts",
       "framework/.sprig/core.ts",
+      "framework/.sprig/skills.ts",
       "framework/cli.ts",
       "packages/keep/mod.ts"
     ]

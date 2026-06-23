@@ -1,0 +1,37 @@
+# Push to main → (re)publish the "skills-latest" GitHub release whose
+# `sprig-skills.tar.gz` asset packages the ENTIRE skills/ dir. `sprig update` /
+# `sprig install` (framework/.sprig/skills.ts → installSkillsFromDeployment) fetch
+# that asset and base-level-install every skill into ~/.claude/skills. Runs alongside
+# publish.yml (which publishes the @sprig/core CLI to JSR). Self-update therefore only
+# reflects skill changes once they are committed, pushed, AND this release refreshes.
+name: release-skills
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  release-skills:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package the entire skills/ dir
+        run: |
+          set -eu
+          tar -czf sprig-skills.tar.gz skills
+          echo "Packaged sprig-skills.tar.gz (top-level skills/ entries):"
+          tar -tzf sprig-skills.tar.gz | grep -E '^skills/[^/]+/$' || tar -tzf sprig-skills.tar.gz | head
+      - name: Refresh the skills-latest release with the packaged skills
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          tag="skills-latest"
+          # Move the rolling tag to this commit: drop the old release+tag, recreate it
+          # with the fresh asset so the tag always points at the latest skills.
+          gh release delete "$tag" --repo "${{ github.repository }}" --yes --cleanup-tag || true
+          gh release create "$tag" sprig-skills.tar.gz \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "sprig skills (latest)" \
+            --notes "Claude Code skills packaged from ${{ github.sha }}. Installed by 'sprig update' / 'sprig install'."
