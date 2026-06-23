@@ -123,6 +123,13 @@ const NATIVE = new Set([
   "svg", "path", "circle", "rect", "line", "g", "polyline", "polygon", "text", "defs", "use",
 ]);
 
+// Content-projection slot. Sprig accepts `<content>` (preferred — may self-close as `<content/>`)
+// and the Angular-flavoured `<ng-content>` as aliases. A `select` attr scopes which projected
+// nodes land here; the slot's own children are the fallback shown when nothing is projected.
+function isContentTag(tag: string): boolean {
+  return tag === "content" || tag === "ng-content";
+}
+
 export function renderNodes(nodes: Node[], opts: RenderOpts): string {
   let out = "";
   let prevEnd = -1;
@@ -190,8 +197,8 @@ function renderElement(node: Node, opts: RenderOpts): string {
   // the outlet is a persistent boundary element (the soft-nav swap target)
   if (tag === "router-outlet") return `<sprig-outlet>${opts.outlet ?? ""}</sprig-outlet>`;
 
-  // content projection: <ng-content> emits projected nodes; <ng-container> groups w/o a DOM element
-  if (tag === "ng-content") return renderContent(attrs, opts);
+  // content projection: <content>/<ng-content> emits projected nodes; <ng-container> groups w/o a DOM element
+  if (isContentTag(tag)) return renderContent(attrs, opts);
   if (tag === "ng-container") return renderNodes(children, opts);
 
   // a custom (non-native) tag may resolve to a registered component
@@ -388,7 +395,7 @@ function hasImpureDescendant(comp: ComponentDef, registry: Registry, seen = new 
         // caches under one key). So a component referencing ANY such child tag is NOT a pure
         // function of its inputs → mark it impure (non-cacheable). This keeps caching for
         // TRUE leaves (only native elements + interpolation/bindings).
-        if (!NATIVE.has(tag) && tag !== "router-outlet" && tag !== "ng-content" && tag !== "ng-container") {
+        if (!NATIVE.has(tag) && tag !== "router-outlet" && !isContentTag(tag) && tag !== "ng-container") {
           impure = true;
           return;
         }
@@ -430,7 +437,7 @@ export async function resolveIslands(nodes: Node[], opts: RenderOpts, resolved: 
     if (node.type !== "element" && node.type !== "self_closing_element") continue;
     const { tag, attrs, children } = tagInfo(node);
     if (tag === "router-outlet") continue;
-    if (tag === "ng-content" || tag === "ng-container") {
+    if (isContentTag(tag) || tag === "ng-container") {
       if (children.length) tasks.push(resolveIslands(children, opts, resolved));
       continue;
     }
@@ -506,7 +513,7 @@ function renderContent(attrs: Node[], opts: RenderOpts): string {
 function collectSelects(node: Node, acc: string[] = []): string[] {
   if (node.type === "element" || node.type === "self_closing_element") {
     const ti = tagInfo(node);
-    if (ti.tag === "ng-content") {
+    if (isContentTag(ti.tag)) {
       const s = attrValue(ti.attrs, "select");
       if (s) acc.push(s);
     }

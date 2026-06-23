@@ -64,18 +64,22 @@ with `[in]` and listening with `(ev)`:
 A child folder named `components/ui-button/` is `<ui-button>`. If it has a `logic.ts` it
 hydrates as its own island; if static it renders inline with zero JS.
 
-## Projection — `<ng-content>`
+## Projection — `<content>`
 
-A component projects its children into its own template where it places `<ng-content>`:
+A component projects its children into its own template where it places `<content>` (which
+may self-close as `<content/>`). `<ng-content>` is accepted as an alias.
 
 ```html
 <!-- components/card/template.html -->
-<section class="card"><ng-content></ng-content></section>
+<section class="card"><content/></section>
 ```
 ```html
 <!-- usage -->
 <card><p>projected into the card</p></card>
 ```
+
+Scope a slot with `select="tag" / ".class" / "[attr]"`; the unmatched remainder fills the
+default `<content/>`. (There's no fallback content — an empty slot renders nothing.)
 
 ## The shell + `<router-outlet>`
 

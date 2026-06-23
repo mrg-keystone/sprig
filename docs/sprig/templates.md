@@ -149,13 +149,15 @@ An unknown pipe name passes the value through unchanged.
 <counter [start]="3"></counter>          <!-- a registered folder-component, by basename -->
 <router-outlet></router-outlet>          <!-- shell only → rendered as <sprig-outlet> -->
 <ng-container>…</ng-container>           <!-- groups children with no DOM element -->
-<ng-content select="[footer]"></ng-content>  <!-- content projection slot -->
+<content/>                               <!-- content projection slot (may self-close) -->
+<content select="[footer]"/>             <!-- a named projection slot -->
 ```
 
 `<router-outlet>` is emitted as a persistent `<sprig-outlet>` boundary (the soft-nav swap
 target — see [routing.md](./routing.md)). Content placed between a component's tags is
-projected via `<ng-content>` (optionally `select="tag"` / `select=".class"` / `select="[attr]"`;
-the unmatched remainder fills the default `<ng-content>`).
+projected via **`<content>`** (which may self-close, `<content/>`; optionally
+`select="tag"` / `select=".class"` / `select="[attr]"`; the unmatched remainder fills the
+default `<content>`). The Angular-flavoured `<ng-content>` is accepted as an alias.
 
 ## Keep templates dumb
 

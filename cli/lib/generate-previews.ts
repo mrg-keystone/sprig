@@ -14,7 +14,7 @@ import type { CaseDef, ComponentEntry } from "../../server/src/core/business/dis
 const sanitize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
 // framework tags that are never project components
-const RESERVED = new Set(["router-outlet", "ng-content", "ng-container", "stage-bridge"]);
+const RESERVED = new Set(["router-outlet", "content", "ng-content", "ng-container", "stage-bridge"]);
 const DASH_TAG = /<([a-z][a-z0-9]*(?:-[a-z0-9]+)+)[\s/>]/g;
 
 /** Copy a folder-component (template + styles + logic) into <targetsDir>/<name>. */

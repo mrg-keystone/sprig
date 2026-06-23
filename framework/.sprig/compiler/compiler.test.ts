@@ -121,6 +121,19 @@ Deno.test("renderer: content projection — <ng-content> select + default slot +
   assertEquals(await renderSrc("<ng-container><b>x</b></ng-container>", {}), "<b>x</b>");
 });
 
+Deno.test("renderer: <content> is the projection slot (preferred alias, self-closing <content/>)", async () => {
+  // <content> behaves exactly like <ng-content> and may self-close.
+  const boxTpl = await parseTemplate(
+    `<div class="box"><header><content select="[title]"/></header><main><content/></main></div>`,
+  );
+  const registry = {
+    get: (s: string) => (s === "x-box" ? { selector: "x-box", template: boxTpl } : undefined),
+  };
+  const out = await renderSrc(`<x-box><h2 title>Hi</h2><p>body</p></x-box>`, {}, registry);
+  assertStringIncludes(out, '<h2 title="">Hi</h2></header>'); // [title] → named slot <content select> (self-closed)
+  assertStringIncludes(out, "<p>body</p></main>"); // the unmatched <p> → default slot <content/>
+});
+
 import { scopeCss, scopeId } from "./scope.ts";
 
 Deno.test("scope: scopeId is stable + deterministic", () => {
