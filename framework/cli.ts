@@ -98,7 +98,9 @@ async function init(dir = "."): Promise<void> {
           "@std/assert": "jsr:@std/assert@^1",
         },
         tasks: {
-          dev: `deno run -A jsr:@sprig/core@${SPRIG_RANGE}/cli dev .`,
+          // --config: dev dynamically imports your local src/main.ts, so it needs THIS
+          // app's import map (jsr CLI's own map can't resolve your @std/* + @sprig/*).
+          dev: `deno run -A --config deno.json jsr:@sprig/core@${SPRIG_RANGE}/cli dev .`,
           build: `deno run -A jsr:@sprig/core@${SPRIG_RANGE}/cli build .`,
           start: "deno run -A serve.ts",
         },
