@@ -54,6 +54,7 @@
       "framework/.sprig/compiler/scope.ts",
       "framework/.sprig/compiler/serialize.ts",
       "framework/.sprig/core.ts",
+      "framework/.sprig/install.ts",
       "framework/.sprig/skills.ts",
       "framework/cli.ts",
       "packages/keep/mod.ts"

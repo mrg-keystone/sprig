@@ -18,48 +18,13 @@ import { buildClient } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
 import { createRenderer, sprigUi } from "../packages/keep/mod.ts";
 import { bootstrap, defineRoutes } from "./.sprig/core.ts";
-import { installSkills, installSkillsFromDeployment } from "./.sprig/skills.ts";
+import { installRuntimeFromDeployment, installRuntimeFromWorkingTree } from "./.sprig/install.ts";
 
 // the published-package version range a scaffolded app pins (core + its /keep + /cli
 // sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
 const SPRIG_RANGE = "^0.2.0";
 
-async function pathExists(p: string): Promise<boolean> {
-  try {
-    await Deno.stat(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Re-run this CLI under the APP's deno.json so its import map (your @sprig/*, @std/*,
- *  @danet/* …) resolves when the CLI dynamically imports your src/main.ts / serve.ts /
- *  logic.ts. The published CLI's OWN deps resolve from its jsr package, so only the app's
- *  bare specifiers need its config — this is what lets the scaffold call `sprig dev` /
- *  `sprig build` instead of a verbose `deno run --config … jsr:@sprig/core/cli`. No-op once
- *  re-execed, when run from a local checkout (a repo dev), or when the app has no deno.json. */
-async function withAppConfig(appDir: string): Promise<void> {
-  if (Deno.env.get("SPRIG_CONFIGURED")) return;
-  if (import.meta.url.startsWith("file:")) return; // a local dev checkout already has its config
-  const cfg = join(resolve(appDir), "deno.json");
-  if (!(await pathExists(cfg))) return;
-  // Re-run the SAME published version via its jsr: specifier (so the CLI's own deps still
-  // resolve from the package) but under the app's deno.json (so the app's imports resolve).
-  const m = import.meta.url.match(/@sprig\/core\/([^/]+)\//);
-  const cli = m ? `jsr:@sprig/core@${m[1]}/cli` : "jsr:@sprig/core/cli";
-  const { code } = await new Deno.Command(Deno.execPath(), {
-    args: ["run", "-A", "--config", cfg, cli, ...Deno.args],
-    env: { ...Deno.env.toObject(), SPRIG_CONFIGURED: "1" },
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  }).output();
-  Deno.exit(code);
-}
-
 async function build(appDir = ".", dev = false): Promise<void> {
-  await withAppConfig(appDir);
   const srcDir = join(resolve(appDir), "src");
   const outDir = join(Deno.cwd(), "static");
   const r = await buildClient(srcDir, outDir, { dev });
@@ -71,7 +36,6 @@ async function build(appDir = ".", dev = false): Promise<void> {
 }
 
 async function serve(entry = "serve.ts"): Promise<void> {
-  await withAppConfig(".");
   const mod = await import(toFileUrl(join(Deno.cwd(), entry)).href) as {
     default?: { fetch?: Deno.ServeHandler };
   };
@@ -84,7 +48,6 @@ async function serve(entry = "serve.ts"): Promise<void> {
 }
 
 async function dev(appDir = ".", base = "/ui"): Promise<void> {
-  await withAppConfig(appDir);
   // State-preserving HMR (no Vite): build the dev bundle (HMR client + AST-fetching
   // island chunks), then wrap the app's production handler with the compiler's dev
   // server (Deno.watchFs + SSE + live AST). Template/CSS edits hot-swap in place
@@ -301,7 +264,6 @@ async function init(dir = "."): Promise<void> {
  *  picker. Reuses the framework — no separate workbench app. Generated previews live in a
  *  gitignorable `src/_isolate/`. */
 async function isolate(appDir = "."): Promise<void> {
-  await withAppConfig(appDir);
   Deno.env.set("SPRIG_DEV", "1");
   const root = resolve(appDir);
   const srcDir = join(root, "src");
@@ -356,54 +318,25 @@ async function isolate(appDir = "."): Promise<void> {
   Deno.serve({ port }, (req: Request, info: Deno.ServeHandlerInfo) => devSrv.fetch(req, info));
 }
 
-/** Re-install the global `sprig` command from the latest published CLI, then refresh
- *  the bundled Claude Code skills from the DEPLOYMENT (the release's packaged skills/,
- *  default branch as fallback) — NOT from any local checkout. */
+/** Refresh this machine to the latest deployment: download the source bundle to ~/.sprig,
+ *  `deno install` its node_modules HERE, reinstall skills, and re-point the `sprig`
+ *  launcher — NOT from any local checkout. */
 async function update(): Promise<void> {
-  console.log("Updating the sprig CLI from jsr:@sprig/core/cli …");
-  // the global install pins the resolved version in a lockfile; --reload busts the module
-  // CACHE but keeps the old PIN, so drop the lock first to re-resolve to the latest version.
-  const denoRoot = Deno.env.get("DENO_INSTALL_ROOT") ?? join(Deno.env.get("HOME") ?? "", ".deno");
-  await Deno.remove(join(denoRoot, "bin", ".sprig", "deno.lock")).catch(() => {});
-  const { code } = await new Deno.Command("deno", {
-    args: ["install", "--reload=jsr:@sprig/core", "-gAf", "-n", "sprig", "jsr:@sprig/core/cli"],
-    stdout: "inherit",
-    stderr: "inherit",
-  }).output();
-  if (code !== 0) Deno.exit(code);
-  console.log("✓ sprig CLI is up to date.");
-  await installSkillsFromDeployment();
-  console.log("✓ sprig is up to date (CLI + skills).");
+  await installRuntimeFromDeployment();
+  console.log("✓ sprig is up to date (runtime + skills). Run 'sprig --help'.");
 }
 
-/** First-time install: the global `sprig` CLI + the Claude Code skills. With `--dev`,
- *  wire the bin to THIS working tree and install the working-tree skills/ (for repo
- *  devs, e.g. `deno task install`); otherwise install the published CLI from JSR and
- *  the skills from the deployment. Both install skills with base-level whole-folder
- *  replace into ${CLAUDE_SKILLS_DIR:-~/.claude/skills}. */
+/** First-time install. `--dev` wires the launcher to THIS checkout (for repo devs, e.g.
+ *  `deno task install:dev`); otherwise download + set up the runtime at ~/.sprig from the
+ *  deployment. Both install the Claude Code skills into ${CLAUDE_SKILLS_DIR:-~/.claude/skills}. */
 async function install(dev: boolean): Promise<void> {
   if (dev) {
     const repoRoot = join(dirname(fromFileUrl(import.meta.url)), ".."); // framework/ -> repo root
-    const entry = join(repoRoot, "framework", "cli.ts");
-    console.log(`Installing the sprig CLI from the working tree (${entry}) …`);
-    const { code } = await new Deno.Command("deno", {
-      args: ["install", "-gAf", "-n", "sprig", "--config", join(repoRoot, "deno.json"), entry],
-      stdout: "inherit",
-      stderr: "inherit",
-    }).output();
-    if (code !== 0) Deno.exit(code);
-    await installSkills(join(repoRoot, "skills"));
+    await installRuntimeFromWorkingTree(repoRoot);
   } else {
-    console.log("Installing the sprig CLI from jsr:@sprig/core/cli …");
-    const { code } = await new Deno.Command("deno", {
-      args: ["install", "-gAf", "-n", "sprig", "jsr:@sprig/core/cli"],
-      stdout: "inherit",
-      stderr: "inherit",
-    }).output();
-    if (code !== 0) Deno.exit(code);
-    await installSkillsFromDeployment();
+    await installRuntimeFromDeployment();
   }
-  console.log("✓ sprig installed (CLI + skills). Run 'sprig --help'.");
+  console.log("✓ sprig installed (runtime + skills). Run 'sprig --help'.");
 }
 
 const USAGE = `sprig — the framework CLI
