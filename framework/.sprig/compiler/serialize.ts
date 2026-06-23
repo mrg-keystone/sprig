@@ -44,6 +44,10 @@ function toSNode(node: Node): SNode {
 
 /** wasm tree → JSON-safe { source, root }. */
 export function serialize(rootNode: Node): SerializedTemplate {
+  // A JsonNode has no childCount/child/fieldNameForChild, so re-walking it via
+  // toSNode would yield an empty tree. It already holds its backing SNode +
+  // source, so round-trip it directly.
+  if (rootNode instanceof JsonNode) return rootNode.toSerialized();
   return { source: rootNode.text, root: toSNode(rootNode) };
 }
 
@@ -74,6 +78,10 @@ export class JsonNode {
   childForFieldName(name: string): JsonNode | null {
     const i = this.#s.f[name];
     return i === undefined ? null : new JsonNode(this.#s.c[i], this.#source);
+  }
+  /** Expose the backing { source, root } so serialize() can round-trip without re-walking. */
+  toSerialized(): SerializedTemplate {
+    return { source: this.#source, root: this.#s };
   }
 }
 

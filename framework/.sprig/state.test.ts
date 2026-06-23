@@ -95,6 +95,30 @@ Deno.test("StateService: a `static key` gives a stable localStorage key (survive
   }
 });
 
+Deno.test("restoreState applies persisted values SYNCHRONOUSLY (no microtask), so hydrate's first paint sees them", () => {
+  const store = mockLocalStorage();
+  try {
+    class Theme extends StateService {
+      mode = "light";
+    }
+    // seed localStorage with the persisted value BEFORE constructing the service
+    store.set("sprig:state:Theme", JSON.stringify({ mode: "dark" }));
+
+    // construct: field initializer runs ("light"), and the constructor queues a
+    // restore() microtask — which has NOT drained yet (we never await).
+    const t = new Theme();
+    assertEquals(t.mode, "light", "field default before any restore");
+
+    // call restoreState() SYNCHRONOUSLY — this is the mechanism hydrateIsland now
+    // uses BEFORE the first effect render + onBrowserInit. It must overlay the
+    // persisted value immediately, without waiting for the deferred microtask.
+    restoreState();
+    assertEquals(t.mode, "dark", "persisted value applied synchronously, before any microtask drain");
+  } finally {
+    unmock();
+  }
+});
+
 Deno.test("StateService: persist/restore/reset are no-ops with no localStorage (server)", () => {
   // no localStorage in scope → must not throw
   class S extends StateService {

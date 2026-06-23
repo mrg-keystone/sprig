@@ -95,11 +95,22 @@ async function serveAsset(dir: string, file: string, req: Request): Promise<Resp
       headers: { "allow": "GET, HEAD" },
     });
   }
+  // percent-decode the file segment before disk lookup, so a non-ASCII asset
+  // name (e.g. isl.café-card.js, requested as isl.caf%C3%A9-card.js) resolves to
+  // its file on disk instead of 404-ing. A malformed escape (e.g. a lone "%")
+  // throws URIError → clean 400 rather than a crash. Mirrors dev.ts's AST endpoint.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(file);
+  } catch {
+    return new Response("Bad Request", { status: 400 });
+  }
   // contain to dir (no path traversal): reject only a real ".." path SEGMENT,
   // not a legitimate single-segment name that merely contains a ".." substring.
-  if (file.split("/").includes("..")) return new Response("Forbidden", { status: 403 });
+  // The guard runs AFTER decoding so an encoded "..%2f" traversal is still caught.
+  if (decoded.split("/").includes("..")) return new Response("Forbidden", { status: 403 });
   try {
-    const path = `${dir}/${file}`;
+    const path = `${dir}/${decoded}`;
     const stat = await Deno.stat(path);
     // cache validators so conditional GETs can 304 instead of re-transferring
     const lastModified = stat.mtime ?? new Date(0);
@@ -184,7 +195,7 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
             if (ct !== "application/json") {
               return new Response("Unsupported Media Type", { status: 415 });
             }
-            if (body.length > MAX_BODY_BYTES || jsonDepth(body) > MAX_JSON_DEPTH) {
+            if (new TextEncoder().encode(body).byteLength > MAX_BODY_BYTES || jsonDepth(body) > MAX_JSON_DEPTH) {
               return new Response("Bad Request", { status: 400 });
             }
             try {

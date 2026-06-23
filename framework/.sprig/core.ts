@@ -112,6 +112,12 @@ const LIVE_STATES = new Set<StateService>();
  * defaults AND clears the saved copy in localStorage.
  */
 export class StateService {
+  /** Once-guard: restore() is contractually once-on-load, but restoreState() runs on EVERY
+   *  island hydration (incl. deferred visible/idle/interaction islands that hydrate later).
+   *  Re-overlaying localStorage onto a shared providedIn:"root" singleton would revert live
+   *  in-memory mutations made since load (persist() only runs on nav/pagehide, so localStorage
+   *  holds the stale value). Guard so only the FIRST restore applies; reset() re-enables it. */
+  #restored = false;
   constructor() {
     if (typeof localStorage !== "undefined") {
       LIVE_STATES.add(this);
@@ -135,6 +141,11 @@ export class StateService {
   /** Overlay the saved fields from localStorage onto this instance (no-op server-side). */
   restore(): void {
     if (typeof localStorage === "undefined") return;
+    // Once-on-load: a later restore (deferred-island hydration) must NOT clobber live
+    // mutations. Set the flag BEFORE the read so even an empty-localStorage first call
+    // counts as "restored", preventing a later overlay of a stale value.
+    if (this.#restored) return;
+    this.#restored = true;
     const raw = localStorage.getItem(this.storageKey());
     if (raw === null) return;
     try {
@@ -147,6 +158,9 @@ export class StateService {
     LIVE_STATES.delete(fresh); // the fresh probe must not stay tracked
     for (const k of Object.keys(this)) delete (this as Record<string, unknown>)[k];
     Object.assign(this, fresh);
+    // A reset returns to constructed defaults + clears the saved copy; re-enable a future
+    // restore so a subsequently-persisted session can be loaded again.
+    this.#restored = false;
     if (typeof localStorage !== "undefined") localStorage.removeItem(this.storageKey());
   }
 }
@@ -503,15 +517,18 @@ export function bootstrap(config: AppConfig): SprigApp {
       // page's resolve.ts by its route `load` path (the renderer knows the src root).
       // This is what makes `routes` alone enough — no `modules` map in the app config.
       let resolveFn: Resolve | undefined = matched.load ? config.modules?.[matched.load]?.resolve : undefined;
-      if (!resolveFn && matched.load && config.renderer?.loadResolve) {
-        resolveFn = await config.renderer.loadResolve(matched.load);
-      }
 
       // resolve() runs BEFORE headers go out, so its failure (or a not-found status it
       // sets) is honored on the response line; a render failure after this is a 500 in
       // the buffered path, or a closed partial stream once the head has been flushed.
+      // loadResolve() lives INSIDE this try too: an existing resolve.ts that throws at
+      // import time now propagates (it is no longer swallowed to undefined), so it must
+      // become the same graceful 500 instead of an uncaught handler crash.
       let inputs: Record<string, unknown> = {};
       try {
+        if (!resolveFn && matched.load && config.renderer?.loadResolve) {
+          resolveFn = await config.renderer.loadResolve(matched.load);
+        }
         if (resolveFn) {
           inputs = await runInInjector(routeInjector, () => resolveFn!({ params: matched.params, url }));
         }

@@ -10,7 +10,7 @@
 // Hydration itself reuses the SAME interpreter as SSR (renderNodes over the
 // serialized JSON AST — no wasm): re-render the island body inside an effect (so any
 // signal write re-paints) and wire (event) bindings via delegation on the island root.
-import { type Accessor, clientRoot, type ComponentCtx, effect, persistState, runInInjector, signal, type WritableAccessor } from "@sprig/core";
+import { type Accessor, clientRoot, type ComponentCtx, effect, persistState, restoreState, runInInjector, signal, type WritableAccessor } from "@sprig/core";
 import { fromSerialized, type SerializedTemplate } from "./serialize.ts";
 import { evalStatement, type Scope } from "./expr.ts";
 import { type ComponentDef, type Handler, type MockSpec, type Registry, renderNodes } from "./render.ts";
@@ -39,16 +39,97 @@ export interface IslandEntry {
 export interface SprigConfig {
   base: string;
   v: string;
+  /** Off-app route prefixes (keep-owned, e.g. ["/api", "/docs"]) the soft-nav handler
+   *  must leave to the browser. Without this, at base "" the base-containment test is
+   *  true for every same-origin path, so soft-nav would needlessly fetch these. */
+  reserved?: string[];
+  /** The matched page (its folder basename, e.g. "home") for THIS document — the SSR
+   *  emits it so the client can resolve an island's child components against the same
+   *  page-local registry the server used (registryForPage). A fallback for hosts that
+   *  carry no data-page; soft-nav re-sets it from each swapped document. */
+  page?: string;
 }
 
-// Static (non-island) component templates shipped to the client by the build, so
-// an island's in-browser re-render can resolve child components instead of dropping
-// them. registerComponent() is called from the eager loader; islands compose these.
+// Static (non-island) component templates shipped to the client by the build, so an
+// island's in-browser re-render can resolve child components instead of dropping them.
+// Page-aware resolution mirrors the server's registryForPage (mod.ts): a GLOBAL map of
+// shared/shell/page statics keyed by selector, PLUS a per-page map of page-local statics
+// (pages/<page>/components/<name>/) keyed by page → selector. A page-local def SHADOWS a
+// same-basename global one WITHIN its page only — so two same-basename statics (a global +
+// a page-local) no longer silently last-write-wins by bare selector. registerComponent()
+// (globals) + registerPageComponent() (page-locals) are called from the eager loader.
 const componentRegistry = new Map<string, ComponentDef>();
+const pageComponentRegistry = new Map<string, Map<string, ComponentDef>>(); // page → (selector → def)
 export function registerComponent(sel: string, def: { template: SerializedTemplate; scope: string }): void {
   componentRegistry.set(sel, { selector: sel, template: fromSerialized(def.template), scope: def.scope });
 }
-const COMPONENTS: Registry = { get: (sel) => componentRegistry.get(sel) };
+/** Register a page-local static component (shadows a same-basename global within `page`). */
+export function registerPageComponent(page: string, sel: string, def: { template: SerializedTemplate; scope: string }): void {
+  let m = pageComponentRegistry.get(page);
+  if (!m) pageComponentRegistry.set(page, (m = new Map()));
+  m.set(sel, { selector: sel, template: fromSerialized(def.template), scope: def.scope });
+}
+/** A page-aware components registry mirroring the server's registryForPage: resolve a
+ *  child by (page, selector) → page-local static ?? global static ?? ISLAND. `null`/unknown
+ *  page → global statics + islands only. Built per island from its host's data-page so an
+ *  island on page X composes page X's local child (not whichever same-basename static the
+ *  build wrote last).
+ *
+ *  ISLAND-AWARE (bug AJ): islands self-register into the SEPARATE `registry` map (selector →
+ *  IslandEntry), which render.ts never queried — so a CHILD island composed inside a parent
+ *  island's template resolved to undefined during the parent's client re-render, fell through
+ *  to NATIVE rendering (a bare <child> element), and morph then destroyed the live hydrated
+ *  child host. Here we ALSO consult the island registry: a selector that is NOT a static but
+ *  IS a (loaded) island resolves to a minimal island ComponentDef. renderComponent's CLIENT
+ *  branch then emits a <sprig-island data-sel> SHELL the morph matches to the live host (and
+ *  bootstrapIslands can lazy-load), instead of a bare custom element. Statics still WIN over an
+ *  island of the same selector (same-basename islands already fail loud at build), so this
+ *  never changes static resolution. */
+export function componentsForPage(page: string | null): Registry {
+  const locals = page ? pageComponentRegistry.get(page) : undefined;
+  return {
+    get: (sel) => {
+      const stat = locals?.get(sel) ?? componentRegistry.get(sel);
+      if (stat) return stat;
+      const isl = registry.get(sel);
+      if (isl) {
+        // A minimal island ComponentDef: the client never renders the child's BODY (the child
+        // island owns it), so `island.scope` is the identity (it is only invoked on the SERVER
+        // branch, never here) and the template is the child's own serialized AST. The marker
+        // makes renderComponent take the island branch → emit a <sprig-island> shell.
+        return {
+          selector: sel,
+          template: fromSerialized(isl.template),
+          scope: isl.scope ?? scopeId(sel),
+          island: { scope: (i: Scope) => i, trigger: islandTrigger(sel) },
+        };
+      }
+      return undefined;
+    },
+  };
+}
+/** The trigger a child-island host should advertise during a parent re-render. We don't have
+ *  the original SSR trigger in the island entry, so fall back to the live host's data-trigger
+ *  if one is mounted, else "load". (The shell is matched to the live host by morph regardless;
+ *  this only matters for a child that has NOT yet loaded, where bootstrapIslands re-arms it.) */
+function islandTrigger(sel: string): string {
+  try {
+    const live = document.querySelector(`sprig-island[data-sel="${cssEscape(sel)}"]`) as HTMLElement | null;
+    return live?.dataset.trigger ?? "load";
+  } catch {
+    return "load";
+  }
+}
+// The current document's matched page (a fallback for island hosts that carry no
+// data-page). Set from __sprig_config at bootstrap and re-set after each soft-nav swap so
+// islands hydrated into the new outlet resolve their children against the new page.
+let _currentPage: string | null = null;
+export function setCurrentPage(page: string | null | undefined): void {
+  _currentPage = page ?? null;
+}
+export function currentPage(): string | null {
+  return _currentPage;
+}
 
 // selector → its loaded entry (filled when an island chunk calls registerIsland)
 const registry = new Map<string, IslandEntry>();
@@ -203,6 +284,9 @@ function hydratePending(sel: string): void {
 // ───────────────────────────── the eager loader ─────────────────────────────
 /** Scan `root` for <sprig-island> and schedule each one's chunk to load on its trigger. */
 export function bootstrapIslands(cfg: SprigConfig, root: ParentNode = document): void {
+  // record the matched page so islands without a data-page host attr still resolve their
+  // child components against the right page-local registry (registryForPage parity).
+  setCurrentPage(cfg.page);
   root.querySelectorAll("sprig-island").forEach((el) => scheduleLoad(el as HTMLElement, cfg));
 }
 
@@ -280,6 +364,11 @@ export interface SoftNavDeps {
   bootstrap: (root: ParentNode) => void;
   teardown: (root: ParentNode | null) => void;
   viewTransition?: (cb: () => void) => void;
+  /** Read the matched page from a fetched document's __sprig_config (the soft-nav swap
+   *  keeps only the outlet's innerHTML, so the config script — which carries the new
+   *  page — is read off the parsed doc and threaded into the live cfg before bootstrap,
+   *  so islands hydrated into the new outlet resolve children against the NEW page). */
+  pageOf?: (doc: ParentNode) => string | undefined;
 }
 
 /** Should this navigate event be left to the browser (NOT soft-intercepted)?
@@ -298,6 +387,12 @@ export function softNavShouldSkip(e: NavEvent, cfg: SprigConfig, currentUrl: str
   }
   if (url.origin !== location.origin) return true;
   if (!(url.pathname === cfg.base || url.pathname.startsWith(cfg.base + "/"))) return true;
+  // off-app (keep-owned) prefixes: at base "" the containment test above matches every
+  // same-origin path, so without this a click on /api or /docs would soft-fetch them
+  // before the outlet fallback (a wasted XHR). Leave reserved destinations to the browser.
+  for (const r of cfg.reserved ?? []) {
+    if (url.pathname === r || url.pathname.startsWith(r + "/")) return true;
+  }
   // same path (only the query/hash differs, or identical URL): an outlet swap would
   // tear down + re-create the whole subtree and jump to top for no structural change.
   if (url.pathname === cur.pathname) return true;
@@ -359,10 +454,13 @@ export async function runSoftNav(e: NavEvent, cfg: SprigConfig, deps: SoftNavDep
       return "";
     }
   })();
+  // the new document's matched page — thread it into the live cfg so the swapped-in
+  // islands resolve their child components against the NEW page (registryForPage parity).
+  if (deps.pageOf) cfg.page = deps.pageOf(doc);
   const swap = () => {
     deps.teardown(cur); // dispose islands/observers in the old outlet before discarding it
     (cur as HTMLElement).innerHTML = (next as HTMLElement).innerHTML;
-    deps.bootstrap(cur); // new islands re-arm + lazy-load on trigger
+    deps.bootstrap(cur); // new islands re-arm + lazy-load on trigger (sets currentPage from cfg)
     softNavScroll(e.navigationType, hash, deps, cur);
   };
   if (deps.viewTransition) deps.viewTransition(swap);
@@ -404,6 +502,7 @@ export function setupSoftNav(cfg: SprigConfig): void {
     },
     bootstrap: (root) => bootstrapIslands(cfg, root),
     teardown: (root) => teardownInside(root),
+    pageOf: (doc) => pageFromConfig(doc),
     viewTransition: d.startViewTransition ? (cb: () => void) => d.startViewTransition(cb) : undefined,
   };
   nav.addEventListener("navigate", (e: NavEvent) => {
@@ -411,6 +510,19 @@ export function setupSoftNav(cfg: SprigConfig): void {
     persistState(); // save current state before navigating away (it reconstructs on the next page)
     e.intercept({ scroll: "manual", handler: () => runSoftNav(e, cfg, deps) });
   });
+}
+
+/** Read the matched page from a (parsed) document's __sprig_config script — the page the
+ *  SSR stamped for client-side page-aware child-component resolution. Undefined if absent
+ *  or unparseable (→ global-only resolution, the safe default). */
+export function pageFromConfig(doc: ParentNode): string | undefined {
+  const el = doc.querySelector("#__sprig_config");
+  if (!el?.textContent) return undefined;
+  try {
+    return (JSON.parse(el.textContent) as SprigConfig).page;
+  } catch {
+    return undefined;
+  }
 }
 
 // ─────────────────────────────── hydration ──────────────────────────────────
@@ -432,6 +544,12 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
   // class component: re-seed the instance from the server snapshot BEFORE the first
   // render + onBrowserInit, so the client's first paint matches the server's.
   if (inputs.__snapshot) restore(scope as Record<string, unknown>, inputs.__snapshot as Record<string, unknown>);
+  // overlay localStorage-persisted state synchronously NOW — every StateService
+  // injected during setup() has already run its field initializers, so this applies
+  // the persisted values before the first effect render + onBrowserInit read them.
+  // (StateService's constructor also queues a restore() microtask, but that lands
+  // AFTER this synchronous task; this call is what makes the first paint correct.)
+  restoreState();
   // hand external tooling (the preview harness) a live handle on this island,
   // recording it so late subscribers are replayed (see onIslandMounted). Also stash
   // the scope on the element itself — the DOM is shared even if a tool's chunk got a
@@ -448,6 +566,12 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
   // styles. Prefer the build-supplied (path-derived) scope so it matches the SSR
   // markup + the scoped app.css; fall back to scopeId(sel) for chunks without it.
   const scopeAttr = entry.scope ?? scopeId(sel);
+  // Resolve this island's child components against ITS page, mirroring the server's
+  // registryForPage: a page-local static shadows a same-basename global within its page.
+  // The matched page is carried on the host (data-page), falling back to __sprig_config's
+  // page (set at hydrate / re-set after a soft-nav swap) and finally to global-only.
+  const page = el.dataset.page ?? currentPage();
+  const components = componentsForPage(page);
   // swappable across HMR; the SAME `scope` is kept so state survives a template swap
   let nodes = named(fromSerialized(entry.template));
   let source = entry.template.source;
@@ -465,10 +589,11 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
       el.addEventListener(base, (ev: Event) => {
         const t = (ev.target as HTMLElement)?.closest?.(`[data-sprig-${base}]`) as HTMLElement | null;
         if (!t || !el.contains(t)) return;
-        const h = handlers[Number(t.getAttribute(`data-sprig-${base}`))];
-        if (!h || (h.modifiers.length && !keyMatches(ev, h.modifiers))) return;
-        if (base === "submit") ev.preventDefault();
-        evalStatement(h.body, h.scope, ev);
+        const marker = t.getAttribute(`data-sprig-${base}`) ?? "";
+        for (const h of resolveHandlers(marker, handlers, ev)) {
+          if (h.base === "submit") ev.preventDefault();
+          evalStatement(h.body, h.scope, ev);
+        }
       });
     }
   };
@@ -476,7 +601,7 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
   const dispose = effect(() => {
     tick?.(); // tracked only in HMR mode, so hotTemplate() can force a re-render
     const hs: Handler[] = [];
-    const html = renderNodes(nodes, { scope, registry: COMPONENTS, source, handlers: hs, scopeAttr, mocks });
+    const html = renderNodes(nodes, { scope, registry: components, source, handlers: hs, scopeAttr, mocks });
     patchInnerHtml(el, html); // morph (preserves focus/caret/scroll) instead of wholesale replace
     handlers = hs;
     wire(); // (re)attach delegated listeners for any event base this render introduced
@@ -526,6 +651,31 @@ export function patchInnerHtml(el: HTMLElement, html: string): void {
   morphChildren(el, tmpl.content);
 }
 
+/** Is `el` a live child-island host — a <sprig-island> carrying a data-sel? Such a host owns
+ *  its own subtree (its effect/listeners/hydrated state live below it). During a PARENT
+ *  island's re-render morph, it must be treated as opaque: never re-synced, never recursed
+ *  into, never replaced (bug AJ — doing so destroyed the hydrated child + leaked its effect). */
+function islandHostSel(node: Node): string | null {
+  if (node.nodeType !== 1) return null;
+  const el = node as Element;
+  if (el.tagName !== "SPRIG-ISLAND") return null;
+  return el.getAttribute("data-sel");
+}
+
+/** Does the re-rendered node `n` CORRESPOND to the live child-island host `o` (same child)?
+ *  After the render-side fix `n` is a <sprig-island data-sel> SHELL (same data-sel). As a
+ *  belt-and-suspenders fallback we also match a BARE custom element whose tag equals the
+ *  host's data-sel (a chunk that didn't get the island-aware registry). Either way the live
+ *  host is the authority; the re-rendered node is discarded. */
+function correspondsToIslandHost(o: Node, n: Node): boolean {
+  const sel = islandHostSel(o);
+  if (sel == null || n.nodeType !== 1) return false;
+  const ne = n as Element;
+  const nSel = islandHostSel(n);
+  if (nSel != null) return nSel === sel; // new is a <sprig-island data-sel> shell
+  return ne.tagName.toLowerCase() === sel.toLowerCase(); // new is a bare <child> custom element
+}
+
 function sameNode(a: Node, b: Node): boolean {
   if (a.nodeType !== b.nodeType) return false;
   if (a.nodeType === 1) return (a as Element).tagName === (b as Element).tagName;
@@ -547,6 +697,10 @@ function morphChildren(parent: Node, source: Node): void {
       parent.appendChild(n.cloneNode(true));
       continue;
     }
+    // A live child-island host the parent re-render reached: leave it ENTIRELY untouched
+    // (no attr sync, no recursion, no replace). The child island owns + manages its subtree;
+    // morphing it would strip its hydration marker / inner body / wipe its state (bug AJ).
+    if (correspondsToIslandHost(o, n)) continue;
     if (sameNode(o, n)) {
       morphNode(o, n);
     } else {
@@ -598,6 +752,21 @@ const MOD_FLAG: Record<string, "ctrlKey" | "shiftKey" | "altKey" | "metaKey"> = 
   cmd: "metaKey",
   command: "metaKey",
 };
+/** Resolve a `data-sprig-<base>` marker (the index, or space-joined index list, that
+ *  render.ts stamps for the bindings sharing one DOM base) into the handlers that should
+ *  fire for `ev` — every handler whose index is listed AND whose chord modifiers match
+ *  the event, in order (mirroring addEventListener: two same-base handlers both fire). */
+export function resolveHandlers(marker: string, handlers: Handler[], ev: Event): Handler[] {
+  const out: Handler[] = [];
+  for (const idx of marker.split(/\s+/)) {
+    if (idx === "") continue;
+    const h = handlers[Number(idx)];
+    if (!h || (h.modifiers.length && !keyMatches(ev, h.modifiers))) continue;
+    out.push(h);
+  }
+  return out;
+}
+
 export function keyMatches(e: Event, mods: string[]): boolean {
   const ke = e as KeyboardEvent;
   const key = ke.key?.toLowerCase();

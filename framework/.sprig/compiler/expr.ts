@@ -48,14 +48,19 @@ export function evalExpr(node: Node | null, scope: Scope): unknown {
       if (fnNode.type === "identifier" && fnNode.text === "$any") {
         return evalExpr(named(field(node, "arguments")!)[0], scope);
       }
-      const fn = evalExpr(fnNode, scope);
       const argsNode = field(node, "arguments");
-      const args = argsNode ? named(argsNode).map((a: Node) => evalExpr(a, scope)) : [];
-      // method calls: rebind `this` to the receiver (e.g. items.reduce(...))
+      // method calls: read the method off the receiver and rebind `this` to it
+      // (e.g. items.reduce(...)). Evaluate the receiver EXACTLY ONCE so calls like
+      // factory().value() don't run factory() twice.
       if (fnNode.type === "member_expression" || fnNode.type === "safe_member_expression") {
-        const recv = evalExpr(field(fnNode, "object"), scope);
+        const recv = evalExpr(field(fnNode, "object"), scope) as Record<string, unknown> | null;
+        if (recv == null) return undefined; // matches member null-receiver + safe-navigation
+        const fn = (recv as Record<string, unknown>)[field(fnNode, "property")!.text];
+        const args = argsNode ? named(argsNode).map((a: Node) => evalExpr(a, scope)) : [];
         return typeof fn === "function" ? (fn as (...a: unknown[]) => unknown).apply(recv, args) : undefined;
       }
+      const fn = evalExpr(fnNode, scope);
+      const args = argsNode ? named(argsNode).map((a: Node) => evalExpr(a, scope)) : [];
       // a bare call naming a scope member (e.g. a class-component method) → bind `this`
       // to the scope so class-style methods can use `this`; plain closures ignore it.
       if (fnNode.type === "identifier" && (fnNode.text in (scope as object))) {
@@ -134,7 +139,20 @@ function makeArrow(node: Node, scope: Scope): (...args: unknown[]) => unknown {
 }
 
 function unquote(s: string): string {
-  return s.slice(1, -1).replace(/\\(.)/g, "$1");
+  return s.slice(1, -1).replace(/\\(u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|.)/g, (_m, e) => {
+    const map = Object.assign(Object.create(null), {
+      n: "\n",
+      t: "\t",
+      r: "\r",
+      b: "\b",
+      f: "\f",
+      v: "\v",
+      "0": "\0",
+    });
+    if (e in map) return map[e];
+    if (e[0] === "u" || e[0] === "x") return String.fromCodePoint(parseInt(e.slice(1), 16));
+    return e;
+  });
 }
 
 // ───────────────────────────────── pipes ────────────────────────────────────
@@ -159,7 +177,12 @@ const PIPES: Record<string, (v: unknown, args: unknown[]) => unknown> = {
     // non-ASCII initials ("éric" → "Éric"). The old /\w\S*/ used ASCII \w.
     String(v ?? "").replace(
       /\p{L}[\p{L}\p{N}]*/gu,
-      (w) => w[0].toUpperCase() + w.slice(1).toLowerCase(),
+      // Iterate by code POINT so an astral-plane initial (a surrogate pair) is
+      // uppercased — w[0] alone is a lone high surrogate and toUpperCase() no-ops.
+      (w) => {
+        const cp = [...w];
+        return cp[0].toUpperCase() + cp.slice(1).join("").toLowerCase();
+      },
     ),
   json: (v) => JSON.stringify(v, null, 2),
   slice: (v, a) => (v as unknown[])?.slice(a[0] as number, a[1] as number | undefined),
@@ -186,14 +209,22 @@ const PIPES: Record<string, (v: unknown, args: unknown[]) => unknown> = {
     Object.entries((v as Record<string, unknown>) ?? {}).map(([key, value]) => ({ key, value })),
   truncate: (v, a) => {
     const s = String(v ?? "");
-    const limit = (a[0] as number) ?? 20;
-    return s.length > limit ? s.slice(0, limit) + "…" : s;
+    const raw = (a[0] as number) ?? 20;
+    const limit = Number.isFinite(raw) ? Math.max(0, Math.trunc(raw)) : 20;
+    // Count by code POINT (like the titlecase pipe) so a slice never lands
+    // between the two UTF-16 code units of an astral code point and emits a lone
+    // high surrogate. A non-positive limit means "don't truncate" — never slice
+    // from the END (a negative index) or collapse the whole string to the ellipsis.
+    const cp = [...s];
+    return limit > 0 && cp.length > limit ? cp.slice(0, limit).join("") + "…" : s;
   },
   i18nPlural: (v, a) => {
     const map = (a[0] as Record<string, string>) ?? {};
     const n = Number(v);
-    const key = map[`=${n}`] ?? map.other ?? "";
-    return String(key).replace("#", String(n));
+    // Non-finite numeric input (undefined/NaN/Infinity) must never leak "NaN":
+    // fall to `other` and drop the "#" placeholder instead of rendering "NaN".
+    const key = isFinite(n) ? (map[`=${n}`] ?? map.other ?? "") : (map.other ?? "");
+    return String(key).replace("#", isFinite(n) ? String(n) : "");
   },
   i18nSelect: (v, a) => {
     const map = (a[0] as Record<string, string>) ?? {};
@@ -258,7 +289,7 @@ function formatDatePattern(d: Date, pattern: string): string {
   const pad = (x: number, len = 2) => String(x).padStart(len, "0");
   const tokens: Record<string, () => string> = {
     yyyy: () => String(d.getFullYear()).padStart(4, "0"),
-    yy: () => pad(d.getFullYear() % 100),
+    yy: () => pad(((d.getFullYear() % 100) + 100) % 100),
     y: () => String(d.getFullYear()),
     MMMM: () => d.toLocaleString("en-US", { month: "long" }),
     MMM: () => d.toLocaleString("en-US", { month: "short" }),

@@ -176,14 +176,37 @@ function scopeSelector(sel: string, token: string): string {
   if (!sel) return sel;
   // :host / :host(x) → the scope marker itself
   if (sel === ":host") return token;
-  const hostOnly = sel.match(/^:host\(([^)]*)\)$/);
-  if (hostOnly) return token + hostOnly[1];
-  // :host-context(X) ⟶ ancestor X of the host element: "X [token]" (handled
-  // before the generic :host replace so the `-context` tail is not orphaned).
-  sel = sel.replace(/:host-context\(([^)]*)\)/g, (_m, inner) => `${inner} ${token}`);
-  // :host <descendant> → [token] ... (scope the key compound below)
-  sel = sel.replace(/:host\(([^)]*)\)/g, token + "$1").replace(/:host\b/g, token);
 
+  // :host()/:host-context() handling. These pseudo-classes bind to the host
+  // element, so they only ever appear at the HEAD of the selector. We parse
+  // that head into: a chain of ancestor guards (from each :host-context(LIST)),
+  // and the host element's own compound(s) (from :host(LIST), or the bare
+  // marker). Comma-lists inside either are DISTRIBUTED across fully-scoped
+  // output selectors so no top-level comma member is ever left unscoped — the
+  // bug this guards against is a list member leaking as a bare global selector.
+  const host = parseHostHead(sel, token);
+  if (host) {
+    const out: string[] = [];
+    for (const anc of host.ancestorCombos) {
+      const ancStr = anc.length ? anc.join(" ") + " " : "";
+      for (const hc of host.hostCompounds) {
+        // scope the key compound of `host-compound + descendant suffix`; the
+        // host compound already carries the marker, so when the suffix is empty
+        // insertToken leaves it alone (`[token].on`), and when it is non-empty
+        // the marker lands on the suffix's key compound instead.
+        out.push(ancStr + scopeKeyCompound(hc + host.suffix, token));
+      }
+    }
+    return out.join(", ");
+  }
+
+  return scopeKeyCompound(sel, token);
+}
+
+/** Scope the rightmost (key) compound of a single selector (no top-level commas,
+ *  no :host pseudos): the head (ancestor compounds) is left unscoped except for
+ *  unwrapping any :global(), and the key compound gets the marker. */
+function scopeKeyCompound(sel: string, token: string): string {
   // find the start of the rightmost (key) compound — after the last top-level
   // combinator (string- and escape-aware so quoted/escaped chars don't count)
   let dp = 0, db = 0, keyStart = 0;
@@ -202,6 +225,105 @@ function scopeSelector(sel: string, token: string): string {
   // the head (ancestor compounds) is left unscoped; just unwrap any :global() there
   const head = sel.slice(0, keyStart).replace(/:global\(([^)]*)\)/g, "$1");
   return head + insertToken(sel.slice(keyStart), token);
+}
+
+interface HostHead {
+  /** Cartesian product of the :host-context guards — each entry is the ancestor
+   *  chain (one member per guard) that must enclose the host. Empty `[[]]` when
+   *  there are no host-context guards. */
+  ancestorCombos: string[][];
+  /** The host element's own scoped compound(s) — e.g. `[token].a`, `[token].b`
+   *  for `:host(.a, .b)`, or just `[token]` for a bare/implicit host. */
+  hostCompounds: string[];
+  /** The descendant part following the host pseudos (leading combinator kept). */
+  suffix: string;
+}
+
+/** Parse the leading :host-context()/:host()/:host pseudos of `sel`. Returns
+ *  null when `sel` has no host pseudo at its head (caller then scopes normally). */
+function parseHostHead(sel: string, token: string): HostHead | null {
+  let i = 0;
+  const n = sel.length;
+  let consumedAny = false;
+  const guards: string[][] = [];
+  const hostInners: string[][] = [];
+
+  while (i < n) {
+    // allow whitespace BETWEEN consecutive host pseudos, but remember where it
+    // started so a trailing-descendant gap is preserved in the suffix.
+    let p = i;
+    while (p < n && /\s/.test(sel[p])) p++;
+
+    if (sel.startsWith(":host-context(", p)) {
+      const close = matchParen(sel, p + ":host-context".length);
+      if (close < 0) break;
+      const inner = sel.slice(p + ":host-context(".length, close);
+      guards.push(splitTop(inner, ",").map((m) => m.trim()).filter((m) => m.length));
+      i = close + 1;
+      consumedAny = true;
+      continue;
+    }
+    if (sel.startsWith(":host(", p)) {
+      const close = matchParen(sel, p + ":host".length);
+      if (close < 0) break;
+      const inner = sel.slice(p + ":host(".length, close);
+      hostInners.push(splitTop(inner, ",").map((m) => m.trim()).filter((m) => m.length));
+      i = close + 1;
+      consumedAny = true;
+      continue;
+    }
+    // bare :host (a word boundary, not the start of :host( or :host-context()
+    if (sel.startsWith(":host", p) && !/[\w-]/.test(sel[p + 5] ?? "")) {
+      i = p + 5;
+      consumedAny = true;
+      continue;
+    }
+    break;
+  }
+
+  if (!consumedAny) return null;
+
+  // host compound(s): distribute commas inside :host(...). With multiple
+  // :host(...) groups, take the cartesian product and concatenate members.
+  let hostCompounds: string[];
+  if (hostInners.length) {
+    hostCompounds = cartesian(hostInners).map((combo) => token + combo.join(""));
+  } else {
+    // bare :host, or only :host-context (implicit host) → just the marker.
+    hostCompounds = [token];
+  }
+
+  // ancestor chains: cartesian product across guards keeps each output selector
+  // a single concrete chain (one alternative per guard, in document order).
+  const ancestorCombos = guards.length ? cartesian(guards) : [[]];
+
+  return { ancestorCombos, hostCompounds, suffix: sel.slice(i) };
+}
+
+/** Index of the `)` that closes the `(` at `sel[open]` (string/escape-aware). */
+function matchParen(sel: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < sel.length; i++) {
+    const c = sel[i];
+    if (c === "\\") { i++; continue; }
+    if (c === '"' || c === "'") { i = skipString(sel, i) - 1; continue; }
+    if (c === "(") depth++;
+    else if (c === ")" && --depth === 0) return i;
+  }
+  return -1;
+}
+
+/** Cartesian product of a list of member-lists, preserving order. */
+function cartesian(lists: string[][]): string[][] {
+  let combos: string[][] = [[]];
+  for (const list of lists) {
+    const next: string[][] = [];
+    for (const combo of combos) {
+      for (const member of list) next.push([...combo, member]);
+    }
+    combos = next;
+  }
+  return combos;
 }
 
 function insertToken(compound: string, token: string): string {
@@ -224,11 +346,16 @@ function insertToken(compound: string, token: string): string {
  *  compound, ignoring backslash-escaped colons and colons inside strings. -1 if
  *  none. */
 function firstPseudo(compound: string): number {
+  let db = 0;
   for (let i = 0; i < compound.length; i++) {
     const c = compound[i];
     if (c === "\\") { i++; continue; }
     if (c === '"' || c === "'") { i = skipString(compound, i) - 1; continue; }
-    if (c === ":") return i;
+    if (c === "[") { db++; continue; }
+    if (c === "]") { db--; continue; }
+    // a ":" inside an attribute selector ([xlink:href]) is a namespaced attr
+    // name, NOT a pseudo introducer — only the bracket-depth-0 colon counts.
+    if (c === ":" && db === 0) return i;
   }
   return -1;
 }

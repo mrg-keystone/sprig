@@ -6,7 +6,7 @@
 //   - per-change handling: template → reparse + push AST (instant, state-kept);
 //     css → rebuild app.css + push css (swap the link, no reload); logic/other .ts
 //     → rebuild the dev bundle + push reload.
-import { basename, dirname } from "@std/path";
+import { basename, dirname, relative } from "@std/path";
 import type { SsrRenderer } from "./mod.ts";
 import { buildClient, buildCss } from "./build.ts";
 
@@ -76,7 +76,13 @@ export function createDevServer(cfg: DevConfig): {
     const templates: string[] = [];
     let css = false, reload = false;
     for (const p of paths) {
-      if (p.endsWith("template.html")) templates.push(basename(dirname(p)));
+      // Address the edited component by its relDir (its unique IDENTITY), NOT the bare
+      // basename — so editing a page-local component reparses the PAGE-LOCAL def rather
+      // than a same-basename global one. The relDir flows through reparse/astFor and the
+      // SSE "template" message (and the ast endpoint resolves it the same way).
+      if (p.endsWith("template.html")) {
+        templates.push(relative(cfg.renderer.srcDir, dirname(p)).replace(/\\/g, "/"));
+      }
       else if (p.endsWith("styles.css")) css = true;
       else if (p.endsWith(".ts")) reload = true;
     }
@@ -84,11 +90,16 @@ export function createDevServer(cfg: DevConfig): {
     // edit (e.g. a momentarily-unreadable template) only reports its own error
     // and never suppresses the other batched updates in the same window.
     // template edit → reparse (SSR fresh) + push new AST (live update, state preserved)
-    for (const sel of templates) {
+    for (const relDir of templates) {
       try {
-        if (await cfg.renderer.reparse(sel)) {
-          send({ type: "template", sel, template: cfg.renderer.astFor(sel) });
-          console.log(`%c[sprig dev]%c template ↻ ${sel}`, "color:#7c3aed", "");
+        // reparse + AST are addressed by relDir (the edited component's identity) so a
+        // page-local edit targets the PAGE-LOCAL def. The client-side hot-swap, however,
+        // matches mounted islands by their bare SELECTOR (data-sel) — and within any one
+        // rendered page only one same-basename component is present (page-local shadows
+        // global per page) — so the SSE `sel` stays the bare selector for the client.
+        if (await cfg.renderer.reparse(relDir)) {
+          send({ type: "template", sel: basename(relDir), template: cfg.renderer.astFor(relDir) });
+          console.log(`%c[sprig dev]%c template ↻ ${relDir}`, "color:#7c3aed", "");
         }
       } catch (e) {
         send({ type: "error", message: String(e) });

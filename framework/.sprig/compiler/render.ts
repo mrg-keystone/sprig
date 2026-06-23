@@ -82,10 +82,21 @@ export interface RenderOpts {
   /** preview overrides for child components, keyed by selector: force props onto every
    *  instance, or replace it with a placeholder ("stub"). Threaded SSR → client. */
   mocks?: Record<string, MockSpec>;
-  /** server pre-pass results: an island's AST node → its already-(onServerInit-)resolved
-   *  scope, so the sync render uses it instead of re-resolving. Populated by resolveIslands. */
-  resolved?: Map<Node, Scope>;
+  /** server pre-pass results: an island INSTANCE key → its already-(onServerInit-)resolved
+   *  scope, so the sync render uses it instead of re-resolving. Populated by resolveIslands.
+   *  Keyed by INSTANCE PATH (not the bare AST node) so a component rendered multiple times —
+   *  which shares ONE template AST — gives each instance its own scope (bug AB). */
+  resolved?: Map<string, Scope>;
+  /** the path prefix identifying the CURRENT template instance (extended only at a
+   *  component call-site). Absent/"" at the page root. Combined with a node's startIndex
+   *  via `rkey` to form the per-instance key in `resolved`. */
+  resolvedPath?: string;
 }
+
+/** Per-instance key for `resolved`: the current instance path + the call-site node's
+ *  startIndex. Two call-sites of the same component have distinct startIndex → distinct
+ *  paths → the shared inner island node resolves under each instance separately. */
+const rkey = (path: string | undefined, n: Node): string => (path ?? "") + "/" + n.startIndex;
 
 /** A child-component override: "stub" (or { stub:true }) renders a placeholder;
  *  { props } forces those props onto every instance of that selector. */
@@ -146,7 +157,8 @@ function renderNode(node: Node, opts: RenderOpts): string {
       return "";
     case "defer_block":
       // SSR renders the deferred content (client @defer triggers come with hydration).
-      return renderNodes(named(blockOf(node)!), opts);
+      // Clone the scope so view-local @let bindings never leak into the parent.
+      return renderNodes(named(blockOf(node)!), { ...opts, scope: { ...opts.scope } });
     case "comment":
       return "";
     default:
@@ -208,7 +220,7 @@ function computeInputs(attrs: Node[], scope: Scope): Scope {
       inputs[field(attr, "name")!.text] = evalExpr(field(attr, "value"), scope);
     } else if (attr.type === "attribute") {
       const v = field(attr, "value");
-      if (v) inputs[field(attr, "name")!.text] = quotedText(v, scope);
+      if (v) inputs[field(attr, "name")!.text] = inputText(v, scope);
     }
   }
   return inputs;
@@ -238,21 +250,32 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
 
   const tpl = comp.template;
   if (comp.island) {
+    // CLIENT mode (handlers present): this is a CHILD island encountered while the PARENT
+    // island re-renders. The child island OWNS + MANAGES its own subtree (its own effect,
+    // listeners, hydrated state), so the parent must NOT re-render the child's body — it must
+    // emit a <sprig-island data-sel> SHELL that morph matches to the live hydrated child host
+    // (left untouched by morphChildren's island-preservation), and that bootstrapIslands can
+    // lazy-load if the child hasn't loaded yet. Rendering the child's body here would (a) leak
+    // a fresh re-render the child neither owns nor disposes, and (b) emit a bare element/inline
+    // body that morph would mismatch against the live <sprig-island> host and destroy it (bug AJ).
+    if (opts.handlers) {
+      return islandHost(childScope, comp.selector, comp.island.trigger, {}, "");
+    }
     // an island: use the scope the async pre-pass already resolved for this node (its
     // onServerInit has run + awaited); else build it synchronously now.
-    const scope = (node && opts.resolved?.get(node)) ?? comp.island.scope(inputs);
+    const scope = (node && opts.resolved?.get(rkey(opts.resolvedPath, node))) ?? comp.island.scope(inputs);
     // Snapshot the post-onServerInit state NOW, BEFORE rendering the body. The body's
     // @let declarations mutate the scope object, and those template-locals must not leak
     // into the snapshot (they'd be restored as bogus instance fields on the client).
-    const snap = (!opts.handlers && comp.island.snapshot)
+    const snap = comp.island.snapshot
       ? snapshotOf(scope as Record<string, unknown>)
       : undefined;
     const inner = renderNodes(named(tpl), {
-      scope, registry: opts.registry, outlet: opts.outlet, source: tpl.text, handlers: opts.handlers, projected, scopeAttr: childScope, mocks: opts.mocks,
+      scope, registry: opts.registry, outlet: opts.outlet, source: tpl.text, handlers: opts.handlers, projected, scopeAttr: childScope, mocks: opts.mocks, resolved: opts.resolved,
+      // nested islands resolve under THIS instance (extend the path at this call-site)
+      resolvedPath: node ? rkey(opts.resolvedPath, node) : opts.resolvedPath,
     });
-    // CLIENT mode (handlers present) renders the island body for re-paint; SERVER
-    // mode wraps it as a hydration boundary with a JSON prop bridge.
-    if (opts.handlers) return injectRootAttrs(inner, eventAttrs(attrs, opts));
+    // SERVER mode wraps the rendered body as a hydration boundary with a JSON prop bridge.
     // carry mocks into the client via the props bridge so the island's own re-render
     // applies them to its children too (the SSR-only force-props would otherwise be lost),
     // plus the pre-render snapshot so a class instance re-seeds before onBrowserInit.
@@ -264,23 +287,47 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
   // static child: render its template; in CLIENT mode, wire (event) bindings on the
   // component tag onto the child's root element so they delegate to the host island.
   // CACHE: a leaf static component (SSR, no projected children, no mocks) is a pure
-  // function of its inputs → memoize the HTML across renders and requests. (Assumes a
-  // static component contains no <router-outlet>, which only the shell should.)
-  const cacheable = !opts.handlers && children.length === 0 && !opts.mocks && !templateHasOutlet(comp);
+  // function of its inputs → memoize the HTML across renders and requests — but ONLY if
+  // its rendered subtree is itself pure. A subtree is IMPURE if it (transitively) renders
+  // a <router-outlet> (its content varies per request via opts.outlet) or an ISLAND (its
+  // scope()/onServerInit output varies per request); caching either would replay one
+  // request's value to later requests (stale outlet / cross-request data leak).
+  const cacheable = !opts.handlers && children.length === 0 && !opts.mocks &&
+    !hasImpureDescendant(comp, opts.registry);
   let key = "";
   if (cacheable) {
-    try {
-      key = `${comp.selector} ${childScope} ${JSON.stringify(inputs)}`;
-      const hit = staticCache.get(key);
-      if (hit !== undefined) {
-        staticCacheHits++;
-        return hit;
+    // Build a SOUND cache key. JSON.stringify is unsound for two reasons we guard here:
+    //  • it maps NaN/Infinity/-Infinity AND null all to the literal `null`, so distinct
+    //    non-finite (or null) inputs would COLLIDE on one key (bug Z) — fix with a replacer
+    //    that maps a non-finite number to a DISTINCT sentinel (null still serializes as JSON
+    //    null, now distinct from each sentinel);
+    //  • it SILENTLY OMITS function/undefined values (no throw), so distinct closures (or
+    //    undefined) would produce identical keys without the catch ever firing (bug AD) —
+    //    those cannot be keyed reliably, so REFUSE to cache (leave key="").
+    const unkeyable = Object.values(inputs).some(
+      (v) => typeof v === "function" || typeof v === "undefined",
+    );
+    if (!unkeyable) {
+      try {
+        const ser = JSON.stringify(
+          inputs,
+          (_k, v) => (typeof v === "number" && !Number.isFinite(v)) ? ("\u0000nf:" + String(v)) : v,
+        );
+        key = `${comp.selector} ${childScope} ${ser}`;
+        const hit = staticCache.get(key);
+        if (hit !== undefined) {
+          staticCacheHits++;
+          return hit;
+        }
+      } catch {
+        key = ""; // non-serializable inputs → don't cache
       }
-    } catch {
-      key = ""; // non-serializable inputs → don't cache
     }
   }
-  const html = renderNodes(named(tpl), { scope: inputs, registry: opts.registry, outlet: opts.outlet, source: tpl.text, projected, scopeAttr: childScope, mocks: opts.mocks });
+  // forward `resolved` so an island nested inside this static component still finds the
+  // scope the async pre-pass (resolveIslands) recorded for it — else it falls back to its
+  // stale synchronous scope() value (bug H).
+  const html = renderNodes(named(tpl), { scope: inputs, registry: opts.registry, outlet: opts.outlet, source: tpl.text, projected, scopeAttr: childScope, mocks: opts.mocks, resolved: opts.resolved, resolvedPath: node ? rkey(opts.resolvedPath, node) : opts.resolvedPath });
   const out = injectRootAttrs(html, eventAttrs(attrs, opts));
   if (key) {
     if (staticCache.size >= STATIC_CACHE_MAX) staticCache.clear(); // crude bound
@@ -302,15 +349,43 @@ export function clearStaticCache(): void {
 export function staticCacheStats(): { size: number; hits: number } {
   return { size: staticCache.size, hits: staticCacheHits };
 }
-// a component whose template embeds <router-outlet> renders differently per opts.outlet,
-// so it must never be cached. Memoized per ComponentDef (the check is a substring scan).
-const outletCache = new WeakMap<ComponentDef, boolean>();
-function templateHasOutlet(comp: ComponentDef): boolean {
-  const cached = outletCache.get(comp);
-  if (cached !== undefined) return cached;
-  const has = (comp.template.text ?? "").includes("router-outlet");
-  outletCache.set(comp, has);
-  return has;
+// A component subtree is IMPURE (and so must never be cached) if it, OR any nested
+// registered component it renders, transitively contains a <router-outlet> (whose content
+// is the per-request opts.outlet) or IS / CONTAINS an island (whose scope()/onServerInit
+// output varies per request). The check resolves child tags through the registry and walks
+// recursively; a positive result is memoized per ComponentDef. (A negative computed mid
+// cycle-guard could be incomplete, so only `true` is memoized.)
+const impureCache = new WeakMap<ComponentDef, boolean>();
+function hasImpureDescendant(comp: ComponentDef, registry: Registry, seen = new Set<ComponentDef>()): boolean {
+  const memo = impureCache.get(comp);
+  if (memo !== undefined) return memo;
+  if (seen.has(comp)) return false; // cycle guard
+  seen.add(comp);
+  let impure = (comp.template.text ?? "").includes("router-outlet");
+  if (!impure) {
+    const visit = (n: Node) => {
+      if (impure) return;
+      if (n.type === "element" || n.type === "self_closing_element") {
+        const tag = tagInfo(n).tag;
+        // A non-native tag that is not a structural builtin resolves to (or could resolve
+        // to) a registered COMPONENT. Such a composite's rendered subtree depends on WHICH
+        // registry resolves that tag (bug AA: a shared wrapper nesting <card> that page A
+        // and page B shadow with different pure components renders differently per page yet
+        // caches under one key). So a component referencing ANY such child tag is NOT a pure
+        // function of its inputs → mark it impure (non-cacheable). This keeps caching for
+        // TRUE leaves (only native elements + interpolation/bindings).
+        if (!NATIVE.has(tag) && tag !== "router-outlet" && tag !== "ng-content" && tag !== "ng-container") {
+          impure = true;
+          return;
+        }
+      }
+      for (const c of named(n)) visit(c);
+    };
+    visit(comp.template);
+  }
+  // only memoize a definite true; see note above.
+  if (impure) impureCache.set(comp, true);
+  return impure;
 }
 
 /** SERVER async pre-pass: await each class-island's onServerInit BEFORE the sync render,
@@ -318,9 +393,26 @@ function templateHasOutlet(comp: ComponentDef): boolean {
  *  parent island resolves, since its inputs may depend on it). Populates `resolved`
  *  (node → scope) for the sync render. Walks element/component structure; islands behind
  *  control-flow blocks or inside { setup } islands fall back to sync onServerInit. */
-export async function resolveIslands(nodes: Node[], opts: RenderOpts, resolved: Map<Node, Scope>): Promise<void> {
+export async function resolveIslands(nodes: Node[], opts: RenderOpts, resolved: Map<string, Scope>): Promise<void> {
+  // Clone the scope once so the @let evolution below (and any caller-shared scope object)
+  // is never mutated. The synchronous scope-evolution within the loop must mirror the sync
+  // render so a following island's computeInputs sees an earlier @let (bug AG).
+  // Clone PRESERVING the prototype (bug AK): when the scope is a CLASS instance (a resolved
+  // class island), its methods live on the prototype; a plain object-spread drops them, so
+  // computeInputs evaluating a method call (e.g. a nested island's [msg]="format()") would
+  // see undefined and the nested island's SSR body + snapshot would diverge from the sync
+  // render. Copying own-property DESCRIPTORS onto a clone of the same prototype keeps @let
+  // isolation (a @let write adds/overrides an OWN data prop on this front clone, not the
+  // shared instance) AND lets scope.method() / (name in scope) resolve through the prototype.
+  opts = { ...opts, scope: Object.create(Object.getPrototypeOf(opts.scope), Object.getOwnPropertyDescriptors(opts.scope)) };
   const tasks: Promise<void>[] = [];
   for (const node of nodes) {
+    // @let binds in DOCUMENT ORDER (like renderNode's let_declaration case) so a following
+    // sibling island's inputs see it; do this BEFORE the element-skip below.
+    if (node.type === "let_declaration") {
+      opts.scope[field(node, "name")!.text] = evalExpr(field(node, "value"), opts.scope);
+      continue;
+    }
     if (node.type !== "element" && node.type !== "self_closing_element") continue;
     const { tag, attrs, children } = tagInfo(node);
     if (tag === "router-outlet") continue;
@@ -336,18 +428,28 @@ export async function resolveIslands(nodes: Node[], opts: RenderOpts, resolved: 
       const inputs = computeInputs(attrs, opts.scope);
       // resolve THIS island, then recurse its body with the resolved scope (parent→child
       // ordered); the whole task runs concurrently with its siblings via Promise.all.
+      const childPath = rkey(opts.resolvedPath, node); // this island instance's path
       tasks.push((async () => {
         const scope = await comp.island!.resolve!(inputs);
-        resolved.set(node, scope);
-        await resolveIslands(named(comp.template), { ...opts, scope, source: comp.template.text }, resolved);
+        resolved.set(childPath, scope);
+        await resolveIslands(named(comp.template), { ...opts, scope, source: comp.template.text, resolvedPath: childPath }, resolved);
       })());
     } else if (comp?.island) {
       /* { setup } island: resolved synchronously by render; don't re-run setup here */
     } else if (comp) {
-      // static component: recurse into its body with its computed inputs
-      tasks.push(resolveIslands(named(comp.template), { ...opts, scope: computeInputs(attrs, opts.scope), source: comp.template.text }, resolved));
+      // static component: recurse into its body with its computed inputs, extending the
+      // instance path at THIS call-site so nested islands resolve under this instance.
+      tasks.push(resolveIslands(named(comp.template), { ...opts, scope: computeInputs(attrs, opts.scope), source: comp.template.text, resolvedPath: rkey(opts.resolvedPath, node) }, resolved));
     } else if (children.length) {
       tasks.push(resolveIslands(children, opts, resolved)); // native element → recurse children
+    }
+    // an island PROJECTED (slotted) into a component wrapper is rendered by <ng-content>
+    // in the PARENT scope but at the WRAPPER BODY path (rkey(P, N)) — renderContent spreads
+    // the wrapper-body opts. So pre-resolve the call-site projected children under that SAME
+    // path while keeping the PARENT scope, else a projected class island never gets its
+    // resolve() awaited and the sync render falls back to its stale scope() (bug AF).
+    if (comp && children.length) {
+      tasks.push(resolveIslands(children, { ...opts, resolvedPath: rkey(opts.resolvedPath, node) }, resolved));
     }
   }
   await Promise.all(tasks);
@@ -428,6 +530,11 @@ interface BuiltAttrs {
 function buildAttrs(attrNodes: Node[], opts: RenderOpts): BuiltAttrs {
   const scope = opts.scope;
   const plain: Record<string, string> = {};
+  // plain keys whose value came from quotedText (literal author text raw + interpolations
+  // already escaped) — these are FINAL and must NOT be escaped again at emit, else author
+  // entities like "&amp;" become "&amp;amp;". property_binding / applyBinding values are
+  // raw runtime data and are NOT in this set, so they stay escaped (XSS-safe).
+  const preEscaped = new Set<string>();
   const classes: string[] = [];
   const styles: Record<string, string> = {};
   let innerHTML: string | undefined;
@@ -438,12 +545,25 @@ function buildAttrs(attrNodes: Node[], opts: RenderOpts): BuiltAttrs {
       if (name === "i18n" || name.startsWith("i18n-") || name === "ngProjectAs") continue;
       const v = field(attr, "value");
       const text = v ? quotedText(v, scope) : "";
-      if (name === "class") classes.push(text);
-      else plain[name] = text;
+      if (name === "class") {
+        classes.push(text); // class is aggregated + escaped at emit (entities meaningless here)
+      } else if (name === "style") {
+        // style is RE-AGGREGATED with [style.x] / [style] bindings at the end of this fn,
+        // so its final value can carry RAW runtime data → keep it OUT of preEscaped (always
+        // escaped at emit, like class). Author style entities are meaningless anyway.
+        plain[name] = text;
+      } else {
+        plain[name] = text;
+        preEscaped.add(name); // quotedText already produced a final, escape-once value
+      }
     } else if (attr.type === "property_binding") {
       const name = field(attr, "name")!.text;
       const value = evalExpr(field(attr, "value"), scope);
+      const before = { ...plain };
       applyBinding(name, value, { plain, classes, styles, setInner: (h) => (innerHTML = h) });
+      // any plain key a binding actually wrote (added or changed) holds raw runtime data →
+      // it must be escaped at emit, even if a same-named literal attribute pre-escaped it.
+      for (const k of Object.keys(plain)) if (before[k] !== plain[k]) preEscaped.delete(k);
     } else if (attr.type === "event_binding" && opts.handlers) {
       // CLIENT mode: collect the handler and tag the element for delegation
       const name = field(attr, "name")!.text; // "click" | "keyup.enter" | "@anim.done"
@@ -466,7 +586,7 @@ function buildAttrs(attrNodes: Node[], opts: RenderOpts): BuiltAttrs {
   if (styleStr) plain["style"] = [plain["style"], styleStr].filter(Boolean).join(";");
 
   const attrs = Object.entries(plain)
-    .map(([k, v]) => (v === "" && BOOLEAN.has(k) ? ` ${k}` : ` ${k}="${escapeAttr(v)}"`))
+    .map(([k, v]) => (v === "" && BOOLEAN.has(k) ? ` ${k}` : ` ${k}="${preEscaped.has(k) ? v : escapeAttr(v)}"`))
     .join("");
   return { attrs, innerHTML };
 }
@@ -525,12 +645,51 @@ function classList(value: unknown): string[] {
   return [];
 }
 
-/** A plain/double-quoted attribute value that may contain interpolation. */
+/** A plain/double-quoted attribute value that may contain interpolation. Returns a
+ *  FINAL attribute-ready string: literal author attribute_text is trusted and kept RAW
+ *  (it may legitimately contain entities like "&amp;" — escaping it again would double-
+ *  escape), while INTERPOLATED values are untrusted runtime data and ARE escaped here
+ *  (so the buildAttrs emit must not escape this result again — see `preEscaped`). This
+ *  mirrors element-content handling: author text raw, interpolations escaped. */
 function quotedText(quotedValue: Node, scope: Scope): string {
   let out = "";
   for (const c of named(quotedValue)) {
+    if (c.type === "interpolation") out += escapeAttr(stringify(evalExpr(field(c, "expression"), scope)));
+    else out += c.text; // attribute_text — author literal, trusted/raw
+  }
+  return out;
+}
+
+/** Decode the HTML entities a template author may write in literal attribute text
+ *  (&amp; &lt; &gt; &quot; &apos;/&#39; and numeric &#NN;/&#xHH;). Single-pass so a
+ *  literal like "&amp;lt;" decodes to "&lt;" (not "<") — no cascading double-decode. */
+function decodeEntities(s: string): string {
+  return s.replace(/&(#x[0-9a-fA-F]+|#\d+|amp|lt|gt|quot|apos);/g, (_m, e: string) => {
+    if (e === "amp") return "&";
+    if (e === "lt") return "<";
+    if (e === "gt") return ">";
+    if (e === "quot") return '"';
+    if (e === "apos") return "'";
+    const code = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+    // Only a valid Unicode scalar value is decodable. The regex allows unbounded
+    // magnitudes, so an out-of-range code point (> U+10FFFF) is finite but makes
+    // String.fromCodePoint THROW — bound-check it and fall back to the raw match.
+    return (Number.isInteger(code) && code >= 0 && code <= 0x10FFFF) ? String.fromCodePoint(code) : _m;
+  });
+}
+
+/** computeInputs-specific value builder for a component-tag attribute that becomes a
+ *  DATA @input (NOT the native-element emit path — do NOT reuse quotedText's escape-for-
+ *  emit output here). The CHILD escapes @input data exactly once on render (escape() for
+ *  {{x}}, escapeAttr for [x]), so this must hand it the *decoded* author value: literal
+ *  author attribute_text is HTML-entity-DECODED (so the child re-escapes it once, not
+ *  twice → no "&amp;amp;"), while INTERPOLATED segments stay the RAW evaluated runtime
+ *  value (NOT escaped here — the child escapes it once → still XSS-safe, no breakout). */
+function inputText(quotedValue: Node, scope: Scope): string {
+  let out = "";
+  for (const c of named(quotedValue)) {
     if (c.type === "interpolation") out += stringify(evalExpr(field(c, "expression"), scope));
-    else out += c.text; // attribute_text
+    else out += decodeEntities(c.text); // author literal → decode (child escapes once)
   }
   return out;
 }
@@ -577,7 +736,7 @@ function renderFor(node: Node, opts: RenderOpts): string {
   const arr = Array.isArray(collection) ? collection : [];
   if (arr.length === 0) {
     const empty = named(node).find((c: Node) => c.type === "empty_clause");
-    return empty ? renderNodes(named(blockOf(empty)!), opts) : "";
+    return empty ? renderNodes(named(blockOf(empty)!), { ...opts, scope: { ...opts.scope } }) : "";
   }
   let out = "";
   for (let i = 0; i < arr.length; i++) {
@@ -596,12 +755,14 @@ function renderSwitch(node: Node, opts: RenderOpts): string {
   let dflt: Node | null = null;
   for (const c of named(node)) {
     if (c.type === "case_clause") {
-      if (evalExpr(field(c, "value"), opts.scope) === value) return renderNodes(named(blockOf(c)!), opts);
+      // Each case body is its own view: clone the scope so a case-local @let never
+      // leaks into the parent (or into a later case's condition evaluation).
+      if (evalExpr(field(c, "value"), opts.scope) === value) return renderNodes(named(blockOf(c)!), { ...opts, scope: { ...opts.scope } });
     } else if (c.type === "default_clause") {
       dflt = c;
     }
   }
-  return dflt ? renderNodes(named(blockOf(dflt)!), opts) : "";
+  return dflt ? renderNodes(named(blockOf(dflt)!), { ...opts, scope: { ...opts.scope } }) : "";
 }
 
 // ───────────────────────────────── helpers ──────────────────────────────────

@@ -30,10 +30,13 @@ export interface SsrRenderer {
   selectors(): string[];
   /** the scanned src root (for the dev server's watcher). */
   srcDir: string;
-  /** DEV: re-read + re-parse one component's template.html so SSR stays fresh. */
-  reparse(selector: string): Promise<boolean>;
-  /** DEV: the current serialized AST for a selector (served to island chunks + HMR). */
-  astFor(selector: string): SerializedTemplate | null;
+  /** DEV: re-read + re-parse one component's template.html so SSR stays fresh. `id` is the
+   *  component's relDir (its unique identity — what the dev watcher passes), or a bare
+   *  selector for back-compat (unambiguous only when the basename is unique). */
+  reparse(id: string): Promise<boolean>;
+  /** DEV: the current serialized AST for a component, addressed by relDir (HMR — exact) or
+   *  bare selector (island chunk fetchAst — unique basenames). */
+  astFor(id: string): SerializedTemplate | null;
   /** Auto-load a page's data loader by its route `load` path — imports
    *  `<srcRoot>/<load>/resolve.ts` and returns its `resolve` export (undefined if the
    *  page has none). This is what lets `routes` alone drive data loading: no per-page
@@ -47,9 +50,12 @@ export interface SsrRenderer {
 export async function createRenderer(
   srcDir: string,
   base = "/ui",
-  opts: { dev?: boolean; shell?: string } = {},
+  opts: { dev?: boolean; shell?: string; reserved?: string[] } = {},
 ): Promise<SsrRenderer> {
   const shellSelector = opts.shell ?? "shell";
+  // off-app (keep-owned) prefixes the client soft-nav must leave to the browser. Defaults
+  // to keep's defaults so an app mounted at base "" doesn't soft-fetch /api or /docs.
+  const reserved = opts.reserved ?? ["/api", "/docs"];
   // A component's IDENTITY is its folder path relative to srcDir (unique), not its
   // bare basename. Two registries: `global` for shared/shell/page components (keyed
   // by basename, must be unique → collision throws), and `pageLocal` for components
@@ -59,7 +65,8 @@ export async function createRenderer(
   const global = new Map<string, ComponentDef>();
   const pageLocal = new Map<string, Map<string, ComponentDef>>(); // page → (selector → def)
   const srcPath = new Map<string, string>(); // relDir id → template.html path (for reparse)
-  const lastSource = new Map<string, string>(); // selector → last parsed template source (HMR no-op detection)
+  const byRelDir = new Map<string, ComponentDef>(); // relDir id → def (the component's unique identity; what the dev/HMR path keys by)
+  const lastSource = new Map<string, string>(); // relDir id → last parsed template source (HMR no-op detection)
   const bySelector = new Map<string, ComponentDef[]>(); // selector → all defs (diagnostics)
   // PROD: the build's serialized template registry (relDir → AST). Render these prebuilt
   // ASTs so the runtime never parses. Absent (no build / fresh dev) → parse live below.
@@ -135,7 +142,8 @@ export async function createRenderer(
       global.set(selector, def);
     }
     srcPath.set(relDir, entry.path);
-    lastSource.set(selector, source);
+    byRelDir.set(relDir, def);
+    lastSource.set(relDir, source);
     let defs = bySelector.get(selector);
     if (!defs) bySelector.set(selector, (defs = []));
     defs.push(def);
@@ -146,6 +154,14 @@ export async function createRenderer(
   const registryForPage = (page: string | null): Registry => {
     const locals = page ? pageLocal.get(page) : undefined;
     return { get: (s) => (locals?.get(s)) ?? global.get(s) };
+  };
+  /** The matched page's identity (its folder basename) for the client, iff it is a real
+   *  registered page — emitted into __sprig_config so the client resolves an island's child
+   *  components against the SAME page-local registry the server used. Matches the page key
+   *  used by registryForPage and pageLocalOf (the segment after pages/). */
+  const pageName = (pageLoad: string): string | undefined => {
+    const n = basename(pageLoad);
+    return global.has(n) ? n : undefined;
   };
 
   // The ?v= asset cache-bust is the content hash of the built static/ dir, computed on
@@ -188,12 +204,14 @@ export async function createRenderer(
     // instance as the render scope (this is what replaces a separate resolve.ts —
     // template + logic.ts is the whole page). `inputs` (route params) reach it via the
     // class ctx. A page with no logic.ts just renders against inputs directly.
-    const pageScope: Scope = page?.island?.resolve ? await page.island.resolve(inputs) : inputs;
+    const pageScope: Scope = page?.island?.resolve
+      ? await page.island.resolve(inputs)
+      : (page?.island ? page.island.scope(inputs) : inputs);
     const baseOpts = { scope: pageScope, registry: pageReg, source: page?.template.text ?? "", scopeAttr: page?.scope, mocks };
     // if the page IS a class island, snapshot its post-onServerInit state NOW (before the
     // template's @let locals mutate the scope) so the browser re-seeds it before onBrowserInit.
     const pageSnap = page?.island?.snapshot ? snapshotOf(pageScope as Record<string, unknown>) : undefined;
-    const resolved = new Map<Node, Scope>();
+    const resolved = new Map<string, Scope>();
     if (page) await resolveIslands(named(page.template), baseOpts, resolved);
     let pageHtml = page ? renderNodes(named(page.template), { ...baseOpts, resolved }) : "";
     // wrap the page-root as a hydration boundary so its own logic.ts hydrates on the client
@@ -207,7 +225,7 @@ export async function createRenderer(
     if (!shell) return pageHtml;
     // the SHELL template can also embed islands — pre-resolve their async onServerInit too.
     const shellOpts = { scope: {} as Scope, registry, outlet: pageHtml, source: shell.template.text, scopeAttr: shell.scope };
-    const shellResolved = new Map<Node, Scope>();
+    const shellResolved = new Map<string, Scope>();
     await resolveIslands(named(shell.template), shellOpts, shellResolved);
     return renderNodes(named(shell.template), { ...shellOpts, resolved: shellResolved });
   };
@@ -222,11 +240,16 @@ export async function createRenderer(
     async loadResolve(pageLoad) {
       const rel = pageLoad.replace(/^\.?\/+/, ""); // "./pages/home" | "pages/home" → "pages/home"
       if (resolveCache.has(rel)) return resolveCache.get(rel);
+      const path = join(srcDir, rel, "resolve.ts");
+      // Distinguish "genuinely no resolve.ts" (→ undefined, a static page) from "a
+      // resolve.ts that EXISTS but throws at import time" (syntax/init error). Stat first:
+      // a missing file is the only thing that means "the page has none". If the file is
+      // present, let an import throw PROPAGATE (don't cache it) so the real fault surfaces
+      // instead of being silently masked as "no loader".
       let fn: Resolve | undefined;
-      try {
-        const url = toFileUrl(join(srcDir, rel, "resolve.ts")).href;
-        fn = (await import(url)).resolve as Resolve | undefined;
-      } catch {
+      if (await exists(path)) {
+        fn = (await import(toFileUrl(path).href)).resolve as Resolve | undefined;
+      } else {
         fn = undefined; // no resolve.ts → a purely static page
       }
       resolveCache.set(rel, fn);
@@ -234,7 +257,11 @@ export async function createRenderer(
     },
     async renderDocument(pageLoad, inputs) {
       if (opts.dev) version = await readVersion();
-      return document(await renderBody(pageLoad, inputs), base, version);
+      // snapshot the version BEFORE the body await so a concurrent dev request recomputing
+      // the module-level `version` during renderBody can't make this document stamp the
+      // other request's version (mirrors renderStream's `const v = version;` guard).
+      const v = version;
+      return document(await renderBody(pageLoad, inputs), base, v, reserved, pageName(pageLoad));
     },
     renderStream(pageLoad, inputs) {
       const enc = new TextEncoder();
@@ -249,7 +276,7 @@ export async function createRenderer(
             // await the body's onServerInit fetches.
             ctrl.enqueue(enc.encode(documentHead(base, v)));
             const body = await renderBody(pageLoad, inputs);
-            ctrl.enqueue(enc.encode(body + documentTail(base, v)));
+            ctrl.enqueue(enc.encode(body + documentTail(base, v, reserved, pageName(pageLoad))));
           } catch {
             // headers + head are already on the wire, so a render failure can't become a
             // 500 — emit a marker and close (matches the renderDocument 500's no-leak rule).
@@ -260,16 +287,19 @@ export async function createRenderer(
         },
       });
     },
-    async reparse(selector) {
-      const cur = findBySelector(selector);
-      if (!cur) return false;
-      const relDir = [...srcPath.keys()].find((rel) => basename(rel) === selector && srcPath.get(rel));
+    async reparse(id) {
+      // `id` is a component's relDir (its unique IDENTITY — what the dev watcher passes),
+      // or, for back-compat, a bare selector (resolved to its relDir, unambiguous only when
+      // the basename is unique). Keying by relDir is what lets a page-local edit reparse the
+      // PAGE-LOCAL def instead of a same-basename global one.
+      const relDir = byRelDir.has(id) ? id : [...srcPath.keys()].find((rel) => basename(rel) === id);
+      const cur = relDir ? byRelDir.get(relDir) : undefined;
       const path = relDir ? srcPath.get(relDir) : undefined;
-      if (!path) return false;
+      if (!relDir || !cur || !path) return false;
       const source = await Deno.readTextFile(path);
       // No-op save (unchanged bytes) → don't re-parse, mutate the registry, or
       // broadcast a hot swap that needlessly re-renders every mounted island.
-      if (lastSource.get(selector) === source) return false;
+      if (lastSource.get(relDir) === source) return false;
       // Mid-edit broken template: tree-sitter recovers to an ERROR AST instead of
       // throwing. Don't push that garbage live (it would clobber mounted islands'
       // markup); suppress the swap and keep the last-good template until the next
@@ -278,20 +308,23 @@ export async function createRenderer(
       const tpl = await p.parseTemplate(source, { allowError: true });
       if (p.hasParseError(tpl)) return false;
       cur.template = tpl; // defs are shared by reference across all registries
-      lastSource.set(selector, source);
+      lastSource.set(relDir, source);
       clearStaticCache(); // a template changed → stale memoized static HTML must go
       return true;
     },
-    astFor(selector) {
-      const def = findBySelector(selector);
+    astFor(id) {
+      // relDir first (dev watcher / HMR — addresses the exact component), else a bare
+      // selector (island fetchAst, keyed by selector — unambiguous for unique basenames).
+      const def = byRelDir.get(id) ?? findBySelector(id);
       return def ? serialize(def.template) : null;
     },
   };
 }
 
 /** Classify a component by its relative dir: page-local (under
- *  pages/<page>/components/<name>/) or global. */
-function pageLocalOf(relDir: string): { page: string; selector: string } | null {
+ *  pages/<page>/components/<name>/) or global. Exported so the client BUILD classifies
+ *  static components by the EXACT same rule the server uses for its page-local registry. */
+export function pageLocalOf(relDir: string): { page: string; selector: string } | null {
   const parts = relDir.split("/");
   if (parts[0] === "pages" && parts.length >= 4 && parts[2] === "components") {
     return { page: parts[1], selector: parts[parts.length - 1] };
@@ -340,16 +373,20 @@ function documentHead(base: string, version: string): string {
 <body>
 `;
 }
-function documentTail(base: string, version: string): string {
+function documentTail(base: string, version: string, reserved: string[], page?: string): string {
   const client = `${base}/_assets/client.js?v=${version}`;
+  // `page` (the matched page's basename) lets the client resolve an island's child
+  // components against the same page-local registry the server used (registryForPage).
+  const cfg: Record<string, unknown> = { base, v: version, reserved };
+  if (page !== undefined) cfg.page = page;
   return `
-<script type="application/json" id="__sprig_config">${JSON.stringify({ base, v: version }).replace(/</g, "\\u003c")}</script>
+<script type="application/json" id="__sprig_config">${JSON.stringify(cfg).replace(/</g, "\\u003c")}</script>
 <script type="module" src="${client}"></script>
 </body>
 </html>`;
 }
-function document(body: string, base: string, version: string): string {
-  return documentHead(base, version) + body + documentTail(base, version);
+function document(body: string, base: string, version: string, reserved: string[], page?: string): string {
+  return documentHead(base, version) + body + documentTail(base, version, reserved, page);
 }
 
 export { join };
