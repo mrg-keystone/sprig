@@ -166,28 +166,27 @@ Deno.test("scope: renderer emits the view-encapsulation marker on every native e
   assert(!bare.includes("s123"));
 });
 
-import { assertRejects } from "@std/assert";
-import { join as joinPath } from "@std/path";
-import { assertStaticPage } from "./mod.ts";
+import { dirname, join as joinPath } from "@std/path";
+import { createRenderer } from "./mod.ts";
 
-Deno.test("gate: a page (folder directly under pages/) cannot be an island", async () => {
-  const tmp = await Deno.makeTempDir({ prefix: "sprig-gate-" });
+Deno.test("a page IS template + logic.ts: the class's onServerInit drives the render", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "sprig-page-logic-" });
   try {
-    const mk = async (rel: string, logic = false) => {
+    const write = async (rel: string, body: string) => {
       const dir = joinPath(tmp, ...rel.split("/"));
-      await Deno.mkdir(dir, { recursive: true });
-      if (logic) await Deno.writeTextFile(joinPath(dir, "logic.ts"), "export default {};");
-      return dir;
+      await Deno.mkdir(dirname(dir), { recursive: true });
+      await Deno.writeTextFile(dir, body);
     };
-    // a page WITH logic.ts → rejected
-    const pageIsland = await mk("pages/settings", true);
-    await assertRejects(() => assertStaticPage(pageIsland), Error, "cannot be an island");
-    // a static page → allowed
-    await assertStaticPage(await mk("pages/about"));
-    // a PAGE-LOCAL component (under pages/<page>/components/) → island allowed
-    await assertStaticPage(await mk("pages/settings/components/toggle", true));
-    // a shared-component island → allowed
-    await assertStaticPage(await mk("shared-components/counter", true));
+    await write("shell/template.html", `<div><router-outlet></router-outlet></div>`);
+    await write("pages/home/template.html", `<h1>Hello, {{ name }}</h1>`);
+    await write(
+      "pages/home/logic.ts",
+      `export default class Home { name = "(loading)"; onServerInit() { this.name = "from-logic"; } }`,
+    );
+    const r = await createRenderer(tmp, "/ui", { dev: true });
+    const html = await r.renderDocument("pages/home", {});
+    assert(html.includes("from-logic"), "page logic.ts onServerInit data did not render");
+    assert(!html.includes("(loading)"), "pre-onServerInit value leaked into the render");
   } finally {
     await Deno.remove(tmp, { recursive: true });
   }

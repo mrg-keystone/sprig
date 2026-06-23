@@ -134,8 +134,8 @@ async function init(dir = "."): Promise<void> {
 
     "src/main.ts": [
       `// The whole app, three declarations. \`routes\` drive everything: a route's \`load\``,
-      `// names a page folder, and the framework auto-loads that folder's resolve.ts (if any)`,
-      `// for its data — no per-page imports, no module map. Add a page = add a route.`,
+      `// names a page folder (template.html + optional logic.ts class for its data/behavior)`,
+      `// — no per-page imports, no module map. Add a page = add a route.`,
       `import { bootstrap, defineRoutes, type Route, type SprigApp } from "@sprig/core";`,
       `import { createRenderer } from "@sprig/keep";`,
       `import { dirname, fromFileUrl } from "@std/path";`,
@@ -173,15 +173,22 @@ async function init(dir = "."): Promise<void> {
       ``,
     ].join("\n"),
 
-    "src/pages/home/resolve.ts": [
-      `import type { Resolve } from "@sprig/core";`,
+    "src/pages/home/logic.ts": [
+      `// A page is its template + this class. onServerInit runs on the server before the`,
+      `// page renders — set fields here (fetch data via inject(Backend)) and the template`,
+      `// binds to them. The instance is snapshotted to the browser; onBrowserInit runs there.`,
+      `export default class Home {`,
+      `  name = "(loading…)";`,
       ``,
-      `export const resolve: Resolve = () => ({ name: "sprig" });`,
+      `  onServerInit() {`,
+      `    this.name = "sprig";`,
+      `  }`,
+      `}`,
       ``,
     ].join("\n"),
 
     "src/pages/home/template.html": [
-      `<!-- @input \`name\` from resolve.ts -->`,
+      `<!-- \`name\` comes from logic.ts (set in onServerInit) -->`,
       `<main class="home">`,
       `  <h1>Hello, {{ name }} 👋</h1>`,
       `  <p>Edit <code>src/pages/home/template.html</code> — \`sprig dev\` hot-swaps it.</p>`,

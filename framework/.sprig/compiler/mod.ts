@@ -183,7 +183,12 @@ export async function createRenderer(
     const mocks = (inputs as Record<string, unknown>).__mocks as
       | Record<string, import("./render.ts").MockSpec>
       | undefined;
-    const baseOpts = { scope: inputs, registry: pageReg, source: page?.template.text ?? "", scopeAttr: page?.scope, mocks };
+    // The page's OWN logic.ts class IS its data source: run onServerInit and use the
+    // instance as the render scope (this is what replaces a separate resolve.ts —
+    // template + logic.ts is the whole page). `inputs` (route params) reach it via the
+    // class ctx. A page with no logic.ts just renders against inputs directly.
+    const pageScope: Scope = page?.island?.resolve ? await page.island.resolve(inputs) : inputs;
+    const baseOpts = { scope: pageScope, registry: pageReg, source: page?.template.text ?? "", scopeAttr: page?.scope, mocks };
     const resolved = new Map<Node, Scope>();
     if (page) await resolveIslands(named(page.template), baseOpts, resolved);
     const pageHtml = page ? renderNodes(named(page.template), { ...baseOpts, resolved }) : "";
@@ -301,20 +306,10 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-/** Enforce the convention: a folder directly under `pages/` is a PAGE, and pages
- *  must be STATIC — they cannot be islands. (Page-local components under
- *  `pages/<page>/components/` may still be islands.) Throws on `pages/<page>/logic.ts`. */
-export async function assertStaticPage(templateDir: string): Promise<void> {
-  if (basename(dirname(templateDir)) !== "pages") return; // not a page
-  if (!(await exists(join(templateDir, "logic.ts")))) return; // static → fine
-  const name = basename(templateDir);
-  throw new Error(
-    `sprig: page "${name}" cannot be an island — pages must be static, but found ` +
-      `${join(templateDir, "logic.ts")}.\n` +
-      `Move the interactive part into a shared-component, or a page-local component ` +
-      `(pages/${name}/components/<name>/), and place it in the page's template.`,
-  );
-}
+/** A page IS its template + an optional `logic.ts` class (its data via onServerInit +
+ *  its behavior). No restriction — this used to forbid `pages/<page>/logic.ts`; the
+ *  unified model allows it (kept as a no-op so existing call sites/imports hold). */
+export async function assertStaticPage(_templateDir: string): Promise<void> {}
 
 // The document is split head/tail so a streaming response can flush the HEAD on the
 // first byte — the browser preloads app.css + client.js (modulepreload) while the
