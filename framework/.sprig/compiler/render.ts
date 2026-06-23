@@ -13,6 +13,21 @@ function escape(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/** Wrap rendered content as a hydration boundary (the SSR island host): a <sprig-island>
+ *  carrying the selector, trigger, and a JSON prop/snapshot bridge. Used for child islands
+ *  AND for a page whose own logic.ts makes it the route's root island. */
+export function islandHost(
+  scopeAttr: string,
+  selector: string,
+  trigger: string,
+  propsObj: Record<string, unknown>,
+  inner: string,
+): string {
+  const props = JSON.stringify(propsObj).replace(/</g, "\\u003c");
+  return `<sprig-island ${scopeAttr} data-sel="${escapeAttr(selector)}" data-trigger="${escapeAttr(trigger)}">` +
+    `<script type="application/json" class="sprig-props">${props}</script>${inner}</sprig-island>`;
+}
+
 /** An island's reactive setup (from logic.ts's defineComponent). */
 export interface IslandDef {
   /** build the reactive scope from the island's @inputs */
@@ -244,12 +259,7 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
     const propsObj: Record<string, unknown> = { ...inputs };
     if (opts.mocks) propsObj.__mocks = opts.mocks;
     if (snap) propsObj.__snapshot = snap;
-    const props = JSON.stringify(propsObj).replace(/</g, "\\u003c");
-    // selectors/triggers are trusted compile-time idents, but escape for consistency
-    // with every other attribute (defense-in-depth on the loader's import() URL). The
-    // wrapper carries the island's own marker so its :host styles target it.
-    return `<sprig-island ${childScope} data-sel="${escapeAttr(comp.selector)}" data-trigger="${escapeAttr(comp.island.trigger)}">` +
-      `<script type="application/json" class="sprig-props">${props}</script>${inner}</sprig-island>`;
+    return islandHost(childScope, comp.selector, comp.island.trigger, propsObj, inner);
   }
   // static child: render its template; in CLIENT mode, wire (event) bindings on the
   // component tag onto the child's root element so they delegate to the host island.

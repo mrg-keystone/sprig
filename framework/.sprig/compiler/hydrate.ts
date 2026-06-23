@@ -10,7 +10,7 @@
 // Hydration itself reuses the SAME interpreter as SSR (renderNodes over the
 // serialized JSON AST — no wasm): re-render the island body inside an effect (so any
 // signal write re-paints) and wire (event) bindings via delegation on the island root.
-import { type Accessor, type ComponentCtx, effect, persistState, signal, type WritableAccessor } from "@sprig/core";
+import { type Accessor, clientRoot, type ComponentCtx, effect, persistState, runInInjector, signal, type WritableAccessor } from "@sprig/core";
 import { fromSerialized, type SerializedTemplate } from "./serialize.ts";
 import { evalStatement, type Scope } from "./expr.ts";
 import { type ComponentDef, type Handler, type MockSpec, type Registry, renderNodes } from "./render.ts";
@@ -22,7 +22,9 @@ import { restore } from "./lifecycle.ts";
  *  Snapshot restore + onBrowserInit/onBrowserDestroy are handled by hydrateIsland. */
 // deno-lint-ignore no-explicit-any
 export function makeClassSetup(Cls: new (ctx: any) => Record<string, unknown>) {
-  return (ctx: ComponentCtx) => new Cls(ctx);
+  // construct inside the client root injector so inject() resolves in the constructor /
+  // field initializers (mirrors the server's withServerInjector), e.g. inject(StateService).
+  return (ctx: ComponentCtx) => runInInjector(clientRoot(), () => new Cls(ctx));
 }
 
 export interface IslandEntry {

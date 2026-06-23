@@ -79,6 +79,22 @@ Deno.test("persistState/restoreState round-trip every live state service", () =>
   }
 });
 
+Deno.test("StateService: a `static key` gives a stable localStorage key (survives minification)", () => {
+  const store = mockLocalStorage();
+  try {
+    class S extends StateService {
+      static key = "app";
+      n = 0;
+    }
+    const a = new S();
+    a.n = 4;
+    a.persist();
+    assert(store.has("sprig:state:app"), "uses the static key, not the class name");
+  } finally {
+    unmock();
+  }
+});
+
 Deno.test("StateService: persist/restore/reset are no-ops with no localStorage (server)", () => {
   // no localStorage in scope → must not throw
   class S extends StateService {

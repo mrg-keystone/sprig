@@ -202,6 +202,7 @@ async function init(dir = "."): Promise<void> {
       ``,
       `@Injectable({ providedIn: "root", scope: "both" })`,
       `export default class State extends StateService {`,
+      `  static key = "app"; // stable localStorage key (class names are minified in prod)`,
       `  count = 0;`,
       `}`,
       ``,

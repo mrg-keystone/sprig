@@ -3,7 +3,8 @@
 // SSR body that bootstrap() used to fake with a JSON dump is now real markup.
 import { basename, dirname, join, relative, toFileUrl } from "@std/path";
 import { walk } from "@std/fs/walk";
-import { clearStaticCache, type ComponentDef, type Registry, renderNodes, resolveIslands } from "./render.ts";
+import { clearStaticCache, type ComponentDef, islandHost, type Registry, renderNodes, resolveIslands } from "./render.ts";
+import { snapshotOf } from "./lifecycle.ts";
 import { named, type Node } from "./node.ts";
 import { fromSerialized, serialize, type SerializedTemplate } from "./serialize.ts";
 
@@ -189,9 +190,19 @@ export async function createRenderer(
     // class ctx. A page with no logic.ts just renders against inputs directly.
     const pageScope: Scope = page?.island?.resolve ? await page.island.resolve(inputs) : inputs;
     const baseOpts = { scope: pageScope, registry: pageReg, source: page?.template.text ?? "", scopeAttr: page?.scope, mocks };
+    // if the page IS a class island, snapshot its post-onServerInit state NOW (before the
+    // template's @let locals mutate the scope) so the browser re-seeds it before onBrowserInit.
+    const pageSnap = page?.island?.snapshot ? snapshotOf(pageScope as Record<string, unknown>) : undefined;
     const resolved = new Map<Node, Scope>();
     if (page) await resolveIslands(named(page.template), baseOpts, resolved);
-    const pageHtml = page ? renderNodes(named(page.template), { ...baseOpts, resolved }) : "";
+    let pageHtml = page ? renderNodes(named(page.template), { ...baseOpts, resolved }) : "";
+    // wrap the page-root as a hydration boundary so its own logic.ts hydrates on the client
+    // (constructs the class, restores the snapshot, runs onBrowserInit, wires its events).
+    if (page?.island) {
+      const propsObj: Record<string, unknown> = { ...(inputs as Record<string, unknown>) };
+      if (pageSnap) propsObj.__snapshot = pageSnap;
+      pageHtml = islandHost(page.scope ?? "", page.selector, page.island.trigger, propsObj, pageHtml);
+    }
     const shell = global.get(shellSelector);
     if (!shell) return pageHtml;
     // the SHELL template can also embed islands — pre-resolve their async onServerInit too.

@@ -121,9 +121,11 @@ export class StateService {
       queueMicrotask(() => this.restore());
     }
   }
-  /** localStorage key (per concrete class, so multiple state services don't collide). */
+  /** localStorage key. Prefers a stable `static key` (set one — class names are MANGLED by
+   *  the production minifier, so `constructor.name` is not durable across builds). */
   protected storageKey(): string {
-    return `sprig:state:${this.constructor.name}`;
+    const k = (this.constructor as { key?: string }).key ?? this.constructor.name;
+    return `sprig:state:${k}`;
   }
   /** Serialize this instance's own fields to localStorage (no-op on the server). */
   persist(): void {
