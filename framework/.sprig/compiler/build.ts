@@ -28,9 +28,11 @@ export interface BuildResult {
 }
 
 export async function buildClient(srcDir: string, outDir: string, opts: { dev?: boolean } = {}): Promise<BuildResult> {
-  const here = dirname(fromFileUrl(import.meta.url));
-  const hydratePath = join(here, "hydrate.ts");
-  const hmrPath = join(here, "hmr.ts");
+  // module-relative URLs (not filesystem paths) so the generated chunks can `import`
+  // hydrate/hmr whether this module is local (file://) or published on JSR (https://) —
+  // esbuild resolves either; fromFileUrl(import.meta.url) would throw on an https URL.
+  const hydratePath = new URL("./hydrate.ts", import.meta.url).href;
+  const hmrPath = new URL("./hmr.ts", import.meta.url).href;
   const genDir = join(outDir, ".gen");
   const dev = !!opts.dev;
 
