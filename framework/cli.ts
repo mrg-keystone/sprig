@@ -11,6 +11,11 @@
  * The framework runtime lives next to this file at ./.sprig (core + compiler).
  */
 import { dirname, fromFileUrl, join, resolve, toFileUrl } from "@std/path";
+// static relative imports of the package's own modules (computed-path dynamic imports
+// are unanalyzable + don't resolve once this is published to JSR).
+import { buildClient } from "./.sprig/compiler/build.ts";
+import { createDevServer } from "./.sprig/compiler/dev.ts";
+import { sprigUi } from "../packages/keep/mod.ts";
 
 const HERE = dirname(fromFileUrl(import.meta.url)); // framework/
 const SPRIG = join(HERE, ".sprig"); // framework/.sprig
@@ -21,7 +26,6 @@ const KEEP = join(HERE, "..", "packages", "keep", "mod.ts");
 const fileUrl = (base: string, ...rest: string[]): string => toFileUrl(join(base, ...rest)).href;
 
 async function build(appDir = "app", dev = false): Promise<void> {
-  const { buildClient } = await import(join(SPRIG, "compiler", "build.ts"));
   const srcDir = join(resolve(appDir), "src");
   const outDir = join(Deno.cwd(), "static");
   const r = await buildClient(srcDir, outDir, { dev });
@@ -55,13 +59,11 @@ async function dev(appDir = "app", base = "/ui"): Promise<void> {
   // may be a Danet/other host with no { fetch } export). `sprig dev` serves /ui with HMR;
   // the host (serve.ts) is for `deno task start`.
   const { renderer, app } = await import(`file://${join(resolve(appDir), "src", "main.ts")}`);
-  const { sprigUi } = await import(`file://${KEEP}`);
   const ui = sprigUi({ app, base });
   const handler = {
     fetch: (req: Request, info: Deno.ServeHandlerInfo): Promise<Response> =>
       ui(req, info).then((r: Response | null) => r ?? new Response("Not Found", { status: 404 })),
   };
-  const { createDevServer } = await import(join(SPRIG, "compiler", "dev.ts"));
   const devSrv = createDevServer({
     renderer,
     base,

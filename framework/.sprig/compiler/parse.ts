@@ -3,7 +3,7 @@
 // sitter is a pure-wasm runtime, so this works in Deno with no native build. The
 // browser never imports this file (it walks the serialized JsonNode instead).
 import { Language, Parser } from "web-tree-sitter";
-import { dirname, fromFileUrl, join } from "@std/path";
+import { fromFileUrl } from "@std/path";
 import type { Node } from "./node.ts";
 
 export type { Node };
@@ -14,8 +14,14 @@ let parserPromise: Promise<Parser> | null = null;
 function loadParser(): Promise<Parser> {
   return (parserPromise ??= (async () => {
     await Parser.init();
-    const wasmPath = join(dirname(fromFileUrl(import.meta.url)), "grammar.wasm");
-    const lang = await Language.load(await Deno.readFile(wasmPath));
+    // grammar.wasm sits next to this module. Read it directly when local (file://),
+    // and fetch only when this module is served remotely (https:// — i.e. published on
+    // JSR), so a local run never goes through fetch.
+    const wasmUrl = new URL("./grammar.wasm", import.meta.url);
+    const bytes = wasmUrl.protocol === "file:"
+      ? await Deno.readFile(fromFileUrl(wasmUrl))
+      : new Uint8Array(await (await fetch(wasmUrl)).arrayBuffer());
+    const lang = await Language.load(bytes);
     const parser = new Parser();
     parser.setLanguage(lang);
     return parser;
