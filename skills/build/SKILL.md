@@ -45,7 +45,7 @@ This is the biggest source of bugs — pretrained instincts reach for the wrong 
   `load`; the framework auto-loads that folder's `logic.ts`/`resolve.ts`. No `modules: {}`.
 - **The CLI is `sprig`** (`init`/`dev`/`build`/`isolate`/`serve`/`update`), installed from
   `jsr:@sprig/core/cli`. There's no `_fresh/`, no `vite.config.ts`, no manifest.
-- **It's Angular's *syntax*, not Angular.** `{{ }}`, `[prop]`, `(event)`, `@if`/`@for`,
+- **It's Angular's _syntax_, not Angular.** `{{ }}`, `[prop]`, `(event)`, `@if`/`@for`,
   `<router-outlet>`, `<ng-content>` — but no NgModules, decorators-on-components, RxJS, or
   the Angular runtime. Bindings evaluate against the component's `logic.ts` scope.
 
@@ -95,9 +95,13 @@ import { createRenderer } from "@sprig/keep";
 import { dirname, fromFileUrl } from "@std/path";
 
 export const routes = defineRoutes([{ path: "", load: "pages/home" }]);
-export const renderer = await createRenderer(dirname(fromFileUrl(import.meta.url)), "/ui", {
-  dev: !!Deno.env.get("SPRIG_DEV"),
-});
+export const renderer = await createRenderer(
+  dirname(fromFileUrl(import.meta.url)),
+  "/ui",
+  {
+    dev: !!Deno.env.get("SPRIG_DEV"),
+  },
+);
 export const app: SprigApp = bootstrap({ routes, base: "/ui", renderer });
 ```
 
@@ -117,12 +121,14 @@ import State from "../../services/state/mod.ts";
 
 export default class Home {
   name = "(loading…)";
-  state = inject(State);          // DI resolves in field initializers (server AND client)
+  state = inject(State); // DI resolves in field initializers (server AND client)
 
-  onServerInit() {                // runs on the SERVER before the page renders — load data here
+  onServerInit() {
+    // runs on the SERVER before the page renders — load data here
     this.name = "sprig";
   }
-  onBrowserInit() {               // runs on the CLIENT after hydration — wire browser-only things
+  onBrowserInit() {
+    // runs on the CLIENT after hydration — wire browser-only things
   }
 }
 ```
@@ -198,7 +204,7 @@ HMR works.
 sprig isolate          # from the app dir → http://localhost:8000/ui : pick a component, see it alone
 ```
 
-Reach for it when building or debugging *one* component without wiring it into a page —
+Reach for it when building or debugging _one_ component without wiring it into a page —
 edit the component and the isolated preview hot-reloads. Generated previews live in a
 gitignorable `src/_isolate/`. More — what it discovers, the picker, limitations — in
 **`references/isolate.md`**.
@@ -216,15 +222,15 @@ gitignorable `src/_isolate/`. More — what it discovers, the picker, limitation
 
 ## Decision matrix
 
-| Task | Read |
-|---|---|
-| Scaffold / project shape / CLI | this file (above) |
-| A page/component's data + lifecycle; signals; DI | `references/component-model.md` |
-| Template syntax (bindings, control flow, projection, composing components) | `references/templates.md` |
-| Routes & data loading | `references/routing.md` |
-| Persisted state | `references/component-model.md` (StateService) |
-| Serve / mount the UI / Danet host | `references/serving.md` |
-| Preview / test a component alone | `references/isolate.md` |
+| Task                                                                       | Read                                           |
+| -------------------------------------------------------------------------- | ---------------------------------------------- |
+| Scaffold / project shape / CLI                                             | this file (above)                              |
+| A page/component's data + lifecycle; signals; DI                           | `references/component-model.md`                |
+| Template syntax (bindings, control flow, projection, composing components) | `references/templates.md`                      |
+| Routes & data loading                                                      | `references/routing.md`                        |
+| Persisted state                                                            | `references/component-model.md` (StateService) |
+| Serve / mount the UI / Danet host                                          | `references/serving.md`                        |
+| Preview / test a component alone                                           | `references/isolate.md`                        |
 
 ## Top gotchas
 
