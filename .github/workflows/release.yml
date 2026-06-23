@@ -1,10 +1,11 @@
 # Push to main → (re)publish the "runtime-latest" GitHub release whose
 # `sprig-runtime.tar.gz` asset is the SOURCE bundle the CLI runs from locally:
-# framework/ (incl. the tree-sitter grammar.wasm) + packages/ + skills/ + a
-# workspace-stripped deno.json — but NO node_modules. `sprig install` / `sprig update`
-# (framework/.sprig/install.ts) download it, extract to ~/.sprig, run `deno install`
-# THERE to build node_modules on the machine, install the skills, and write the `sprig`
-# launcher — so the compiler loads grammar.wasm + its deps from a known local path.
+# framework/ (incl. the tree-sitter grammar.wasm) + packages/ + skills/ + the isolate
+# workbench (app/ + server/ + cli/ + serve.ts) + the workspace deno.json — but NO
+# node_modules. `sprig install` / `sprig update` (framework/.sprig/install.ts) download it,
+# extract to ~/.sprig, run `deno install` THERE to build every workspace member's node_modules
+# on the machine, install the skills, and write the `sprig` launcher — so the compiler loads
+# grammar.wasm + its deps locally and `sprig isolate` serves the workbench from ~/.sprig.
 # Runs alongside publish.yml (which publishes @sprig/core to JSR for the `install`
 # bootstrap). Self-update only reflects changes once committed, pushed, AND released.
 name: release-runtime
@@ -22,13 +23,16 @@ jobs:
         run: |
           set -eu
           rm -rf bundle && mkdir -p bundle
-          cp -R framework packages skills bundle/
-          # The CLI's graph is framework/ + packages/ only — drop the workspace members
-          # (cli/server/app) from the bundled deno.json so `deno install` in ~/.sprig works.
-          jq 'del(.workspace)' deno.json > bundle/deno.json
+          # framework + packages + skills, PLUS the isolate workbench (app/server/cli/serve.ts)
+          # so `sprig isolate` runs entirely from ~/.sprig. KEEP the workspace in deno.json so
+          # `deno install` on the machine builds every member's (framework/cli/server/app)
+          # node_modules — the members are present now, so the workspace resolves.
+          cp -R framework packages skills app server cli bundle/
+          cp serve.ts bundle/serve.ts
+          cp deno.json bundle/deno.json
           tar -czf sprig-runtime.tar.gz -C bundle .
-          echo "Bundle sanity (must include grammar.wasm + deno.json + skills/, NOT node_modules):"
-          tar -tzf sprig-runtime.tar.gz | grep -E 'grammar\.wasm|^\./deno\.json$|^\./skills/[^/]+/$' | head
+          echo "Bundle sanity (grammar.wasm + deno.json + serve.ts + app/ + server/, NOT node_modules):"
+          tar -tzf sprig-runtime.tar.gz | grep -E 'grammar\.wasm|^\./deno\.json$|^\./serve\.ts$|^\./app/src/|^\./server/src/' | head
           if tar -tzf sprig-runtime.tar.gz | grep -q node_modules; then echo "ERROR: node_modules in bundle" >&2; exit 1; fi
       - name: Refresh the runtime-latest release with the bundle
         env:
@@ -42,4 +46,4 @@ jobs:
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "sprig runtime (latest)" \
-            --notes "Source runtime bundle (framework + packages + skills + grammar.wasm) from ${{ github.sha }}. Installed by 'sprig install' / 'sprig update' → ~/.sprig (deno install runs on the machine)."
+            --notes "Source runtime bundle (framework + packages + skills + grammar.wasm + isolate workbench: app/server/cli/serve.ts) from ${{ github.sha }}. Installed by 'sprig install' / 'sprig update' → ~/.sprig (deno install runs on the machine)."

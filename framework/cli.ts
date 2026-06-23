@@ -10,15 +10,13 @@
  *
  * The framework runtime lives next to this file at ./.sprig (core + compiler).
  */
-import { basename, dirname, fromFileUrl, join, relative, resolve, toFileUrl } from "@std/path";
-import { walk } from "@std/fs/walk";
+import { dirname, fromFileUrl, join, resolve, toFileUrl } from "@std/path";
 // static relative imports of the package's own modules (computed-path dynamic imports
 // are unanalyzable + don't resolve once this is published to JSR).
 import { buildClient } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
-import { createRenderer, sprigUi } from "../packages/keep/mod.ts";
-import { bootstrap, defineRoutes } from "./.sprig/core.ts";
-import { installRuntimeFromDeployment, installRuntimeFromWorkingTree } from "./.sprig/install.ts";
+import { sprigUi } from "../packages/keep/mod.ts";
+import { assertWorkbench, installRuntimeFromDeployment, installRuntimeFromWorkingTree } from "./.sprig/install.ts";
 
 // the published-package version range a scaffolded app pins (core + its /keep + /cli
 // sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
@@ -333,64 +331,33 @@ async function init(dir = "."): Promise<void> {
   );
 }
 
-/** The component/page workbench: discover every folder-component, render each one in
- *  ISOLATION (a generated wrapper page per component; pages render directly), and serve a
- *  picker. Reuses the framework — no separate workbench app. Generated previews live in a
- *  gitignorable `src/_isolate/`. */
-async function isolate(appDir = "."): Promise<void> {
-  await withMergedConfig(appDir);
-  Deno.env.set("SPRIG_DEV", "1");
-  const root = resolve(appDir);
-  const srcDir = join(root, "src");
-  const isoDir = join(srcDir, "_isolate");
-  await Deno.remove(isoDir, { recursive: true }).catch(() => {}); // clear stale previews
-
-  const found: { sel: string; load: string; kind: "page" | "component" }[] = [];
-  for await (const e of walk(srcDir, { match: [/[/\\]template\.html$/], includeDirs: false })) {
-    const dir = dirname(e.path);
-    const rel = relative(srcDir, dir).replace(/\\/g, "/");
-    const sel = basename(dir);
-    if (sel === "shell" || rel.startsWith("_isolate")) continue;
-    if (basename(dirname(dir)) === "pages") {
-      found.push({ sel, load: rel, kind: "page" }); // a page renders directly
-    } else {
-      // a component renders inside a generated wrapper page: <sel></sel>. The wrapper folder
-      // is `iso-<sel>` so its selector never collides with the real component's.
-      const pdir = join(isoDir, `iso-${sel}`);
-      await Deno.mkdir(pdir, { recursive: true });
-      await Deno.writeTextFile(join(pdir, "template.html"), `<main class="iso-stage"><${sel}></${sel}></main>\n`);
-      found.push({ sel, load: `_isolate/iso-${sel}`, kind: "component" });
-    }
-  }
-  found.sort((a, b) => a.sel.localeCompare(b.sel));
-  const links = found
-    .map((f) => `<li><a href="/ui/${f.sel}">${f.sel}</a> <small>${f.kind}</small></li>`)
-    .join("\n  ");
-  const idx = join(isoDir, "iso--index");
-  await Deno.mkdir(idx, { recursive: true });
-  await Deno.writeTextFile(
-    join(idx, "template.html"),
-    `<main class="iso-index"><h1>isolate</h1><p>${found.length} component(s)</p>\n<ul>\n  ${links}\n</ul></main>\n`,
-  );
-
-  await build(appDir, true);
-  const renderer = await createRenderer(srcDir, "/ui", { dev: true });
-  const routes = defineRoutes([
-    { path: "", load: "_isolate/iso--index" },
-    ...found.map((f) => ({ path: f.sel, load: f.load })),
-  ]);
-  const app = bootstrap({ routes, base: "/ui", renderer });
-  const ui = sprigUi({ app, base: "/ui" });
-  const handler = {
-    fetch: (req: Request, info: Deno.ServeHandlerInfo): Promise<Response> =>
-      ui(req, info).then((r: Response | null) => r ?? new Response("Not Found", { status: 404 })),
-  };
-  // serve through the dev server so islands get their AST endpoint + HMR (edit a component
-  // and the isolated preview hot-reloads), exactly like `sprig dev`.
-  const devSrv = createDevServer({ renderer, base: "/ui", outDir: join(Deno.cwd(), "static"), handler });
+/** The Storybook-style component/page/island workbench: discover every component + its
+ *  isolate/ cases, render a live preview per case, and serve the workbench UI (sidebar, stage,
+ *  viewport controls, controls/console/tests). The UI (app/), its keep discovery + test-runner
+ *  backend (server/), the orchestrator (cli/), and the composition root (serve.ts) are
+ *  installed next to the framework by `sprig install`/`sprig update`; this delegates to the
+ *  workbench's own dev runner. */
+async function isolate(appDir = ".", open = true): Promise<void> {
+  // the dir that holds framework/ — a repo checkout or ~/.sprig (both carry the workbench).
+  const root = join(dirname(fromFileUrl(import.meta.url)), "..");
+  await assertWorkbench(root); // clear "run `sprig update`" error if an old slim install lacks it
+  const appAbs = resolve(appDir);
   const port = freePort(Number(Deno.env.get("PORT") ?? 8000));
-  console.log(`sprig isolate → http://localhost:${port}/ui  (${found.length} component(s) in isolation, HMR on)`);
-  Deno.serve({ port }, (req: Request, info: Deno.ServeHandlerInfo) => devSrv.fetch(req, info));
+  // hand off to the workbench dev runner: discover → generate a preview per case → build the
+  // app → serve serve.ts (UI + keep backend) under ISOLATE_PROJECT. The same flow that powers
+  // the live workbench; we just point it at `appAbs` on a free port.
+  const { code } = await new Deno.Command(Deno.execPath(), {
+    args: [
+      "run", "-A", "--config", join(root, "deno.json"), join(root, "cli", "main.ts"),
+      "dev", "--root", appAbs, ...(open ? [] : ["--no-open"]),
+    ],
+    cwd: root,
+    env: { ...Deno.env.toObject(), PORT: String(port) },
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  }).output();
+  Deno.exit(code);
 }
 
 /** Refresh this machine to the latest deployment: download the source bundle to ~/.sprig,
@@ -446,9 +413,11 @@ switch (cmd) {
   case "install":
     await install(rest.includes("--dev"));
     break;
-  case "isolate":
-    await isolate(rest[0]);
+  case "isolate": {
+    const appArg = rest.find((a) => !a.startsWith("-")) ?? ".";
+    await isolate(appArg, !rest.includes("--no-open"));
     break;
+  }
   case undefined:
   case "help":
   case "--help":

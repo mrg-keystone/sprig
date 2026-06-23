@@ -145,3 +145,28 @@ export async function installRuntimeFromWorkingTree(repoRoot: string): Promise<v
   await installSkills(join(repoRoot, "skills"));
   await installLauncher(repoRoot);
 }
+
+// --- isolate workbench -----------------------------------------------------
+// The `sprig isolate` workbench — its UI (app/), the keep discovery/test-runner backend
+// (server/), the orchestrator (cli/), and the composition root (serve.ts) — ships WITH the
+// runtime bundle (see .github/workflows/release.yml) and lands in ~/.sprig on `sprig install`
+// / `sprig update`, where `deno install` builds its node_modules. `sprig isolate` runs it from
+// there — no lazy download, no checkout dependency.
+
+/** The workbench parts the runtime bundle installs alongside the framework. */
+const WORKBENCH_PARTS = ["app", "server", "cli", "serve.ts"];
+
+/** Throw a clear, actionable error if the workbench isn't installed next to the framework in
+ *  `root` (an old slim install predating the bundled workbench). `sprig update` installs it. */
+export async function assertWorkbench(root: string): Promise<void> {
+  const missing: string[] = [];
+  for (const p of WORKBENCH_PARTS) {
+    if (!(await pathExists(join(root, p)))) missing.push(p);
+  }
+  if (missing.length) {
+    throw new Error(
+      `isolate workbench not installed (missing ${missing.join(", ")} under ${root}).\n` +
+        "  ▸ run `sprig update` to install the workbench + its deps.",
+    );
+  }
+}
