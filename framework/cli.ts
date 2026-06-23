@@ -5,7 +5,7 @@
  *   sprig init [dir]            scaffold a minimal, runnable sprig app
  *   sprig dev  [appDir]         state-preserving HMR dev server (no Vite)
  *   sprig build [appDir]        code-split islands + scope CSS + Tailwind → static/
- *   sprig serve [entry]         boot a serve.ts (its default export is a { fetch } handler)
+ *   sprig serve [entry]         run the app's host entry (e.g. bootstrap/serve.ts)
  *   sprig help
  *
  * The framework runtime lives next to this file at ./.sprig (core + compiler).
@@ -36,15 +36,17 @@ async function build(appDir = ".", dev = false): Promise<void> {
 }
 
 async function serve(entry = "serve.ts"): Promise<void> {
-  const mod = await import(toFileUrl(join(Deno.cwd(), entry)).href) as {
-    default?: { fetch?: Deno.ServeHandler };
-  };
-  const app = mod.default;
-  if (!app?.fetch) {
-    console.error(`${entry} must \`export default\` an object with fetch(req, info).`);
-    Deno.exit(1);
-  }
-  Deno.serve((req, info) => app.fetch!(req, info));
+  // Run the app's host entry (e.g. bootstrap/serve.ts) in a SUBPROCESS so deno discovers
+  // the APP's deno.json from the cwd — the host imports @danet/core + the `$` aliases,
+  // which the installed CLI's own (~/.sprig) config does not define. The host self-serves
+  // (it calls app.listen()); we just forward stdio + the exit code.
+  const { code } = await new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", entry],
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  }).output();
+  Deno.exit(code);
 }
 
 async function dev(appDir = ".", base = "/ui"): Promise<void> {
@@ -124,7 +126,7 @@ async function init(dir = "."): Promise<void> {
   "tasks": {
     "dev": "sprig dev .",
     "build": "sprig build .",
-    "start": "deno run -A serve.ts"
+    "start": "sprig serve bootstrap/serve.ts"
   }
 }
 `,
@@ -350,7 +352,7 @@ const USAGE = `sprig — the framework CLI
   sprig dev   [appDir]           state-preserving HMR dev server → /ui (default: .)
   sprig build [appDir]           code-split islands + scope CSS + Tailwind → static/ (default: .)
   sprig isolate [appDir]         component/page workbench — develop in isolation (default: .)
-  sprig serve [entry]            boot a serve.ts's default { fetch } handler (default: serve.ts)
+  sprig serve [entry]            run the app's host entry under its deno.json (default: serve.ts)
   sprig install [--dev]          install the global sprig CLI + Claude Code skills (--dev: from this checkout)
   sprig update                   re-install the global sprig CLI + skills from the latest release
   sprig help
