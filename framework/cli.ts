@@ -301,9 +301,11 @@ async function isolate(appDir = "."): Promise<void> {
 /** Re-install the global `sprig` command from the latest published CLI. */
 async function update(): Promise<void> {
   console.log("Updating the sprig CLI from jsr:@sprig/core/cli …");
+  // the global install pins the resolved version in a lockfile; --reload busts the module
+  // CACHE but keeps the old PIN, so drop the lock first to re-resolve to the latest version.
+  const denoRoot = Deno.env.get("DENO_INSTALL_ROOT") ?? join(Deno.env.get("HOME") ?? "", ".deno");
+  await Deno.remove(join(denoRoot, "bin", ".sprig", "deno.lock")).catch(() => {});
   const { code } = await new Deno.Command("deno", {
-    // --reload busts deno's module cache so a re-install actually runs the new version
-    // (the global shim points at the unversioned specifier, which is otherwise cached).
     args: ["install", "--reload=jsr:@sprig/core", "-gAf", "-n", "sprig", "jsr:@sprig/core/cli"],
     stdout: "inherit",
     stderr: "inherit",
