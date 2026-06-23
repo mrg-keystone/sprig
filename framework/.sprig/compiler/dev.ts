@@ -34,7 +34,7 @@ export function createDevServer(cfg: DevConfig): {
 
   // debounced file watcher (closeable, so tests / Ctrl-C don't leak it)
   const watcher = Deno.watchFs(cfg.renderer.srcDir);
-  let timer: number | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   // Serialize rebuilds: the debounce coalesces an event burst, but overlapping
   // batches (a save during a >1s build) would otherwise fire two handleChange/
   // buildClient runs that race the same outDir. A single in-flight drain loop
