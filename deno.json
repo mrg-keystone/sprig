@@ -4,7 +4,11 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
   },
-  "workspace": ["./cli", "./server", "./app"],
+  "workspace": [
+    "./cli",
+    "./server",
+    "./app"
+  ],
   "imports": {
     "@sprig/core": "./framework/.sprig/core.ts",
     "@sprig/keep": "./packages/keep/mod.ts",
@@ -19,5 +23,37 @@
     "dev": "deno run -A framework/cli.ts dev app",
     "build": "deno run -A framework/cli.ts build app",
     "start": "deno serve -A --unstable-kv serve.ts"
+  },
+  "name": "@sprig/core",
+  "version": "0.1.0",
+  "license": "MIT",
+  "exports": {
+    ".": "./framework/.sprig/core.ts",
+    "./keep": "./packages/keep/mod.ts",
+    "./cli": "./framework/cli.ts"
+  },
+  "publish": {
+    "include": [
+      "LICENSE",
+      "deno.json",
+      "framework/.sprig/compiler/build.ts",
+      "framework/.sprig/compiler/dev.ts",
+      "framework/.sprig/compiler/expr.ts",
+      "framework/.sprig/compiler/grammar.wasm",
+      "framework/.sprig/compiler/hash.ts",
+      "framework/.sprig/compiler/hmr.ts",
+      "framework/.sprig/compiler/hydrate.ts",
+      "framework/.sprig/compiler/island.ts",
+      "framework/.sprig/compiler/lifecycle.ts",
+      "framework/.sprig/compiler/mod.ts",
+      "framework/.sprig/compiler/node.ts",
+      "framework/.sprig/compiler/parse.ts",
+      "framework/.sprig/compiler/render.ts",
+      "framework/.sprig/compiler/scope.ts",
+      "framework/.sprig/compiler/serialize.ts",
+      "framework/.sprig/core.ts",
+      "framework/cli.ts",
+      "packages/keep/mod.ts"
+    ]
   }
 }
