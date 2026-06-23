@@ -10,7 +10,7 @@
 // Hydration itself reuses the SAME interpreter as SSR (renderNodes over the
 // serialized JSON AST — no wasm): re-render the island body inside an effect (so any
 // signal write re-paints) and wire (event) bindings via delegation on the island root.
-import { type Accessor, type ComponentCtx, effect, signal, type WritableAccessor } from "@sprig/core";
+import { type Accessor, type ComponentCtx, effect, persistState, signal, type WritableAccessor } from "@sprig/core";
 import { fromSerialized, type SerializedTemplate } from "./serialize.ts";
 import { evalStatement, type Scope } from "./expr.ts";
 import { type ComponentDef, type Handler, type MockSpec, type Registry, renderNodes } from "./render.ts";
@@ -371,6 +371,9 @@ export async function runSoftNav(e: NavEvent, cfg: SprigConfig, deps: SoftNavDep
  *  transition, and re-arm islands inside it (their chunks lazy-load again on
  *  trigger). Islands OUTSIDE the outlet stay mounted (state preserved). */
 export function setupSoftNav(cfg: SprigConfig): void {
+  // persist every state service before the page goes away (hard reload / close / cross-doc
+  // nav), so it survives a full reload even when the soft-nav path below doesn't run.
+  globalThis.addEventListener("pagehide", () => persistState());
   // deno-lint-ignore no-explicit-any
   const nav = (globalThis as any).navigation;
   if (!nav) return; // unsupported → normal browser navigation
@@ -403,6 +406,7 @@ export function setupSoftNav(cfg: SprigConfig): void {
   };
   nav.addEventListener("navigate", (e: NavEvent) => {
     if (softNavShouldSkip(e, cfg, location.href)) return;
+    persistState(); // save current state before navigating away (it reconstructs on the next page)
     e.intercept({ scroll: "manual", handler: () => runSoftNav(e, cfg, deps) });
   });
 }

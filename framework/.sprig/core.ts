@@ -98,6 +98,66 @@ export function token<T>(
   return { key, name };
 }
 
+// ── Persisted state service ────────────────────────────────────────────────
+// Every live (client) StateService is tracked so the framework can serialize them
+// all to localStorage on navigation and restore them on load. Server instances are
+// not tracked (no localStorage there) and their persist/restore are no-ops.
+const LIVE_STATES = new Set<StateService>();
+
+/**
+ * Base for an app's persisted state. Subclass it with serializable fields and mark the
+ * subclass `@Injectable({ providedIn: "root", scope: "both" })`; `inject()` it anywhere.
+ * The framework serializes it to localStorage on every navigation and restores it on
+ * load, so state survives navigation AND full reloads. `reset()` restores the constructed
+ * defaults AND clears the saved copy in localStorage.
+ */
+export class StateService {
+  constructor() {
+    if (typeof localStorage !== "undefined") {
+      LIVE_STATES.add(this);
+      // restore AFTER the subclass field initializers run (they execute after super()),
+      // so a saved value isn't immediately clobbered by `count = 0`. Read restored fields
+      // in onBrowserInit (which runs after hydration), not synchronously in setup().
+      queueMicrotask(() => this.restore());
+    }
+  }
+  /** localStorage key (per concrete class, so multiple state services don't collide). */
+  protected storageKey(): string {
+    return `sprig:state:${this.constructor.name}`;
+  }
+  /** Serialize this instance's own fields to localStorage (no-op on the server). */
+  persist(): void {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(this.storageKey(), JSON.stringify(this));
+  }
+  /** Overlay the saved fields from localStorage onto this instance (no-op server-side). */
+  restore(): void {
+    if (typeof localStorage === "undefined") return;
+    const raw = localStorage.getItem(this.storageKey());
+    if (raw === null) return;
+    try {
+      Object.assign(this, JSON.parse(raw) as Record<string, unknown>);
+    } catch { /* corrupt entry → keep current state */ }
+  }
+  /** Reset every field to its constructed default AND delete the saved state. */
+  reset(): void {
+    const fresh = new (this.constructor as new () => this)();
+    LIVE_STATES.delete(fresh); // the fresh probe must not stay tracked
+    for (const k of Object.keys(this)) delete (this as Record<string, unknown>)[k];
+    Object.assign(this, fresh);
+    if (typeof localStorage !== "undefined") localStorage.removeItem(this.storageKey());
+  }
+}
+
+/** Persist every live state service — the client calls this on each navigation. */
+export function persistState(): void {
+  for (const s of LIVE_STATES) s.persist();
+}
+/** Restore every live state service from localStorage — called once on client bootstrap. */
+export function restoreState(): void {
+  for (const s of LIVE_STATES) s.restore();
+}
+
 /** An injector node in the root → route → component hierarchy. */
 export class Injector {
   #instances = new Map<symbol, unknown>();
