@@ -24,6 +24,59 @@ import { installRuntimeFromDeployment, installRuntimeFromWorkingTree } from "./.
 // sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
 const SPRIG_RANGE = "^0.2.0";
 
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await Deno.stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** `dev`/`isolate` import the app's SSR renderer in-process, and that renderer dynamically
+ *  imports the app's logic.ts — whose `$.*` aliases live in the APP's deno.json, not the
+ *  installed CLI's (~/.sprig) config. So re-run under a MERGED config: the install's compiler
+ *  deps (web-tree-sitter + node_modules for grammar.wasm, the local @sprig/core) PLUS the
+ *  app's own imports (the `$` aliases, @danet/core, …), with the app's relative paths made
+ *  absolute. No-op once merged, or when run from somewhere without an install deno.json. */
+async function withMergedConfig(appDir: string): Promise<void> {
+  if (Deno.env.get("SPRIG_MERGED")) return;
+  if (!import.meta.url.startsWith("file:")) return; // only a local install runs the compiler
+  const appAbs = resolve(appDir);
+  const appCfgPath = join(appAbs, "deno.json");
+  const installDir = join(dirname(fromFileUrl(import.meta.url)), ".."); // framework/ → install root
+  const rtCfgPath = join(installDir, "deno.json");
+  if (!(await fileExists(appCfgPath)) || !(await fileExists(rtCfgPath))) return;
+  let appCfg: { imports?: Record<string, string> }, rtCfg: Record<string, unknown>;
+  try {
+    appCfg = JSON.parse(await Deno.readTextFile(appCfgPath));
+    rtCfg = JSON.parse(await Deno.readTextFile(rtCfgPath));
+  } catch {
+    return; // unparseable config → run as-is
+  }
+  const imports: Record<string, unknown> = { ...(rtCfg.imports as Record<string, unknown> ?? {}) };
+  for (const [k, v] of Object.entries(appCfg.imports ?? {})) {
+    if (k === "@sprig/core" || k === "@sprig/keep") continue; // keep the install's local sprig + compiler
+    if (typeof v === "string" && /^\.\.?\//.test(v)) {
+      let abs = toFileUrl(join(appAbs, v)).href;
+      if (v.endsWith("/") && !abs.endsWith("/")) abs += "/"; // preserve prefix-mapping trailing slash
+      imports[k] = abs;
+    } else {
+      imports[k] = v;
+    }
+  }
+  const mergedPath = join(installDir, ".sprig-app.json");
+  await Deno.writeTextFile(mergedPath, JSON.stringify({ ...rtCfg, imports }, null, 2));
+  const { code } = await new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", "--config", mergedPath, fromFileUrl(import.meta.url), ...Deno.args],
+    env: { ...Deno.env.toObject(), SPRIG_MERGED: "1" },
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  }).output();
+  Deno.exit(code);
+}
+
 async function build(appDir = ".", dev = false): Promise<void> {
   const srcDir = join(resolve(appDir), "src");
   const outDir = join(Deno.cwd(), "static");
@@ -50,6 +103,7 @@ async function serve(entry = "serve.ts"): Promise<void> {
 }
 
 async function dev(appDir = ".", base = "/ui"): Promise<void> {
+  await withMergedConfig(appDir);
   // State-preserving HMR (no Vite): build the dev bundle (HMR client + AST-fetching
   // island chunks), then wrap the app's production handler with the compiler's dev
   // server (Deno.watchFs + SSE + live AST). Template/CSS edits hot-swap in place
@@ -59,8 +113,8 @@ async function dev(appDir = ".", base = "/ui"): Promise<void> {
   // build the HMR base handler from the sprig APP itself — NOT the host's serve.ts (which
   // may be a Danet/other host with no { fetch } export). `sprig dev` serves /ui with HMR;
   // the host (serve.ts) is for `deno task start`.
-  const { renderer, app } = await import(toFileUrl(join(resolve(appDir), "src", "main.ts")).href);
-  const ui = sprigUi({ app, base });
+  const { renderer, sprigApp } = await import(toFileUrl(join(resolve(appDir), "src", "mod.ts")).href);
+  const ui = sprigUi({ app: sprigApp, base });
   const handler = {
     fetch: (req: Request, info: Deno.ServeHandlerInfo): Promise<Response> =>
       ui(req, info).then((r: Response | null) => r ?? new Response("Not Found", { status: 404 })),
@@ -100,20 +154,20 @@ async function init(dir = "."): Promise<void> {
   const name = (dir === "." ? "sprig-app" : dir.split("/").pop()) || "sprig-app";
 
   const files: Record<string, string> = {
-    // `$` IS the app (src/main.ts); `$.pages/`, `$.services/`, `$.shared-components/` alias
+    // `$` IS the app (src/mod.ts); `$.pages/`, `$.services/`, `$.shared-components/` alias
     // the src subtrees so deep files import siblings without ../../ chains. Plus the two
     // sprig entry points (core + its /keep sub-export); the compiler is CLI-internal.
     "deno.json": `{
   "name": "@app/${name}",
   "version": "0.0.0",
-  "exports": "./src/main.ts",
+  "exports": "./src/mod.ts",
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "lib": ["dom", "dom.asynciterable", "dom.iterable", "deno.ns", "esnext"]
   },
   "imports": {
-    "$": "./src/main.ts",
+    "$": "./src/mod.ts",
     "$.pages/": "./src/pages/",
     "$.shared-components/": "./src/shared-components/",
     "$.services/": "./src/services/",
@@ -126,12 +180,12 @@ async function init(dir = "."): Promise<void> {
   "tasks": {
     "dev": "sprig dev .",
     "build": "sprig build .",
-    "start": "sprig serve bootstrap/serve.ts"
+    "start": "sprig serve bootstrap/mod.ts"
   }
 }
 `,
 
-    "bootstrap/serve.ts": [
+    "bootstrap/mod.ts": [
       `// Your host backend is Danet (jsr:@danet/core). The sprig UI mounts as MIDDLEWARE`,
       `// at /ui via app.use(ui): /ui/** → sprig (assets + SSR), everything else → your`,
       `// Danet controllers. Build first (\`deno task build\`), then \`deno task start\`.`,
@@ -156,7 +210,7 @@ async function init(dir = "."): Promise<void> {
       ``,
     ].join("\n"),
 
-    "src/main.ts": [
+    "src/mod.ts": [
       `// The whole app, three declarations. \`routes\` drive everything: a route's \`load\``,
       `// names a page folder (template.html + optional logic.ts class for its data/behavior)`,
       `// — no per-page imports, no module map. Add a page = add a route.`,
@@ -271,6 +325,7 @@ async function init(dir = "."): Promise<void> {
  *  picker. Reuses the framework — no separate workbench app. Generated previews live in a
  *  gitignorable `src/_isolate/`. */
 async function isolate(appDir = "."): Promise<void> {
+  await withMergedConfig(appDir);
   Deno.env.set("SPRIG_DEV", "1");
   const root = resolve(appDir);
   const srcDir = join(root, "src");
