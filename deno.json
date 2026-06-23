@@ -1,5 +1,5 @@
 {
-  "nodeModulesDir": "manual",
+  "nodeModulesDir": "auto",
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
