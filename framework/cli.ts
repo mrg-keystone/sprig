@@ -236,12 +236,40 @@ async function init(dir = "."): Promise<void> {
   );
 }
 
+/** The component/page workbench. The full storybook UI (discovery + controls + preview
+ *  bridge) is the sprig repo's `cli/main.ts`; packaging it to run against any app's
+ *  `isolate/` fixtures is in progress, so this currently points the way rather than
+ *  serving it. */
+function isolate(_appDir = "."): void {
+  console.error(
+    "sprig isolate is not packaged for standalone apps yet.\n\n" +
+      "The workbench (discover isolate/ fixtures → preview components/pages with live\n" +
+      "controls) currently runs from the sprig repo. Packaging it as `sprig isolate`\n" +
+      "(its own published entry) is the next step.",
+  );
+  Deno.exit(1);
+}
+
+/** Re-install the global `sprig` command from the latest published CLI. */
+async function update(): Promise<void> {
+  console.log("Updating the sprig CLI from jsr:@sprig/core/cli …");
+  const { code } = await new Deno.Command("deno", {
+    args: ["install", "-gAf", "-n", "sprig", "jsr:@sprig/core/cli"],
+    stdout: "inherit",
+    stderr: "inherit",
+  }).output();
+  if (code !== 0) Deno.exit(code);
+  console.log("✓ sprig is up to date.");
+}
+
 const USAGE = `sprig — the framework CLI
 
   sprig init  [dir]              scaffold a minimal, runnable sprig app (default: .)
   sprig dev   [appDir]           state-preserving HMR dev server → /ui (default: .)
   sprig build [appDir]           code-split islands + scope CSS + Tailwind → static/ (default: .)
+  sprig isolate [appDir]         component/page workbench — develop in isolation (default: .)
   sprig serve [entry]            boot a serve.ts's default { fetch } handler (default: serve.ts)
+  sprig update                   re-install the global sprig CLI from the latest JSR release
   sprig help
 `;
 
@@ -258,6 +286,12 @@ switch (cmd) {
     break;
   case "serve":
     await serve(rest[0]);
+    break;
+  case "update":
+    await update();
+    break;
+  case "isolate":
+    await isolate(rest[0]);
     break;
   case undefined:
   case "help":
