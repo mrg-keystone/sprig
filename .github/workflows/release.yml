@@ -29,6 +29,7 @@ jobs:
           # node_modules — the members are present now, so the workspace resolves.
           cp -R framework packages skills app server cli bundle/
           cp serve.ts bundle/serve.ts
+          cp serve-dev.ts bundle/serve-dev.ts
           cp deno.json bundle/deno.json
           tar -czf sprig-runtime.tar.gz -C bundle .
           echo "Bundle sanity (grammar.wasm + deno.json + serve.ts + app/ + server/, NOT node_modules):"

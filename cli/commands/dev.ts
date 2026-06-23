@@ -45,22 +45,23 @@ export const devCmd = new Command()
     const n = await generatePreviews(entries, appSrc, resolve(root, "src"));
     console.log(`Generated ${n} preview page(s) for ${entries.length} component(s).`);
 
-    // 3. build the workbench app (code-split islands + scope CSS) → static/
+    // 3. build the workbench app in DEV mode (code-split islands + scope CSS + the HMR client) → static/
     const build = await new Deno.Command("deno", {
-      args: ["run", "-A", resolve(REPO, "framework/cli.ts"), "build", "app"],
+      args: ["run", "-A", resolve(REPO, "framework/cli.ts"), "build", "app", "--dev"],
       cwd: REPO,
       stdout: "inherit",
       stderr: "inherit",
     }).output();
     if (!build.success) Deno.exit(build.code);
 
-    // 4. serve the single origin: the sprig shell + the generated previews + the
-    //    in-process keep backend (discovery for the sidebar + the test runner).
+    // 4. serve the single origin: the sprig shell + the generated previews + the in-process
+    //    keep backend (discovery for the sidebar + the test runner), wrapped in the compiler's
+    //    dev server (serve-dev.ts) so editing a component hot-swaps it in the stage — HMR.
     const port = Number(Deno.env.get("PORT") ?? 8000);
     const child = new Deno.Command("deno", {
-      args: ["serve", "-A", "--unstable-kv", `--port=${port}`, resolve(REPO, "serve.ts")],
+      args: ["serve", "-A", "--unstable-kv", `--port=${port}`, resolve(REPO, "serve-dev.ts")],
       cwd: REPO,
-      env: { ...Deno.env.toObject(), ISOLATE_PROJECT: root },
+      env: { ...Deno.env.toObject(), ISOLATE_PROJECT: root, SPRIG_DEV: "1" },
       stdout: "inherit",
       stderr: "inherit",
       stdin: "inherit",
