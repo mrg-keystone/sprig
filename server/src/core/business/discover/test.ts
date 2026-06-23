@@ -60,3 +60,28 @@ Deno.test("discover returns empty for a project with no isolate/ folders", async
     await Deno.remove(dir, { recursive: true });
   }
 });
+
+Deno.test("discover shows a shared-component without isolate/ via a Default case, and skips a case-less page", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    // a leaf component in sprig's documented root, with NO isolate/ folder
+    await Deno.mkdir(`${dir}/src/shared-components/ui-button`, { recursive: true });
+    await Deno.writeTextFile(`${dir}/src/shared-components/ui-button/template.html`, "<button>hi</button>");
+    // a page, also with no isolate/ — must be skipped (data deps can't be isolated unmodified)
+    await Deno.mkdir(`${dir}/src/pages/home`, { recursive: true });
+    await Deno.writeTextFile(`${dir}/src/pages/home/template.html`, "<main>home</main>");
+
+    const r = await discover(dir);
+    assertEquals(r.problems, []);
+    assertEquals(r.entries.length, 1); // the component shows; the case-less page is skipped
+    const e = r.entries[0];
+    assertEquals(e.label, "ui-button");
+    assertEquals(e.root, "shared-components");
+    assertEquals(e.cases.length, 1);
+    assertEquals(e.cases[0].name, "default");
+    assertEquals(e.cases[0].label, "Default");
+    assertEquals(e.cases[0].route, "/components/ui-button/default");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});

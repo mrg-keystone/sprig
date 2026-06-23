@@ -34,7 +34,7 @@
 // Case special keys: _name (label), _innerHtml (-> innerHTML), _signals (-> signals).
 
 export type Kind = "static" | "island";
-export type Root = "components" | "islands" | "pages";
+export type Root = "components" | "islands" | "pages" | "shared-components";
 /** What's being isolated: a single component (components/ + islands/) or a page (pages/). */
 export type Target = "component" | "page";
 
@@ -365,9 +365,27 @@ async function collectCases(
   return cases;
 }
 
+/** A synthesized single case for a folder-component that has no isolate/ cases yet — so it
+ *  still shows in the workbench (render as-is, no props). The docs define a component as any
+ *  folder with a template.html; isolate/ cases are optional, additive named states. */
+function defaultCase(prefix: string, category: string, folder: string): CaseDef {
+  return {
+    name: "default",
+    label: "Default",
+    jsonPath: "",
+    props: {},
+    signals: {},
+    route: folder ? `/${prefix}/${category}/${folder}/default` : `/${prefix}/${category}/default`,
+    tests: [],
+  };
+}
+
 export async function discover(projectRoot: string): Promise<DiscoverResult> {
-  // components/ + islands/ hold single components; pages/ holds page compositions.
+  // sprig's documented roots: shared-components/ holds global reusable components/islands,
+  // pages/ holds page compositions. components/ + islands/ are also scanned for back-compat
+  // with the Fresh-era layout (e.g. the fixtures app).
   const roots: { dir: Root; target: Target }[] = [
+    { dir: "shared-components", target: "component" },
     { dir: "components", target: "component" },
     { dir: "islands", target: "component" },
     { dir: "pages", target: "page" },
@@ -383,12 +401,12 @@ export async function discover(projectRoot: string): Promise<DiscoverResult> {
       // Skip the isolate/ folder itself and anything inside it — checked relative
       // to the scan root, so an "isolate" ancestor in the abs path doesn't match.
       if (rel.split("/").includes("isolate")) continue;
-      const isolateDir = `${dir}/isolate`;
-      if (!(await exists(isolateDir))) continue;
-      // A sprig folder-component is a folder with a template.html. Skip anything
-      // with an isolate/ folder but no template (not a previewable component).
+      // A sprig folder-component is a folder with a template.html — that alone makes it
+      // previewable. isolate/ (fixture + named cases) is OPTIONAL; without it the component
+      // still shows with a synthesized Default case.
       const templatePath = `${dir}/template.html`;
       if (!(await exists(templatePath))) continue;
+      const isolateDir = `${dir}/isolate`;
 
       const label = rel.split("/").pop() ?? rel;
       const exportName = label; // sprig selector = folder basename (no PascalCase)
@@ -445,6 +463,16 @@ export async function discover(projectRoot: string): Promise<DiscoverResult> {
       }
       delete controlDefs._background;
 
+      // isolate/ cases when present. Without them: a leaf component still shows with a
+      // synthesized Default case, but a PAGE is skipped — a page is a routed composition with
+      // data deps (resolve.ts / inject / project `$` aliases) that can't be copied out of the
+      // project and built unmodified; it needs explicit isolate/ cases to preview.
+      let cases = await collectCases(isolateDir, controlDefs, prefix, category, folder, problems);
+      if (cases.length === 0) {
+        if (target === "page") continue;
+        cases = [defaultCase(prefix, category, folder)];
+      }
+
       entries.push({
         // Root-qualified so a component and a page with the same name don't
         // collide on the generated preview-island filename.
@@ -465,14 +493,7 @@ export async function discover(projectRoot: string): Promise<DiscoverResult> {
         controlDefs,
         subControlDefs,
         subTargets,
-        cases: await collectCases(
-          isolateDir,
-          controlDefs,
-          prefix,
-          category,
-          folder,
-          problems,
-        ),
+        cases,
       });
     }
   }
