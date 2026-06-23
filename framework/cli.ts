@@ -10,20 +10,16 @@
  *
  * The framework runtime lives next to this file at ./.sprig (core + compiler).
  */
-import { dirname, fromFileUrl, join, resolve, toFileUrl } from "@std/path";
+import { dirname, join, resolve } from "@std/path";
 // static relative imports of the package's own modules (computed-path dynamic imports
 // are unanalyzable + don't resolve once this is published to JSR).
 import { buildClient } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
 import { sprigUi } from "../packages/keep/mod.ts";
 
-const HERE = dirname(fromFileUrl(import.meta.url)); // framework/
-const SPRIG = join(HERE, ".sprig"); // framework/.sprig
-const KEEP = join(HERE, "..", "packages", "keep", "mod.ts");
-
-// an ABSOLUTE file:// specifier — stable regardless of where the app is scaffolded
-// (a relative path back to the framework breaks once the app moves; abs file:// doesn't).
-const fileUrl = (base: string, ...rest: string[]): string => toFileUrl(join(base, ...rest)).href;
+// the published-package version range a scaffolded app pins (core + its /keep + /cli
+// sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
+const SPRIG_RANGE = "^0.1.0";
 
 async function build(appDir = "app", dev = false): Promise<void> {
   const srcDir = join(resolve(appDir), "src");
@@ -91,22 +87,19 @@ async function init(dir = "."): Promise<void> {
           lib: ["dom", "dom.asynciterable", "dom.iterable", "deno.ns", "esnext"],
         },
         imports: {
-          // ABSOLUTE file:// — stable wherever this app is scaffolded (until @sprig/* is
-          // published to JSR, at which point these become jsr:@sprig/...). The app needs
-          // only these two: core (runtime primitives) + keep (server: the SSR renderer +
-          // the /ui mount). The compiler/build is CLI-internal — the app never imports it.
-          "@sprig/core": fileUrl(SPRIG, "core.ts"),
-          "@sprig/keep": toFileUrl(KEEP).href,
+          // The app needs only these two sprig entry points: core (runtime primitives) +
+          // keep (server: the SSR renderer + the /ui mount). Both live in the published
+          // @sprig/core package — keep is its `/keep` sub-export. The compiler/build is
+          // CLI-internal (jsr:@sprig/core/cli), never imported by the app.
+          "@sprig/core": `jsr:@sprig/core@${SPRIG_RANGE}`,
+          "@sprig/keep": `jsr:@sprig/core@${SPRIG_RANGE}/keep`,
           "@danet/core": "jsr:@danet/core@^2",
-          "@preact/signals-core": "npm:@preact/signals-core@^1.8.0",
-          "web-tree-sitter": "npm:web-tree-sitter@^0.25",
           "@std/path": "jsr:@std/path@^1",
-          "@std/fs": "jsr:@std/fs@^1",
           "@std/assert": "jsr:@std/assert@^1",
         },
         tasks: {
-          dev: `deno run -A ${toFileUrl(join(HERE, "cli.ts")).href} dev .`,
-          build: `deno run -A ${toFileUrl(join(HERE, "cli.ts")).href} build .`,
+          dev: `deno run -A jsr:@sprig/core@${SPRIG_RANGE}/cli dev .`,
+          build: `deno run -A jsr:@sprig/core@${SPRIG_RANGE}/cli build .`,
           start: "deno run -A serve.ts",
         },
       },
