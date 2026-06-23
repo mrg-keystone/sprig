@@ -44,6 +44,80 @@ function freePort(start: number): number {
   return start;
 }
 
+/** A per-project file (in TMPDIR, not the project) where pinLocalSprig stashes the app's
+ *  ORIGINAL deno.json, so a `sprig dev` killed mid-session can self-heal on the next run. */
+function sprigBackupPath(appDir: string): string {
+  const tmp = Deno.env.get("TMPDIR") ?? "/tmp";
+  const key = resolve(appDir).replace(/[^A-Za-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "app";
+  return join(tmp, "sprig-dev", key, "deno.json.orig");
+}
+
+/** If a previous `sprig dev` was killed (e.g. SIGKILL) before it could restore the app's
+ *  deno.json, the backup still exists — put it back. */
+async function healLocalSprig(appDir: string): Promise<void> {
+  const bak = sprigBackupPath(appDir);
+  try {
+    const orig = await Deno.readTextFile(bak);
+    await Deno.writeTextFile(join(resolve(appDir), "deno.json"), orig);
+    await Deno.remove(bak).catch(() => {});
+    console.log("sprig: restored deno.json from an interrupted previous `sprig dev`.");
+  } catch { /* no backup → nothing to heal */ }
+}
+
+/** Point the app's `@sprig/core` + `@sprig/keep` at the LOCAL install. The app pins them to
+ *  JSR (`jsr:@sprig/core@…`) for portability, but importing its mod.ts with a JSR pin pulls a
+ *  SECOND @sprig/core — the JSR build — into the process, and two web-tree-sitter wasm
+ *  instances can't co-exist (`Import #0 "./env"`). deno reads the app's deno.json at STARTUP,
+ *  so the swap must be in place before the dev child launches. We back the original up to
+ *  TMPDIR (self-heal) and return a sync restore. No-op when already local / no deno.json. */
+async function pinLocalSprig(appDir: string): Promise<{ active: boolean; restore: () => void }> {
+  const inactive = { active: false, restore: () => {} };
+  const cfgPath = join(resolve(appDir), "deno.json");
+  let original: string;
+  try {
+    original = await Deno.readTextFile(cfgPath);
+  } catch {
+    return inactive;
+  }
+  let cfg: { imports?: Record<string, string> };
+  try {
+    cfg = JSON.parse(original);
+  } catch {
+    return inactive;
+  }
+  if (!cfg.imports) return inactive;
+  const installDir = join(dirname(fromFileUrl(import.meta.url)), "..");
+  const locals: Record<string, string> = {
+    "@sprig/core": join(installDir, "framework", ".sprig", "core.ts"),
+    "@sprig/keep": join(installDir, "packages", "keep", "mod.ts"),
+  };
+  let changed = false;
+  for (const [k, local] of Object.entries(locals)) {
+    const v = cfg.imports[k];
+    if (typeof v === "string" && !/^(\.{0,2}\/|\/)/.test(v)) { // a non-local (jsr:/npm:/bare) map
+      cfg.imports[k] = local;
+      changed = true;
+    }
+  }
+  if (!changed) return inactive;
+  const bak = sprigBackupPath(appDir);
+  await Deno.mkdir(dirname(bak), { recursive: true });
+  await Deno.writeTextFile(bak, original);
+  await Deno.writeTextFile(cfgPath, JSON.stringify(cfg, null, 2));
+  let done = false;
+  const restore = () => {
+    if (done) return;
+    done = true;
+    try {
+      Deno.writeTextFileSync(cfgPath, original); // sync → safe inside signal handlers
+    } catch { /* best effort */ }
+    try {
+      Deno.removeSync(bak);
+    } catch { /* best effort */ }
+  };
+  return { active: true, restore };
+}
+
 /** `dev`/`isolate` import the app's SSR renderer in-process, and that renderer dynamically
  *  imports the app's logic.ts — whose `$.*` aliases live in the APP's deno.json, not the
  *  installed CLI's (~/.sprig) config. So re-run under a MERGED config: the install's compiler
@@ -58,6 +132,7 @@ async function withMergedConfig(appDir: string): Promise<void> {
   const installDir = join(dirname(fromFileUrl(import.meta.url)), ".."); // framework/ → install root
   const rtCfgPath = join(installDir, "deno.json");
   if (!(await fileExists(appCfgPath)) || !(await fileExists(rtCfgPath))) return;
+  await healLocalSprig(appDir); // recover the app's deno.json if a prior `sprig dev` was killed
   let appCfg: { imports?: Record<string, string> }, rtCfg: Record<string, unknown>;
   try {
     appCfg = JSON.parse(await Deno.readTextFile(appCfgPath));
@@ -78,19 +153,45 @@ async function withMergedConfig(appDir: string): Promise<void> {
   }
   const mergedPath = join(installDir, ".sprig-app.json");
   await Deno.writeTextFile(mergedPath, JSON.stringify({ ...rtCfg, imports }, null, 2));
-  const { code } = await new Deno.Command(Deno.execPath(), {
-    args: ["run", "-A", "--config", mergedPath, fromFileUrl(import.meta.url), ...Deno.args],
-    env: { ...Deno.env.toObject(), SPRIG_MERGED: "1" },
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  }).output();
-  Deno.exit(code);
+  // Pin the app's @sprig/* to the LOCAL install for the child run (deno reads the app's
+  // deno.json at startup, so the swap must precede the launch). Restore on normal exit AND on
+  // Ctrl-C; a SIGKILL is caught by healLocalSprig on the next run.
+  const pin = await pinLocalSprig(appDir);
+  if (pin.active) {
+    const onSig = () => {
+      pin.restore();
+      Deno.exit(130);
+    };
+    Deno.addSignalListener("SIGINT", onSig);
+    Deno.addSignalListener("SIGTERM", onSig);
+  }
+  try {
+    const { code } = await new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", "--config", mergedPath, fromFileUrl(import.meta.url), ...Deno.args],
+      env: { ...Deno.env.toObject(), SPRIG_MERGED: "1" },
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    }).output();
+    pin.restore();
+    Deno.exit(code);
+  } catch (e) {
+    pin.restore();
+    throw e;
+  }
 }
 
-async function build(appDir = ".", dev = false): Promise<void> {
+/** Dev/HMR build output lives in a per-project temp dir, NOT the project's static/, so
+ *  `sprig dev` never litters the source tree. Stable per project so HMR rebuilds reuse it.
+ *  (`sprig build` keeps writing <cwd>/static — the deploy artifact serveSprig reads.) */
+function devCacheDir(appDir: string): string {
+  const tmp = Deno.env.get("TMPDIR") ?? "/tmp";
+  const key = resolve(appDir).replace(/[^A-Za-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "app";
+  return join(tmp, "sprig-dev", key, "static");
+}
+
+async function build(appDir = ".", dev = false, outDir = join(Deno.cwd(), "static")): Promise<void> {
   const srcDir = join(resolve(appDir), "src");
-  const outDir = join(Deno.cwd(), "static");
   const r = await buildClient(srcDir, outDir, { dev });
   console.log(
     `sprig build${dev ? " (dev)" : ""}: ${r.islands.length} island chunk(s) ` +
@@ -120,24 +221,24 @@ async function dev(appDir = ".", base = "/ui"): Promise<void> {
   // server (Deno.watchFs + SSE + live AST). Template/CSS edits hot-swap in place
   // keeping island state; logic/server edits rebuild + reload.
   Deno.env.set("SPRIG_DEV", "1");
-  await build(appDir, true);
+  // Dev build + assets live in a per-project temp cache, NOT <project>/static — so `sprig dev`
+  // leaves the source tree clean. The same dir feeds the initial build, HMR rebuilds, and the
+  // asset server (sprigUi assetsDir), so they all agree.
+  const outDir = devCacheDir(appDir);
+  await Deno.mkdir(outDir, { recursive: true });
+  await build(appDir, true, outDir);
   // build the HMR base handler from the sprig APP itself — NOT the host's serve.ts (which
   // may be a Danet/other host with no { fetch } export). `sprig dev` serves /ui with HMR;
   // the host (serve.ts) is for `deno task start`.
   const { renderer, sprigApp } = await import(toFileUrl(join(resolve(appDir), "src", "mod.ts")).href);
-  const ui = sprigUi({ app: sprigApp, base });
+  const ui = sprigUi({ app: sprigApp, base, assetsDir: outDir });
   const handler = {
     fetch: (req: Request, info: Deno.ServeHandlerInfo): Promise<Response> =>
       ui(req, info).then((r: Response | null) => r ?? new Response("Not Found", { status: 404 })),
   };
-  const devSrv = createDevServer({
-    renderer,
-    base,
-    outDir: join(Deno.cwd(), "static"),
-    handler,
-  });
+  const devSrv = createDevServer({ renderer, base, outDir, handler });
   const port = freePort(Number(Deno.env.get("PORT") ?? 8000));
-  console.log(`sprig dev → http://localhost:${port}${base}  (HMR on; edit templates/CSS, island state is preserved)`);
+  console.log(`sprig dev → http://localhost:${port}${base}  (HMR on; build cache: ${outDir})`);
   Deno.serve({ port }, (req: Request, info: Deno.ServeHandlerInfo) => devSrv.fetch(req, info));
 }
 
