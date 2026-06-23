@@ -30,6 +30,10 @@ function isSerializable(v: unknown): boolean {
   if (t === "number") return Number.isFinite(v);
   if (t === "string" || t === "boolean") return true;
   if (t === "object") {
+    // Set/Map JSON.stringify to "{}" WITHOUT throwing — a silent TOTAL data loss that
+    // would restore as an empty object on the client. Drop them (like the lossy-number
+    // case above) so the field keeps its constructor default instead of being corrupted.
+    if (v instanceof Set || v instanceof Map) return false;
     try {
       JSON.stringify(v);
       return true;

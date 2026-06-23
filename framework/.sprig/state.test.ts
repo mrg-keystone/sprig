@@ -119,6 +119,37 @@ Deno.test("restoreState applies persisted values SYNCHRONOUSLY (no microtask), s
   }
 });
 
+// BUG (workflow core.ts) — restore() did Object.assign(this, JSON.parse(raw)) with no
+// key validation, so a corrupt/tampered localStorage entry whose key collides with a
+// method name (or "__proto__") could overwrite the method / pollute the prototype,
+// breaking the next persist()/restore(). It must overlay DATA fields only.
+Deno.test("StateService: restore() never lets a persisted key clobber a method or __proto__", () => {
+  const store = mockLocalStorage();
+  try {
+    class S extends StateService {
+      count = 0;
+    }
+    // raw JSON (an object-literal "__proto__:" would set the prototype, not a key) with
+    // keys colliding with methods + a prototype-pollution attempt.
+    store.set(
+      "sprig:state:S",
+      '{"count":7,"persist":1,"reset":2,"restore":3,"__proto__":{"polluted":true}}',
+    );
+    const s = new S();
+    s.restore();
+    assertEquals(s.count, 7, "the real data field is still overlaid");
+    assertEquals(typeof s.persist, "function", "persist method not clobbered");
+    assertEquals(typeof s.reset, "function", "reset method not clobbered");
+    assertEquals(typeof s.restore, "function", "restore method not clobbered");
+    assert(!("polluted" in ({} as Record<string, unknown>)), "no prototype pollution");
+    // the methods still actually work after a malicious restore
+    s.persist();
+    assert(store.has("sprig:state:S"));
+  } finally {
+    unmock();
+  }
+});
+
 Deno.test("StateService: persist/restore/reset are no-ops with no localStorage (server)", () => {
   // no localStorage in scope → must not throw
   class S extends StateService {

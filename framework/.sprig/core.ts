@@ -149,7 +149,17 @@ export class StateService {
     const raw = localStorage.getItem(this.storageKey());
     if (raw === null) return;
     try {
-      Object.assign(this, JSON.parse(raw) as Record<string, unknown>);
+      const data = JSON.parse(raw) as Record<string, unknown>;
+      // Overlay only DATA fields. A corrupt/tampered entry whose key collides with a
+      // method name (persist/reset/restore/storageKey) or "__proto__" must NOT clobber
+      // the method or pollute the prototype — that would break the service on the next
+      // persist()/restore() call. Skip a key whose current value is a function (a method
+      // up the prototype chain) and never write through "__proto__".
+      for (const k of Object.keys(data)) {
+        if (k === "__proto__") continue;
+        if (typeof (this as Record<string, unknown>)[k] === "function") continue;
+        (this as Record<string, unknown>)[k] = data[k];
+      }
     } catch { /* corrupt entry → keep current state */ }
   }
   /** Reset every field to its constructed default AND delete the saved state. */

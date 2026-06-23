@@ -158,7 +158,7 @@ function renderNode(node: Node, opts: RenderOpts): string {
     case "defer_block":
       // SSR renders the deferred content (client @defer triggers come with hydration).
       // Clone the scope so view-local @let bindings never leak into the parent.
-      return renderNodes(named(blockOf(node)!), { ...opts, scope: { ...opts.scope } });
+      return renderNodes(named(blockOf(node)!), { ...opts, scope: cloneScope(opts.scope) });
     case "comment":
       return "";
     default:
@@ -313,7 +313,7 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
           inputs,
           (_k, v) => (typeof v === "number" && !Number.isFinite(v)) ? ("\u0000nf:" + String(v)) : v,
         );
-        key = `${comp.selector} ${childScope} ${ser}`;
+        key = `${defToken(comp)} ${comp.selector} ${childScope} ${ser}`;
         const hit = staticCache.get(key);
         if (hit !== undefined) {
           staticCacheHits++;
@@ -340,6 +340,20 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
 const STATIC_CACHE_MAX = 10_000;
 const staticCache = new Map<string, string>();
 let staticCacheHits = 0;
+// Per-ComponentDef cache namespace. The cache is a MODULE-GLOBAL Map shared by every
+// createRenderer in the process, but its old key (selector + scope id + inputs) carried
+// no renderer identity — so two renderers whose fixtures place a same-name component at
+// the SAME relDir (→ same scope id) but with DIFFERENT template content collided on one
+// key and the second got the first's HTML (a cross-renderer leak). Two distinct renderers
+// build DISTINCT ComponentDef objects even for the same relDir, so namespacing the key by
+// def identity isolates them while still letting ONE renderer reuse its own memoized leaf.
+const defTokens = new WeakMap<ComponentDef, string>();
+let defSeq = 0;
+function defToken(comp: ComponentDef): string {
+  let t = defTokens.get(comp);
+  if (t === undefined) defTokens.set(comp, (t = "d" + (defSeq++)));
+  return t;
+}
 /** Clear the static-component HTML cache — call when a template changes (dev HMR). */
 export function clearStaticCache(): void {
   staticCache.clear();
@@ -699,13 +713,26 @@ function blockOf(node: Node): Node | null {
   return named(node).find((c: Node) => c.type === "block") ?? null;
 }
 
+/** Clone a scope for a control-flow sub-view (@if/@for/@switch/@defer), PRESERVING
+ *  the prototype so a class-instance scope keeps its methods/fields resolvable
+ *  inside the block (bug AK — the same reason resolveIslands clones this way). A
+ *  plain object-spread copies only own enumerable props and DROPS the prototype, so
+ *  a method call inside the block would resolve to undefined and render empty.
+ *  Copying own-property descriptors onto a clone of the same prototype keeps @let
+ *  isolation (a @let write lands as an OWN prop on the clone, not the shared
+ *  instance) AND lets scope.method() / (name in scope) resolve through the prototype. */
+function cloneScope(scope: Scope, extra?: Record<string, unknown>): Scope {
+  const clone = Object.create(Object.getPrototypeOf(scope), Object.getOwnPropertyDescriptors(scope));
+  return extra ? Object.assign(clone, extra) : clone;
+}
+
 function renderIf(node: Node, opts: RenderOpts): string {
   const cond = evalExpr(field(node, "condition"), opts.scope);
   // Each @if view is its own block: clone the scope so view-local bindings (@let)
   // and any alias stay scoped to the branch and never leak into the parent.
   if (cond) {
     const alias = field(node, "alias");
-    const scope = alias ? { ...opts.scope, [alias.text]: cond } : { ...opts.scope };
+    const scope = alias ? cloneScope(opts.scope, { [alias.text]: cond }) : cloneScope(opts.scope);
     return renderNodes(named(field(node, "consequence")!), { ...opts, scope });
   }
   for (const alt of named(node)) {
@@ -713,11 +740,11 @@ function renderIf(node: Node, opts: RenderOpts): string {
       const c = evalExpr(field(alt, "condition"), opts.scope);
       if (c) {
         const alias = field(alt, "alias");
-        const scope = alias ? { ...opts.scope, [alias.text]: c } : { ...opts.scope };
+        const scope = alias ? cloneScope(opts.scope, { [alias.text]: c }) : cloneScope(opts.scope);
         return renderNodes(named(blockOf(alt)!), { ...opts, scope });
       }
     } else if (alt.type === "else_clause") {
-      return renderNodes(named(blockOf(alt)!), { ...opts, scope: { ...opts.scope } });
+      return renderNodes(named(blockOf(alt)!), { ...opts, scope: cloneScope(opts.scope) });
     }
   }
   return "";
@@ -736,14 +763,14 @@ function renderFor(node: Node, opts: RenderOpts): string {
   const arr = Array.isArray(collection) ? collection : [];
   if (arr.length === 0) {
     const empty = named(node).find((c: Node) => c.type === "empty_clause");
-    return empty ? renderNodes(named(blockOf(empty)!), { ...opts, scope: { ...opts.scope } }) : "";
+    return empty ? renderNodes(named(blockOf(empty)!), { ...opts, scope: cloneScope(opts.scope) }) : "";
   }
   let out = "";
   for (let i = 0; i < arr.length; i++) {
     const locals: Record<string, unknown> = {
       $index: i, $count: arr.length, $first: i === 0, $last: i === arr.length - 1, $even: i % 2 === 0, $odd: i % 2 === 1,
     };
-    const scope: Scope = { ...opts.scope, [item]: arr[i], ...locals };
+    const scope: Scope = cloneScope(opts.scope, { [item]: arr[i], ...locals });
     for (const a of aliases) scope[a.name] = locals[a.src];
     out += renderNodes(named(field(node, "consequence") ?? blockOf(node)!), { ...opts, scope });
   }
@@ -757,12 +784,12 @@ function renderSwitch(node: Node, opts: RenderOpts): string {
     if (c.type === "case_clause") {
       // Each case body is its own view: clone the scope so a case-local @let never
       // leaks into the parent (or into a later case's condition evaluation).
-      if (evalExpr(field(c, "value"), opts.scope) === value) return renderNodes(named(blockOf(c)!), { ...opts, scope: { ...opts.scope } });
+      if (evalExpr(field(c, "value"), opts.scope) === value) return renderNodes(named(blockOf(c)!), { ...opts, scope: cloneScope(opts.scope) });
     } else if (c.type === "default_clause") {
       dflt = c;
     }
   }
-  return dflt ? renderNodes(named(blockOf(dflt)!), { ...opts, scope: { ...opts.scope } }) : "";
+  return dflt ? renderNodes(named(blockOf(dflt)!), { ...opts, scope: cloneScope(opts.scope) }) : "";
 }
 
 // ───────────────────────────────── helpers ──────────────────────────────────

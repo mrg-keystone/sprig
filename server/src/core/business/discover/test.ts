@@ -1,14 +1,17 @@
 import { assert, assertEquals } from "#std/assert";
 import { discover } from "./mod.ts";
 
-// Build a minimal Fresh-shaped project with one isolatable component.
+// Build a minimal sprig-shaped project (folder-component + isolate/) with one
+// isolatable component. A sprig component is a folder with a `template.html`
+// under src/<root>/; the selector IS the folder basename (no .tsx scanning).
 async function tempProject(): Promise<string> {
   const dir = await Deno.makeTempDir();
-  const iso = `${dir}/components/btn/isolate`;
+  const comp = `${dir}/src/components/btn`;
+  const iso = `${comp}/isolate`;
   await Deno.mkdir(`${iso}/cases/primary`, { recursive: true });
   await Deno.writeTextFile(
-    `${dir}/components/btn/Btn.tsx`,
-    "export function Btn() { return null; }",
+    `${comp}/template.html`,
+    "<button>{{ label }}</button>",
   );
   await Deno.writeTextFile(
     `${iso}/fixture.json`,
@@ -34,7 +37,9 @@ Deno.test("discover finds an isolatable component and its case", async () => {
     assertEquals(e.label, "btn");
     assertEquals(e.kind, "static");
     assertEquals(e.root, "components");
-    assertEquals(e.exportName, "Btn");
+    // sprig selector is the folder basename (no .tsx export scanning).
+    assertEquals(e.exportName, "btn");
+    assertEquals(e.componentFile, `${dir}/src/components/btn/template.html`);
     assertEquals(e.category, "btns");
     assertEquals(e.cases.length, 1);
     assertEquals(e.cases[0].route, "/components/btns/primary");

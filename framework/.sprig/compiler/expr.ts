@@ -51,11 +51,19 @@ export function evalExpr(node: Node | null, scope: Scope): unknown {
       const argsNode = field(node, "arguments");
       // method calls: read the method off the receiver and rebind `this` to it
       // (e.g. items.reduce(...)). Evaluate the receiver EXACTLY ONCE so calls like
-      // factory().value() don't run factory() twice.
-      if (fnNode.type === "member_expression" || fnNode.type === "safe_member_expression") {
-        const recv = evalExpr(field(fnNode, "object"), scope) as Record<string, unknown> | null;
+      // factory().value() don't run factory() twice. A COMPUTED-member call
+      // (obj[key]()) is still a method call, so it rebinds `this` to the receiver
+      // exactly like the dotted/safe forms — else the method runs unbound.
+      if (
+        fnNode.type === "member_expression" || fnNode.type === "safe_member_expression" ||
+        fnNode.type === "subscript_expression"
+      ) {
+        const recv = evalExpr(field(fnNode, "object"), scope) as Record<PropertyKey, unknown> | null;
         if (recv == null) return undefined; // matches member null-receiver + safe-navigation
-        const fn = (recv as Record<string, unknown>)[field(fnNode, "property")!.text];
+        const prop = fnNode.type === "subscript_expression"
+          ? (evalExpr(field(fnNode, "index"), scope) as PropertyKey)
+          : field(fnNode, "property")!.text;
+        const fn = recv[prop];
         const args = argsNode ? named(argsNode).map((a: Node) => evalExpr(a, scope)) : [];
         return typeof fn === "function" ? (fn as (...a: unknown[]) => unknown).apply(recv, args) : undefined;
       }
@@ -132,27 +140,46 @@ function makeArrow(node: Node, scope: Scope): (...args: unknown[]) => unknown {
   const names = named(params).filter((c: Node) => c.type === "identifier").map((c: Node) => c.text);
   const body = field(node, "body")!;
   return (...args: unknown[]) => {
-    const inner: Scope = { ...scope };
+    // Inherit from scope (don't spread) so a class-instance scope keeps its
+    // prototype methods/fields resolvable inside the arrow body (same reason as
+    // evalStatement). Params are own props on the child and shadow scope; the
+    // shared scope object is never mutated.
+    const inner: Scope = Object.create(scope as object);
     names.forEach((n: string, i: number) => (inner[n] = args[i]));
     return evalExpr(body, inner);
   };
 }
 
 function unquote(s: string): string {
-  return s.slice(1, -1).replace(/\\(u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|.)/g, (_m, e) => {
-    const map = Object.assign(Object.create(null), {
-      n: "\n",
-      t: "\t",
-      r: "\r",
-      b: "\b",
-      f: "\f",
-      v: "\v",
-      "0": "\0",
-    });
-    if (e in map) return map[e];
-    if (e[0] === "u" || e[0] === "x") return String.fromCodePoint(parseInt(e.slice(1), 16));
-    return e;
-  });
+  // Recognise the ES2015 brace form \u{...} as well as \uXXXX / \xNN. A malformed
+  // or unknown \u/\x (e.g. bare "\u", "\users", "\xG") falls through to the "."
+  // alternative and MUST degrade to the literal char — never crash the evaluator
+  // (a thrown RangeError here aborts the whole SSR render from valid template input).
+  return s.slice(1, -1).replace(
+    /\\(u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|.)/g,
+    (_m, e) => {
+      const map = Object.assign(Object.create(null), {
+        n: "\n",
+        t: "\t",
+        r: "\r",
+        b: "\b",
+        f: "\f",
+        v: "\v",
+        "0": "\0",
+      });
+      if (e in map) return map[e];
+      // A well-formed unicode/hex escape (length > 1 means the regex matched the
+      // full \uXXXX / \u{...} / \xNN form, not the single-char "." fallback).
+      if ((e[0] === "u" || e[0] === "x") && e.length > 1) {
+        const code = parseInt(e[1] === "{" ? e.slice(2, -1) : e.slice(1), 16);
+        if (Number.isInteger(code) && code >= 0 && code <= 0x10FFFF) {
+          return String.fromCodePoint(code);
+        }
+        return e; // out-of-range code point → keep literal rather than throw
+      }
+      return e; // bare \u, \x, or any other escaped char → the literal char
+    },
+  );
 }
 
 // ───────────────────────────────── pipes ────────────────────────────────────
@@ -190,9 +217,33 @@ const PIPES: Record<string, (v: unknown, args: unknown[]) => unknown> = {
   // Angular's PercentPipe default digitsInfo is "1.0-0" (no fraction digits),
   // not the number/DecimalPipe default of up to 3.
   percent: (v, a) => {
-    const n = Number(v) * 100;
-    if (!isFinite(n)) return "";
-    return `${formatNumber(n, (a[0] as string | undefined) ?? "1.0-0")}%`;
+    const num = Number(v);
+    if (!isFinite(num)) return "";
+    // Scale + format with Intl's percent style so the ×100 happens on the value
+    // itself, NOT as a lossy binary-float multiply (Number(v)*100): 0.575 must
+    // render "58%", not "57%" (0.575*100 = 57.49999…). digitsInfo
+    // "{minInt}.{minFrac}-{maxFrac}" maps to Intl options; Angular's PercentPipe
+    // default is "1.0-0" (no fraction digits).
+    const m = ((a[0] as string | undefined) ?? "1.0-0").match(/^(\d+)\.(\d+)(?:-(\d+))?$/);
+    let minInt = 1, minFrac = 0, maxFrac = 0;
+    if (m) {
+      minInt = Number(m[1]);
+      minFrac = Number(m[2]);
+      maxFrac = m[3] !== undefined ? Number(m[3]) : Math.max(minFrac, 0);
+    }
+    minFrac = Math.min(Math.max(minFrac, 0), 100);
+    maxFrac = Math.min(Math.max(maxFrac, minFrac), 100);
+    minInt = Math.min(Math.max(minInt, 1), 21);
+    try {
+      return new Intl.NumberFormat("en-US", {
+        style: "percent",
+        minimumIntegerDigits: minInt,
+        minimumFractionDigits: minFrac,
+        maximumFractionDigits: maxFrac,
+      }).format(num);
+    } catch {
+      return `${Math.round(num * 100)}%`;
+    }
   },
   currency: (v, a) => {
     const n = Number(v);
@@ -263,7 +314,14 @@ function formatNumber(n: number, fmt?: string): string {
 }
 
 function formatDate(v: unknown, fmt: string): string {
-  const d = new Date(v as string);
+  // A date-ONLY ISO string ("YYYY-MM-DD") is parsed by `new Date` as UTC midnight,
+  // but every formatter below reads LOCAL fields — so in a UTC-negative timezone the
+  // rendered day is one too early, and SSR (server TZ) can disagree with client
+  // hydration (browser TZ). Angular's DatePipe treats a date-only string as LOCAL
+  // midnight; match that so the calendar date is stable regardless of timezone.
+  const d = typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)
+    ? new Date(Number(v.slice(0, 4)), Number(v.slice(5, 7)) - 1, Number(v.slice(8, 10)))
+    : new Date(v as string);
   if (isNaN(d.getTime())) return String(v ?? "");
   const opts: Record<string, Intl.DateTimeFormatOptions> = {
     short: { dateStyle: "short", timeStyle: "short" },

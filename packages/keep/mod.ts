@@ -108,7 +108,9 @@ async function serveAsset(dir: string, file: string, req: Request): Promise<Resp
   // contain to dir (no path traversal): reject only a real ".." path SEGMENT,
   // not a legitimate single-segment name that merely contains a ".." substring.
   // The guard runs AFTER decoding so an encoded "..%2f" traversal is still caught.
-  if (decoded.split("/").includes("..")) return new Response("Forbidden", { status: 403 });
+  // Split on BOTH separators: Windows treats "\" as a path separator too, so an
+  // encoded backslash ("..%5c") must be caught as well — not just "/" (".."%2f).
+  if (decoded.split(/[/\\]/).includes("..")) return new Response("Forbidden", { status: 403 });
   try {
     const path = `${dir}/${decoded}`;
     const stat = await Deno.stat(path);
