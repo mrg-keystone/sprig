@@ -98,46 +98,44 @@ async function init(dir = "."): Promise<void> {
   const name = (dir === "." ? "sprig-app" : dir.split("/").pop()) || "sprig-app";
 
   const files: Record<string, string> = {
-    "deno.json": JSON.stringify(
-      {
-        name: `@app/${name}`,
-        version: "0.0.0",
-        exports: "./src/main.ts",
-        compilerOptions: {
-          experimentalDecorators: true,
-          emitDecoratorMetadata: true,
-          lib: ["dom", "dom.asynciterable", "dom.iterable", "deno.ns", "esnext"],
-        },
-        imports: {
-          // The app needs only these two sprig entry points: core (runtime primitives) +
-          // keep (server: the SSR renderer + the /ui mount). Both live in the published
-          // @sprig/core package — keep is its `/keep` sub-export. The compiler/build is
-          // CLI-internal (jsr:@sprig/core/cli), never imported by the app.
-          "@sprig/core": `jsr:@sprig/core@${SPRIG_RANGE}`,
-          "@sprig/keep": `jsr:@sprig/core@${SPRIG_RANGE}/keep`,
-          "@danet/core": "jsr:@danet/core@^2",
-          "@std/path": "jsr:@std/path@^1",
-          "@std/assert": "jsr:@std/assert@^1",
-        },
-        tasks: {
-          // `sprig dev`/`build` re-run themselves under THIS app's deno.json so its import
-          // map (@sprig/*, @danet/*, @std/*) resolves — no verbose `deno run --config …`.
-          dev: "sprig dev .",
-          build: "sprig build .",
-          start: "deno run -A serve.ts",
-        },
-      },
-      null,
-      2,
-    ) + "\n",
+    // `$` IS the app (src/main.ts); `$.pages/`, `$.services/`, `$.shared-components/` alias
+    // the src subtrees so deep files import siblings without ../../ chains. Plus the two
+    // sprig entry points (core + its /keep sub-export); the compiler is CLI-internal.
+    "deno.json": `{
+  "name": "@app/${name}",
+  "version": "0.0.0",
+  "exports": "./src/main.ts",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "lib": ["dom", "dom.asynciterable", "dom.iterable", "deno.ns", "esnext"]
+  },
+  "imports": {
+    "$": "./src/main.ts",
+    "$.pages/": "./src/pages/",
+    "$.shared-components/": "./src/shared-components/",
+    "$.services/": "./src/services/",
+    "@sprig/core": "jsr:@sprig/core@${SPRIG_RANGE}",
+    "@sprig/keep": "jsr:@sprig/core@${SPRIG_RANGE}/keep",
+    "@danet/core": "jsr:@danet/core@^2",
+    "@std/path": "jsr:@std/path@^1",
+    "@std/assert": "jsr:@std/assert@^1"
+  },
+  "tasks": {
+    "dev": "sprig dev .",
+    "build": "sprig build .",
+    "start": "deno run -A serve.ts"
+  }
+}
+`,
 
-    "serve.ts": [
+    "bootstrap/serve.ts": [
       `// Your host backend is Danet (jsr:@danet/core). The sprig UI mounts as MIDDLEWARE`,
       `// at /ui via app.use(ui): /ui/** → sprig (assets + SSR), everything else → your`,
       `// Danet controllers. Build first (\`deno task build\`), then \`deno task start\`.`,
       `import { DanetApplication, Module } from "@danet/core";`,
       `import { sprigUi } from "@sprig/keep";`,
-      `import { app as sprigApp } from "./src/main.ts";`,
+      `import { sprigApp } from "$";`,
       ``,
       `// Your Danet app — add @Controller()s / providers here; they own every route but /ui.`,
       `@Module({})`,
@@ -160,7 +158,12 @@ async function init(dir = "."): Promise<void> {
       `// The whole app, three declarations. \`routes\` drive everything: a route's \`load\``,
       `// names a page folder (template.html + optional logic.ts class for its data/behavior)`,
       `// — no per-page imports, no module map. Add a page = add a route.`,
-      `import { bootstrap, defineRoutes, type Route, type SprigApp } from "@sprig/core";`,
+      `import {`,
+      `  bootstrap,`,
+      `  defineRoutes,`,
+      `  type Route,`,
+      `  type SprigApp,`,
+      `} from "@sprig/core";`,
       `import { createRenderer } from "@sprig/keep";`,
       `import { dirname, fromFileUrl } from "@std/path";`,
       ``,
@@ -174,11 +177,11 @@ async function init(dir = "."): Promise<void> {
       `  { dev: !!Deno.env.get("SPRIG_DEV") },`,
       `);`,
       ``,
-      `export const app: SprigApp = bootstrap({ routes, base: "/ui", renderer });`,
+      `export const sprigApp: SprigApp = bootstrap({ routes, base: "/ui", renderer });`,
       ``,
     ].join("\n"),
 
-    "src/shell/template.html": [
+    "bootstrap/template.html": [
       `<!-- Root layout. The matched page renders into the outlet. -->`,
       `<div class="app-root">`,
       `  <router-outlet></router-outlet>`,
@@ -186,7 +189,7 @@ async function init(dir = "."): Promise<void> {
       ``,
     ].join("\n"),
 
-    "src/shell/styles.css": [
+    "bootstrap/styles.css": [
       `:global(body) {`,
       `  margin: 0;`,
       `  font-family: ui-sans-serif, system-ui, sans-serif;`,
@@ -202,7 +205,7 @@ async function init(dir = "."): Promise<void> {
       `// page renders — set fields here (fetch data via inject(Backend)) and the template`,
       `// binds to them. The instance is snapshotted to the browser; onBrowserInit runs there.`,
       `import { inject } from "@sprig/core";`,
-      `import State from "../../services/state/mod.ts";`,
+      `import State from "$.services/state/mod.ts";`,
       ``,
       `export default class Home {`,
       `  name = "(loading…)";`,
@@ -254,6 +257,8 @@ async function init(dir = "."): Promise<void> {
     await Deno.mkdir(dirname(abs), { recursive: true });
     await Deno.writeTextFile(abs, content);
   }
+  // the `$.shared-components/` alias points here — create it (empty) so the dir exists.
+  await Deno.mkdir(join(appAbs, "src", "shared-components"), { recursive: true });
   console.log(
     `Scaffolded a sprig app at ${appAbs}\n\n  cd ${dir}\n  deno task dev      # → http://localhost:8000/ui\n`,
   );
