@@ -362,18 +362,26 @@ function walk(routes: Route[], segs: string[], inherited: Record<string, string>
 }
 
 // ──────────────────────────────── Bootstrap ─────────────────────────────────
+/** The SSR renderer object (createRenderer's return). Passing it to bootstrap is the
+ *  ONLY wiring an app needs — render + stream + per-page resolve loading all come from
+ *  it, so `routes` alone drive data loading (no `modules` map, no per-page imports). */
+export interface AppRenderer {
+  renderDocument(pageLoad: string, inputs: Record<string, unknown>): Promise<string>;
+  renderStream?(pageLoad: string, inputs: Record<string, unknown>): ReadableStream<Uint8Array>;
+  loadResolve?(pageLoad: string): Promise<Resolve | undefined>;
+}
+
 export interface AppConfig {
   routes: Route[];
   base?: string;
-  /** explicit load-string → module map (the build instruments this; the app
-   *  may also wire it directly in main.ts). */
+  /** The renderer — the one thing bootstrap needs to render + auto-load resolve.ts. */
+  renderer?: AppRenderer;
+  /** LEGACY explicit load-string → module map. Prefer `renderer` (auto-loads resolve.ts
+   *  by route `load`); this is only consulted as an override when present. */
   modules?: Record<string, ComponentModule>;
-  /** SSR renderer (the template compiler). main.ts wires it so @sprig/core stays
-   *  decoupled from the wasm-backed compiler. Falls back to a JSON dump if absent. */
+  /** LEGACY direct render callback; superseded by `renderer.renderDocument`. */
   render?: (pageLoad: string, inputs: Record<string, unknown>) => Promise<string>;
-  /** Streaming SSR — preferred when present: flushes the document head on the first
-   *  byte (browser preloads assets) and streams the body after its onServerInit fetches.
-   *  Byte-identical to render()'s output, just chunked. */
+  /** LEGACY direct stream callback; superseded by `renderer.renderStream`. */
   renderStream?: (pageLoad: string, inputs: Record<string, unknown>) => ReadableStream<Uint8Array>;
 }
 export interface SprigApp {
@@ -429,15 +437,21 @@ export function bootstrap(config: AppConfig): SprigApp {
       if (env?.backend) root.provide(Backend, env.backend);
       const routeInjector = root.child("route");
 
-      const mod = matched.load ? config.modules?.[matched.load] : undefined;
+      // resolve(): an explicit modules[load] override wins; otherwise auto-load the
+      // page's resolve.ts by its route `load` path (the renderer knows the src root).
+      // This is what makes `routes` alone enough — no `modules` map in the app config.
+      let resolveFn: Resolve | undefined = matched.load ? config.modules?.[matched.load]?.resolve : undefined;
+      if (!resolveFn && matched.load && config.renderer?.loadResolve) {
+        resolveFn = await config.renderer.loadResolve(matched.load);
+      }
 
       // resolve() runs BEFORE headers go out, so its failure (or a not-found status it
       // sets) is honored on the response line; a render failure after this is a 500 in
       // the buffered path, or a closed partial stream once the head has been flushed.
       let inputs: Record<string, unknown> = {};
       try {
-        if (mod?.resolve) {
-          inputs = await runInInjector(routeInjector, () => mod.resolve!({ params: matched.params, url }));
+        if (resolveFn) {
+          inputs = await runInInjector(routeInjector, () => resolveFn!({ params: matched.params, url }));
         }
       } catch {
         return new Response("Internal Server Error", { status: 500, headers: ssrHeaders() });
@@ -446,15 +460,19 @@ export function bootstrap(config: AppConfig): SprigApp {
       // resource) by setting the request status; honor it on the response line.
       const status = root.status ?? 200;
 
+      const renderStream = config.renderStream ??
+        (config.renderer?.renderStream ? config.renderer.renderStream.bind(config.renderer) : undefined);
+      const render = config.render ?? config.renderer?.renderDocument?.bind(config.renderer);
+
       // Streaming SSR (preferred): flush the head now, stream the body after its fetches.
-      if (config.renderStream && matched.load && method !== "HEAD") {
-        return new Response(config.renderStream(matched.load, inputs), { status, headers: ssrHeaders() });
+      if (renderStream && matched.load && method !== "HEAD") {
+        return new Response(renderStream(matched.load, inputs), { status, headers: ssrHeaders() });
       }
 
       let html: string;
       try {
-        html = config.render && matched.load
-          ? await config.render(matched.load, inputs)
+        html = render && matched.load
+          ? await render(matched.load, inputs)
           : renderDocument(matched, inputs, base);
       } catch {
         return new Response("Internal Server Error", { status: 500, headers: ssrHeaders() });

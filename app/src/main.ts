@@ -4,9 +4,8 @@
 import { bootstrap, defineRoutes, type Route, type SprigApp } from "@sprig/core";
 import { createRenderer, type SsrRenderer } from "@sprig/keep";
 import { dirname, fromFileUrl } from "@std/path";
-import { resolve as workbenchResolve } from "./pages/workbench/resolve.ts";
-import { resolve as galleryResolve } from "./pages/gallery/resolve.ts";
 
+// workbench/gallery resolve.ts are auto-loaded by their route `load` (no imports needed).
 // Generated preview routes/resolvers (one per discovered case). Absent until
 // `isolate` has generated them, so the import is best-effort.
 // deno-lint-ignore no-explicit-any
@@ -38,11 +37,8 @@ export const renderer: SsrRenderer = await createRenderer(
 export const app: SprigApp = bootstrap({
   routes,
   base: "",
-  modules: {
-    "./pages/workbench": { resolve: workbenchResolve },
-    "./pages/gallery": { resolve: galleryResolve },
-    ...previewModules,
-  },
-  render: (load, inputs) => renderer.renderDocument(load, inputs),
-  renderStream: (load, inputs) => renderer.renderStream(load, inputs),
+  renderer,
+  // only the generated preview cases need an explicit module (no resolve.ts on disk);
+  // workbench/gallery are auto-loaded from their folder's resolve.ts.
+  modules: previewModules,
 });

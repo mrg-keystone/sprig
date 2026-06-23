@@ -1,7 +1,7 @@
 // Public compiler API: scan a `src` tree for folder-components, then render a
 // matched page into the shell's <router-outlet> as a full HTML document. The
 // SSR body that bootstrap() used to fake with a JSON dump is now real markup.
-import { basename, dirname, join, relative } from "@std/path";
+import { basename, dirname, join, relative, toFileUrl } from "@std/path";
 import { walk } from "@std/fs/walk";
 import { clearStaticCache, type ComponentDef, type Registry, renderNodes, resolveIslands } from "./render.ts";
 import { named, type Node } from "./node.ts";
@@ -16,7 +16,7 @@ import type { Scope } from "./expr.ts";
 import { makeServerCtx, withServerInjector } from "./island.ts";
 import { shortHash } from "./hash.ts";
 import { componentScopeId } from "./scope.ts";
-import type { ComponentDef as CoreComponentDef } from "@sprig/core";
+import type { ComponentDef as CoreComponentDef, Resolve } from "@sprig/core";
 
 export interface SsrRenderer {
   /** Render `pageLoad`'s component into the shell, return a full HTML document. */
@@ -33,6 +33,11 @@ export interface SsrRenderer {
   reparse(selector: string): Promise<boolean>;
   /** DEV: the current serialized AST for a selector (served to island chunks + HMR). */
   astFor(selector: string): SerializedTemplate | null;
+  /** Auto-load a page's data loader by its route `load` path — imports
+   *  `<srcRoot>/<load>/resolve.ts` and returns its `resolve` export (undefined if the
+   *  page has none). This is what lets `routes` alone drive data loading: no per-page
+   *  import + no `modules` map in the app's config. */
+  loadResolve(pageLoad: string): Promise<Resolve | undefined>;
 }
 
 /** Scan `srcDir` for every folder containing a template.html → selector registry
@@ -191,11 +196,26 @@ export async function createRenderer(
     return renderNodes(named(shell.template), { ...shellOpts, resolved: shellResolved });
   };
 
+  // resolve.ts loaders, imported on first match by route `load` path and cached.
+  const resolveCache = new Map<string, Resolve | undefined>();
   return {
     srcDir,
     // every registered component's selector (duplicates allowed: same-basename
     // components in different folders now coexist instead of clobbering).
     selectors: () => [...bySelector.values()].flatMap((defs) => defs.map((d) => d.selector)),
+    async loadResolve(pageLoad) {
+      const rel = pageLoad.replace(/^\.?\/+/, ""); // "./pages/home" | "pages/home" → "pages/home"
+      if (resolveCache.has(rel)) return resolveCache.get(rel);
+      let fn: Resolve | undefined;
+      try {
+        const url = toFileUrl(join(srcDir, rel, "resolve.ts")).href;
+        fn = (await import(url)).resolve as Resolve | undefined;
+      } catch {
+        fn = undefined; // no resolve.ts → a purely static page
+      }
+      resolveCache.set(rel, fn);
+      return fn;
+    },
     async renderDocument(pageLoad, inputs) {
       if (opts.dev) version = await readVersion();
       return document(await renderBody(pageLoad, inputs), base, version);
