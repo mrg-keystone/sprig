@@ -10,7 +10,7 @@
  *
  * The framework runtime lives next to this file at ./.sprig (core + compiler).
  */
-import { dirname, join, resolve } from "@std/path";
+import { dirname, join, resolve, toFileUrl } from "@std/path";
 // static relative imports of the package's own modules (computed-path dynamic imports
 // are unanalyzable + don't resolve once this is published to JSR).
 import { buildClient } from "./.sprig/compiler/build.ts";
@@ -33,7 +33,7 @@ async function build(appDir = ".", dev = false): Promise<void> {
 }
 
 async function serve(entry = "serve.ts"): Promise<void> {
-  const mod = await import(`file://${join(Deno.cwd(), entry)}`) as {
+  const mod = await import(toFileUrl(join(Deno.cwd(), entry)).href) as {
     default?: { fetch?: Deno.ServeHandler };
   };
   const app = mod.default;
@@ -54,7 +54,7 @@ async function dev(appDir = ".", base = "/ui"): Promise<void> {
   // build the HMR base handler from the sprig APP itself — NOT the host's serve.ts (which
   // may be a Danet/other host with no { fetch } export). `sprig dev` serves /ui with HMR;
   // the host (serve.ts) is for `deno task start`.
-  const { renderer, app } = await import(`file://${join(resolve(appDir), "src", "main.ts")}`);
+  const { renderer, app } = await import(toFileUrl(join(resolve(appDir), "src", "main.ts")).href);
   const ui = sprigUi({ app, base });
   const handler = {
     fetch: (req: Request, info: Deno.ServeHandlerInfo): Promise<Response> =>

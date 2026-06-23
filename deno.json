@@ -25,7 +25,7 @@
     "start": "deno serve -A --unstable-kv serve.ts"
   },
   "name": "@sprig/core",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "license": "MIT",
   "exports": {
     ".": "./framework/.sprig/core.ts",

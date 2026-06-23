@@ -75,7 +75,7 @@ export async function createRenderer(
     let island: ComponentDef["island"];
     const logicPath = join(dir, "logic.ts");
     if (await exists(logicPath)) {
-      const mod = await import(`file://${logicPath}`) as { default: unknown };
+      const mod = await import(toFileUrl(logicPath).href) as { default: unknown };
       const def = mod.default;
       const isClass = typeof def === "function" && !!(def as { prototype?: unknown }).prototype;
       if (isClass) {
