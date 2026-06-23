@@ -22,9 +22,44 @@ import { installSkills, installSkillsFromDeployment } from "./.sprig/skills.ts";
 
 // the published-package version range a scaffolded app pins (core + its /keep + /cli
 // sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
-const SPRIG_RANGE = "^0.1.0";
+const SPRIG_RANGE = "^0.2.0";
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await Deno.stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Re-run this CLI under the APP's deno.json so its import map (your @sprig/*, @std/*,
+ *  @danet/* …) resolves when the CLI dynamically imports your src/main.ts / serve.ts /
+ *  logic.ts. The published CLI's OWN deps resolve from its jsr package, so only the app's
+ *  bare specifiers need its config — this is what lets the scaffold call `sprig dev` /
+ *  `sprig build` instead of a verbose `deno run --config … jsr:@sprig/core/cli`. No-op once
+ *  re-execed, when run from a local checkout (a repo dev), or when the app has no deno.json. */
+async function withAppConfig(appDir: string): Promise<void> {
+  if (Deno.env.get("SPRIG_CONFIGURED")) return;
+  if (import.meta.url.startsWith("file:")) return; // a local dev checkout already has its config
+  const cfg = join(resolve(appDir), "deno.json");
+  if (!(await pathExists(cfg))) return;
+  // Re-run the SAME published version via its jsr: specifier (so the CLI's own deps still
+  // resolve from the package) but under the app's deno.json (so the app's imports resolve).
+  const m = import.meta.url.match(/@sprig\/core\/([^/]+)\//);
+  const cli = m ? `jsr:@sprig/core@${m[1]}/cli` : "jsr:@sprig/core/cli";
+  const { code } = await new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", "--config", cfg, cli, ...Deno.args],
+    env: { ...Deno.env.toObject(), SPRIG_CONFIGURED: "1" },
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  }).output();
+  Deno.exit(code);
+}
 
 async function build(appDir = ".", dev = false): Promise<void> {
+  await withAppConfig(appDir);
   const srcDir = join(resolve(appDir), "src");
   const outDir = join(Deno.cwd(), "static");
   const r = await buildClient(srcDir, outDir, { dev });
@@ -36,6 +71,7 @@ async function build(appDir = ".", dev = false): Promise<void> {
 }
 
 async function serve(entry = "serve.ts"): Promise<void> {
+  await withAppConfig(".");
   const mod = await import(toFileUrl(join(Deno.cwd(), entry)).href) as {
     default?: { fetch?: Deno.ServeHandler };
   };
@@ -48,6 +84,7 @@ async function serve(entry = "serve.ts"): Promise<void> {
 }
 
 async function dev(appDir = ".", base = "/ui"): Promise<void> {
+  await withAppConfig(appDir);
   // State-preserving HMR (no Vite): build the dev bundle (HMR client + AST-fetching
   // island chunks), then wrap the app's production handler with the compiler's dev
   // server (Deno.watchFs + SSE + live AST). Template/CSS edits hot-swap in place
@@ -120,10 +157,10 @@ async function init(dir = "."): Promise<void> {
           "@std/assert": "jsr:@std/assert@^1",
         },
         tasks: {
-          // --config: dev dynamically imports your local src/main.ts, so it needs THIS
-          // app's import map (jsr CLI's own map can't resolve your @std/* + @sprig/*).
-          dev: `deno run -A --config deno.json jsr:@sprig/core@${SPRIG_RANGE}/cli dev .`,
-          build: `deno run -A jsr:@sprig/core@${SPRIG_RANGE}/cli build .`,
+          // `sprig dev`/`build` re-run themselves under THIS app's deno.json so its import
+          // map (@sprig/*, @danet/*, @std/*) resolves — no verbose `deno run --config …`.
+          dev: "sprig dev .",
+          build: "sprig build .",
           start: "deno run -A serve.ts",
         },
       },
@@ -264,6 +301,7 @@ async function init(dir = "."): Promise<void> {
  *  picker. Reuses the framework — no separate workbench app. Generated previews live in a
  *  gitignorable `src/_isolate/`. */
 async function isolate(appDir = "."): Promise<void> {
+  await withAppConfig(appDir);
   Deno.env.set("SPRIG_DEV", "1");
   const root = resolve(appDir);
   const srcDir = join(root, "src");
