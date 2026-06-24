@@ -46,8 +46,12 @@ function parseArgs(argv: string[]): Args {
 function printHelp() {
   console.error(
     "Usage: deno run -A serve.ts <prototype.html> [--port 4505] [--open] [--host 127.0.0.1]\n\n" +
-      "  cmd/ctrl+click an element in the page, type feedback, Save.\n" +
-      "  Feedback is written to <prototype-basename>.feedback.json next to the prototype.",
+      "  cmd/ctrl+click an element  → type feedback, save\n" +
+      "    · in the box: 'tree' picks any element from the HTML tree,\n" +
+      "      'css' opens a live CSS editor saved as feedback\n" +
+      "  shift+cmd/ctrl + drag      → draw on the page → save a screenshot note\n\n" +
+      "  Feedback → <prototype-basename>.feedback.json next to the prototype\n" +
+      "  (screenshots → <prototype-basename>.feedback.<id>.png alongside it).",
   );
 }
 
@@ -84,7 +88,31 @@ type Entry = {
   html?: string;
   trail?: string;
   xpath?: string;
+  css?: string; // CSS declarations to apply to the element (from the css editor)
+  kind?: string; // "drawing" for screenshot+sketch entries, else element feedback
+  image?: string; // filename of a saved screenshot (drawing entries), next to the prototype
+  viewport?: { w: number; h: number; scrollX: number; scrollY: number };
 };
+
+// Turn an annotation key into a filesystem-safe basename fragment.
+function safeKey(key: string): string {
+  return key.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60) ||
+    "shot";
+}
+
+// Decode a `data:image/png;base64,...` URL into raw bytes.
+function decodePngDataUrl(dataUrl: string): Uint8Array | null {
+  const m = /^data:image\/png;base64,(.+)$/s.exec(dataUrl || "");
+  if (!m) return null;
+  try {
+    const bin = atob(m[1]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
+  }
+}
 
 async function readFeedback(): Promise<Record<string, Entry>> {
   try {
@@ -151,6 +179,23 @@ async function handler(req: Request): Promise<Response> {
     await writeFeedback({});
     return json({});
   }
+  // Save a drawing/screenshot: write the PNG next to the prototype, record an
+  // entry that points at the filename (not the giant data URL).
+  if (p === "/__annotate/shot" && req.method === "POST") {
+    const entry = (await req.json()) as Entry & { image?: string };
+    const key = entry.key;
+    if (!key) return json({ error: "missing key" }, 400);
+    const bytes = decodePngDataUrl(entry.image || "");
+    if (!bytes) return json({ error: "bad image" }, 400);
+    const imgName = `${FEEDBACK_NAME}.${safeKey(key)}.png`;
+    await Deno.writeFile(join(ROOT, imgName), bytes);
+    const data = await readFeedback();
+    delete (entry as { key?: string }).key;
+    entry.image = imgName; // store the filename, never the data URL
+    data[key] = entry;
+    await writeFeedback(data);
+    return json(data);
+  }
 
   // ---- static files (with overlay injection for the prototype) ----
   let target = p === "/" ? join(ROOT, PROTO_NAME) : safePath(p);
@@ -215,6 +260,8 @@ console.error(`  feedback  : ${FEEDBACK_PATH}`);
 console.error(`  open      : ${pageURL}`);
 console.error("");
 console.error("  cmd/ctrl+click an element → type feedback → save.");
+console.error("    in the box: 'tree' = pick any element · 'css' = live CSS editor");
+console.error("  shift+cmd/ctrl + drag → draw → save a screenshot note.");
 console.error("  Then re-run /prototype to apply it. Ctrl+C to stop.");
 console.error("");
 

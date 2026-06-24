@@ -200,19 +200,26 @@ file, so load it whole and work *with* its existing shape rather than rebuilding
 
 When a sibling `<prototype-basename>.feedback.json` exists, the user marked up the
 prototype with the **annotate** wrapper — apply those notes as the change list before
-anything else. It's a JSON object keyed by a unique CSS selector; each value carries
-the `feedback` plus context to locate the element in source.
+anything else. It's a JSON object; each value carries the `feedback` plus context to
+locate the target. Two kinds of entry:
 
-The one heuristic that matters: **grep the `text` field first.** Prototypes hardcode
-their data at the top and render with JS, so the visible text the user clicked is
-**guaranteed to exist in source** — whereas a positional `selector` / `xpath` points
-at a runtime-only node and usually is *not* in source. Use the other fields
-(`label` / `classes` / `tag` / `trail`) to disambiguate when the text matches in
-several places. See `annotate/README.md` for the full field schema.
+- **Element entries** (keyed by a unique CSS selector). The one heuristic that matters:
+  **grep the `text` field first.** Prototypes hardcode their data at the top and render
+  with JS, so the visible text the user clicked is **guaranteed to exist in source** —
+  whereas a positional `selector` / `xpath` points at a runtime-only node and usually is
+  *not* in source. Disambiguate with `label` / `classes` / `tag` / `trail`. If the entry
+  has a **`css`** field, the user edited styles in the live editor — apply those
+  declarations to the element (inline, a class, or the render template, as fits).
+- **Drawing entries** (`kind: "drawing"`). The user sketched on the screen; the **`image`**
+  field names a PNG next to the prototype (the view + their drawing). **Open it**, read
+  the `feedback` note, and make the change it indicates.
+
+See `annotate/README.md` for the full field schema.
 
 For each entry: locate the target (static HTML *or* the function that renders it),
 apply the feedback, then re-check the flow and states. When done, **clear the file**
-(write `{}` or delete it) so stale notes aren't re-applied next round.
+(write `{}` or delete it, and remove the `*.png` shots) so stale notes aren't re-applied
+next round.
 
 ## Optional: visual gut-check (design-lint)
 
@@ -243,9 +250,14 @@ default ending for every create/iterate rather than waiting to be asked:
 deno run -A .claude/skills/prototype/annotate/serve.ts <prototype>.html --open
 ```
 
-Run it in the background, then tell the user the URL and that they can **hold ⌘ and
-click any element** to leave feedback. The wrapper serves the prototype, injects a
-click-to-comment overlay, and writes each note to `<prototype>.feedback.json` next to
+Run it in the background, then tell the user the URL and how to leave feedback:
+
+- **⌘/Ctrl + click any element** → type a note → save. Inside that box, **`⌗ tree`**
+  picks any element from the HTML tree (hover to highlight, click to select) and
+  **`{ } css`** opens a live CSS editor saved as feedback.
+- **⇧⌘ + drag** → draw on the page → save a **screenshot note**.
+
+The wrapper writes each note to `<prototype>.feedback.json` (and screenshot PNGs) next to
 the file — which you apply on the next run (see **Applying click-feedback**). Skip only
 if the user opted out or `deno` isn't available; in that case just name the command so
 they can run it themselves.
