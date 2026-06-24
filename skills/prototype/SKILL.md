@@ -1,7 +1,7 @@
 ---
 name: "isolate:prototype"
 description: Use when the user wants a fast, throwaway, single-file clickable HTML prototype to answer "what are we building" — the complete look-and-feel and main flow of an app, not a production build. Builds ONE self-contained .html with hardcoded data, fake in-memory interactions, CDN scripts only, that opens by double-clicking. Deliberately includes the unglamorous states (empty, loading, error toast, content overflow) where real requirements hide. Also use to change, extend, or iterate on a prototype that already exists — add or rework a screen, fix the flow, restyle, tweak the fake data — when the user points at a *-prototype.html or asks to improve a demo you built. Trigger for "mock up", "prototype", "demo screen", "clickable wireframe", "show me what X looks like", "add a screen to the prototype", "change/iterate on the prototype", or turning a spec/notes/rough draft, or a Figma URL, into a tangible demo. NOT for production code, real backends, component libraries, or anything that must be maintained.
-version: 1.4.0
+version: 1.5.0
 user-invocable: true
 argument-hint: "[app description or change to make] [source: spec, Figma URL, or existing -prototype.html]"
 license: Apache 2.0
@@ -25,10 +25,15 @@ This is a **THROWAWAY prototype**. Its only job is to answer "what are we
 building." It will be read once and deleted. Optimize for how fast the user can
 change it, not for code quality.
 
-## Three ways in
+## Four ways in
 
 Figure out which path you're on — they share the build rules but start differently:
 
+0. **Annotate only** — the args are *just a path to an existing `.html` file* with **no
+   description and no change request**. There's nothing to build or change — the user
+   only wants to mark it up. **Do not** read, edit, or rebuild the file. Skip straight to
+   **launching the annotate wrapper** on it (see **Output** → the `serve.ts` command) and
+   stop. This is the default for a bare-path invocation like `/prototype foo.html`.
 1. **Create** a new prototype from a description, spec, or Figma URL → do **Create**
    below (find source → build the file → every screen + the unglamorous states).
 2. **Improve** an existing prototype — the user points at a `*-prototype.html` (or
@@ -38,8 +43,11 @@ Figure out which path you're on — they share the build rules but start differe
    to the file (the user marked it up with the **annotate** wrapper). Those notes are
    the change list → do **Improve**, starting from **Applying click-feedback**.
 
-If both a spec *and* an existing prototype are in play, improve the existing file
-rather than starting over — the user has already invested clicks in it.
+The distinction between path 0 and path 2 is **whether the prompt carries an
+instruction**: a bare `.html` path alone → annotate only; a path *plus* a change ("add a
+screen", "fix the nav", "restyle") → improve. If both a spec *and* an existing prototype
+are in play, improve the existing file rather than starting over — the user has already
+invested clicks in it.
 
 ## Create
 

@@ -219,7 +219,7 @@
 
   /* ---------- UI (isolated in a shadow root) ---------- */
 
-  var host, root, popEl, barEl, layerEl, inspectBox, inspectLabel;
+  var host, root, popEl, barEl, layerEl, inspectBox, inspectLabel, selBox;
 
   // the element the open popover currently targets (tree + css modal act on it)
   var currentEl = null, currentCtx = null;
@@ -262,6 +262,12 @@
     inspectLabel.className = "inspect-lbl";
     inspectLabel.innerHTML = '<b></b><span></span>';
     root.appendChild(inspectLabel);
+
+    // Persistent highlight on the element the popover currently targets — survives mouse-out
+    // (unlike the transient hover inspector), so a tree-picked element stays boxed on the page.
+    selBox = document.createElement("div");
+    selBox.className = "selbox";
+    root.appendChild(selBox);
 
     barEl = document.createElement("div");
     barEl.className = "bar";
@@ -400,6 +406,8 @@
     popEl.style.left = left + "px";
     popEl.style.top = top + "px";
 
+    showSel(el); // box the target on the page (persists until dismissed)
+
     setTimeout(function () {
       ta.focus();
       ta.setSelectionRange(ta.value.length, ta.value.length);
@@ -473,6 +481,7 @@
     closeCssModal();
     closeTree();
     closePopover();
+    hideSel();
     currentEl = null;
     currentCtx = null;
   }
@@ -596,6 +605,26 @@
     if (inspectLabel) inspectLabel.style.display = "none";
   }
 
+  // Persistent box around the popover's current target (the selected element). Unlike the
+  // hover inspector it is NOT cleared on mouse-out — it tracks `currentEl` until the popover
+  // is dismissed, so you always see which element you're annotating / picked from the tree.
+  function showSel(el) {
+    if (!selBox || !el || el.nodeType !== 1 || isOurs(el)) { hideSel(); return; }
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) { hideSel(); return; }
+    selBox.style.cssText =
+      "left:" + r.left + "px;top:" + r.top + "px;width:" + r.width + "px;height:" + r.height + "px;display:block";
+  }
+
+  function hideSel() {
+    if (selBox) selBox.style.display = "none";
+  }
+
+  // Keep the persistent box glued to its element when the page scrolls or resizes.
+  function syncSel() {
+    if (selBox && selBox.style.display === "block" && currentEl) showSel(currentEl);
+  }
+
   function startInspect() {
     inspecting = true;
     if (lastTarget) showInspect(lastTarget);
@@ -609,9 +638,24 @@
   /* ---------- events ---------- */
 
   var armed = true; // cmd/ctrl+click always works; this also enables plain-click capture when on
+  var uiHidden = false; // ⌘+Ctrl "clean view": all annotate UI hidden, JSON kept on disk
+  var chordUsed = false; // debounce so a held ⌘+Ctrl toggles once, not on every key-repeat
 
   function isOurs(el) {
     return el && (el === host || (el.closest && el.getRootNode && el.getRootNode() === root));
+  }
+
+  // ⌘+Ctrl toggles a clean view: hide every annotate overlay (badges, boxes, bar, open
+  // panels) so the bare prototype is visible/screenshot-able. The feedback JSON on disk is
+  // untouched — press ⌘+Ctrl again to bring the UI back.
+  function toggleUi() {
+    uiHidden = !uiHidden;
+    if (uiHidden) {
+      dismissAll();
+      stopInspect();
+      hideSel();
+    }
+    if (host) host.style.display = uiHidden ? "none" : "";
   }
 
   document.addEventListener(
@@ -631,6 +675,13 @@
         if (drawpopEl || drawing) { clearDraw(); return; }
         if (treeEl) { closeTree(); return; }
       }
+      // ⌘+Ctrl (no Shift) → toggle the clean view (hide/show all annotate UI). Checked before
+      // the isOurs guard so it works with focus anywhere; debounced against key-repeat.
+      if (e.metaKey && e.ctrlKey && !e.shiftKey) {
+        if (!chordUsed) { chordUsed = true; toggleUi(); }
+        return;
+      }
+      if (uiHidden) return; // clean view armed → no inspect/draw until ⌘+Ctrl restores the UI
       // keys typed inside our boxes must not arm draw/inspect (Escape above still closes)
       if (isOurs(e.target)) return;
       // ⇧⌘ / ⇧Ctrl → freehand draw mode; plain ⌘/Ctrl → hover inspector
@@ -647,6 +698,7 @@
         if (!((e.metaKey || e.ctrlKey) && e.shiftKey)) finishDraw();
         return;
       }
+      if (e.key === "Meta" || e.key === "Control" || e.key === "Shift") chordUsed = false; // re-arm the ⌘+Ctrl toggle
       if (isOurs(e.target)) return; // ignore key releases from inside our boxes
       if (e.key === "Meta" || e.key === "Control" || e.key === "Shift") stopInspect();
     },
@@ -656,12 +708,25 @@
     stopInspect();
     if (drawing) finishDraw();
   });
+  // keep the persistent selection box glued to its element through scroll/resize
+  window.addEventListener("scroll", syncSel, true);
+  window.addEventListener("resize", syncSel);
 
   document.addEventListener(
     "click",
     function (e) {
-      if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return; // ⇧ is reserved for drawing
+      if (uiHidden) return; // clean view → annotate clicks are inert until UI is restored
       var t = e.target;
+      // Click outside any open feedback surface (popover / tree / css panel and their
+      // children) → just close it. A plain click only; ⌘/Ctrl falls through to re-target.
+      if ((popEl || treeEl || cssEl) && !isOurs(t) && !(e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (cssEl) revertLive(); // unsaved live edits → undo, same as cancel
+        dismissAll();
+        return;
+      }
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return; // ⇧ is reserved for drawing
       if (isOurs(t)) return;
       e.preventDefault();
       e.stopPropagation();
@@ -870,7 +935,6 @@
     cssEl = document.createElement("div");
     cssEl.className = "cssmodal";
     cssEl.innerHTML =
-      '<div class="cssback" data-act="cancel"></div>' +
       '<div class="csscard">' +
       '<div class="cssh"><span class="csssel"></span>' +
       '<button class="pop-x" data-act="cancel">×</button></div>' +
@@ -898,6 +962,31 @@
         setEditor("");
         revertLive();
       } else if (act === "save") saveCss();
+    });
+
+    // Drag the panel by its header so it never permanently hides the element you're styling.
+    dragByHeader(cssEl.querySelector(".csscard"), cssEl.querySelector(".cssh"));
+  }
+
+  // Make `card` draggable by `handle`; switches the card to left/top positioning on first drag.
+  function dragByHeader(card, handle) {
+    if (!card || !handle) return;
+    handle.addEventListener("mousedown", function (e) {
+      if (e.target.closest("button")) return; // let the × button click through
+      e.preventDefault();
+      var r = card.getBoundingClientRect();
+      var dx = e.clientX - r.left, dy = e.clientY - r.top;
+      card.style.right = "auto";
+      function move(ev) {
+        card.style.left = Math.max(4, Math.min(window.innerWidth - 40, ev.clientX - dx)) + "px";
+        card.style.top = Math.max(4, Math.min(window.innerHeight - 40, ev.clientY - dy)) + "px";
+      }
+      function up() {
+        document.removeEventListener("mousemove", move, true);
+        document.removeEventListener("mouseup", up, true);
+      }
+      document.addEventListener("mousemove", move, true);
+      document.addEventListener("mouseup", up, true);
     });
   }
 
@@ -1270,6 +1359,7 @@
   var CSS =
     ".layer{position:fixed;inset:0;pointer-events:none}" +
     ".inspect{position:fixed;display:none;pointer-events:none;background:rgba(194,65,12,.12);border:1px solid rgba(194,65,12,.55);box-shadow:0 0 0 1px rgba(194,65,12,.2)}" +
+    ".selbox{position:fixed;display:none;pointer-events:none;border:2px solid #c2410c;border-radius:4px;box-shadow:0 0 0 1px rgba(255,255,255,.25),0 0 0 5px rgba(194,65,12,.18)}" +
     ".inspect-lbl{position:fixed;display:none;pointer-events:none;background:#17150f;color:#f3eee2;font:600 11px/1 ui-monospace,Menlo,monospace;padding:5px 7px;border-radius:5px;white-space:nowrap;box-shadow:0 4px 14px -4px rgba(0,0,0,.5)}" +
     ".inspect-lbl b{color:#fb923c;font-weight:700}" +
     ".inspect-lbl span{color:#9b927c;font-weight:500}" +
@@ -1322,11 +1412,11 @@
     ".ttog{display:inline-block;width:12px;text-align:center;color:#6b6453;cursor:pointer;flex:none}" +
     ".ttog.tspace{cursor:default}" +
     ".ttag{color:#cfc6b2}" +
-    // css editor modal
-    ".cssmodal{position:fixed;inset:0;z-index:10;pointer-events:auto}" +
-    ".cssback{position:absolute;inset:0;background:rgba(8,7,5,.55)}" +
-    ".csscard{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,92vw);max-height:86vh;display:flex;flex-direction:column;gap:8px;background:#1b1813;color:#f3eee2;border:1px solid #2f2a22;border-radius:12px;box-shadow:0 24px 70px -16px rgba(0,0,0,.6);padding:14px}" +
-    ".cssh{display:flex;align-items:center;justify-content:space-between;gap:8px}" +
+    // css editor — a NON-modal floating panel (no page-dimming backdrop) so live edits
+    // are visible on the bright page underneath; drag it by the header to uncover the target.
+    ".cssmodal{position:fixed;inset:0;z-index:10;pointer-events:none}" +
+    ".csscard{position:fixed;right:16px;top:16px;width:min(440px,40vw);max-height:calc(100vh - 32px);display:flex;flex-direction:column;gap:8px;background:#1b1813;color:#f3eee2;border:1px solid #2f2a22;border-radius:12px;box-shadow:0 24px 70px -16px rgba(0,0,0,.6);padding:14px;pointer-events:auto}" +
+    ".cssh{display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:move;user-select:none}" +
     ".csssel{color:#fb923c;font:600 12px/1.3 ui-monospace,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
     ".cssref{display:flex;flex-wrap:wrap;gap:5px;align-items:center;max-height:84px;overflow:auto}" +
     ".reflbl{color:#6b6453;font:500 10px/1 ui-monospace,Menlo,monospace;margin-right:2px}" +
