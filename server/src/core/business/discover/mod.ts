@@ -34,7 +34,8 @@
 // Case special keys: _name (label), _innerHtml (-> innerHTML), _signals (-> signals).
 
 export type Kind = "static" | "island";
-export type Root = "components" | "islands" | "pages" | "shared-components";
+/** The top-level folder under src/ a component lives in (e.g. "shared-components", "pages"). */
+export type Root = string;
 /** What's being isolated: a single component (components/ + islands/) or a page (pages/). */
 export type Target = "component" | "page";
 
@@ -146,6 +147,18 @@ async function* walkDirs(root: string): AsyncGenerator<string> {
     yield child;
     yield* walkDirs(child);
   }
+}
+
+/** The immediate child directory names of `root` (not recursive) — the top-level folders. */
+async function* topDirs(root: string): AsyncGenerator<string> {
+  let entries: Deno.DirEntry[];
+  try {
+    entries = [];
+    for await (const e of Deno.readDir(root)) entries.push(e);
+  } catch {
+    return;
+  }
+  for (const e of entries) if (e.isDirectory) yield e.name;
 }
 
 /** Parse fixture.controls into control definitions (objects), or {value} for bare values. */
@@ -365,31 +378,15 @@ async function collectCases(
   return cases;
 }
 
-/** A synthesized single case for a folder-component that has no isolate/ cases yet — so it
- *  still shows in the workbench (render as-is, no props). The docs define a component as any
- *  folder with a template.html; isolate/ cases are optional, additive named states. */
-function defaultCase(prefix: string, category: string, folder: string): CaseDef {
-  return {
-    name: "default",
-    label: "Default",
-    jsonPath: "",
-    props: {},
-    signals: {},
-    route: folder ? `/${prefix}/${category}/${folder}/default` : `/${prefix}/${category}/default`,
-    tests: [],
-  };
-}
-
 export async function discover(projectRoot: string): Promise<DiscoverResult> {
-  // sprig's documented roots: shared-components/ holds global reusable components/islands,
-  // pages/ holds page compositions. components/ + islands/ are also scanned for back-compat
-  // with the Fresh-era layout (e.g. the fixtures app).
-  const roots: { dir: Root; target: Target }[] = [
-    { dir: "shared-components", target: "component" },
-    { dir: "components", target: "component" },
-    { dir: "islands", target: "component" },
-    { dir: "pages", target: "page" },
-  ];
+  // Scan EVERY top-level folder under src/ (shared-components, pages, or whatever layout the
+  // project uses). A folder under pages/ is a page (a routed composition); anything else is a
+  // component. Whether it actually previews is gated below on having an isolate/ folder.
+  const roots: { dir: string; target: Target }[] = [];
+  for await (const top of topDirs(`${projectRoot}/src`)) {
+    if (top === "shell") continue; // the root layout, never previewed
+    roots.push({ dir: top, target: top === "pages" ? "page" : "component" });
+  }
   const entries: ComponentEntry[] = [];
   const problems: Problem[] = [];
 
@@ -401,12 +398,12 @@ export async function discover(projectRoot: string): Promise<DiscoverResult> {
       // Skip the isolate/ folder itself and anything inside it — checked relative
       // to the scan root, so an "isolate" ancestor in the abs path doesn't match.
       if (rel.split("/").includes("isolate")) continue;
-      // A sprig folder-component is a folder with a template.html — that alone makes it
-      // previewable. isolate/ (fixture + named cases) is OPTIONAL; without it the component
-      // still shows with a synthesized Default case.
+      // A folder-component (a folder with a template.html) previews ONLY when it also has an
+      // isolate/ folder — its fixture + named cases. No isolate/ → not shown (no default case).
       const templatePath = `${dir}/template.html`;
       if (!(await exists(templatePath))) continue;
       const isolateDir = `${dir}/isolate`;
+      if (!(await exists(isolateDir))) continue;
 
       const label = rel.split("/").pop() ?? rel;
       const exportName = label; // sprig selector = folder basename (no PascalCase)
@@ -463,15 +460,7 @@ export async function discover(projectRoot: string): Promise<DiscoverResult> {
       }
       delete controlDefs._background;
 
-      // isolate/ cases when present. Without them: a leaf component still shows with a
-      // synthesized Default case, but a PAGE is skipped — a page is a routed composition with
-      // data deps (resolve.ts / inject / project `$` aliases) that can't be copied out of the
-      // project and built unmodified; it needs explicit isolate/ cases to preview.
-      let cases = await collectCases(isolateDir, controlDefs, prefix, category, folder, problems);
-      if (cases.length === 0) {
-        if (target === "page") continue;
-        cases = [defaultCase(prefix, category, folder)];
-      }
+      const cases = await collectCases(isolateDir, controlDefs, prefix, category, folder, problems);
 
       entries.push({
         // Root-qualified so a component and a page with the same name don't

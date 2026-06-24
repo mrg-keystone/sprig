@@ -61,26 +61,28 @@ Deno.test("discover returns empty for a project with no isolate/ folders", async
   }
 });
 
-Deno.test("discover shows a shared-component without isolate/ via a Default case, and skips a case-less page", async () => {
+Deno.test("discover scans ALL top-level folders but requires an isolate/ folder (no default case)", async () => {
   const dir = await Deno.makeTempDir();
   try {
-    // a leaf component in sprig's documented root, with NO isolate/ folder
-    await Deno.mkdir(`${dir}/src/shared-components/ui-button`, { recursive: true });
-    await Deno.writeTextFile(`${dir}/src/shared-components/ui-button/template.html`, "<button>hi</button>");
-    // a page, also with no isolate/ — must be skipped (data deps can't be isolated unmodified)
-    await Deno.mkdir(`${dir}/src/pages/home`, { recursive: true });
-    await Deno.writeTextFile(`${dir}/src/pages/home/template.html`, "<main>home</main>");
+    // a shared-component WITHOUT isolate/ — must NOT show (no synthesized default case)
+    await Deno.mkdir(`${dir}/src/shared-components/plain`, { recursive: true });
+    await Deno.writeTextFile(`${dir}/src/shared-components/plain/template.html`, "<button>x</button>");
+    // a component in a NON-standard top-level folder WITH isolate/ + a case — must show ("all folders")
+    await Deno.mkdir(`${dir}/src/widgets/ui-button/isolate/cases/primary`, { recursive: true });
+    await Deno.writeTextFile(`${dir}/src/widgets/ui-button/template.html`, "<button>x</button>");
+    await Deno.writeTextFile(
+      `${dir}/src/widgets/ui-button/isolate/cases/primary/primary.json`,
+      JSON.stringify({ _name: "Primary" }),
+    );
 
     const r = await discover(dir);
     assertEquals(r.problems, []);
-    assertEquals(r.entries.length, 1); // the component shows; the case-less page is skipped
+    assertEquals(r.entries.length, 1); // only the one WITH an isolate/ folder
     const e = r.entries[0];
     assertEquals(e.label, "ui-button");
-    assertEquals(e.root, "shared-components");
+    assertEquals(e.root, "widgets"); // a non-standard top-level folder was scanned
     assertEquals(e.cases.length, 1);
-    assertEquals(e.cases[0].name, "default");
-    assertEquals(e.cases[0].label, "Default");
-    assertEquals(e.cases[0].route, "/components/ui-button/default");
+    assertEquals(e.cases[0].label, "Primary"); // its real case — not a synthesized "Default"
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
