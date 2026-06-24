@@ -31,7 +31,7 @@ jobs:
         id: ver
         run: |
           set -eu
-          v=$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')
+          v=$(jq -r .version deno.json) # jq is preinstalled on ubuntu-latest (no deno on the runner)
           sha=$(git rev-parse HEAD)
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
