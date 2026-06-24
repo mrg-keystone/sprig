@@ -461,6 +461,59 @@ async function isolate(appDir = ".", open = true): Promise<void> {
   Deno.exit(code);
 }
 
+/** Read this install's own version from its package deno.json (`..` from framework/cli.ts —
+ *  the install root, both in a checkout and in ~/.sprig). Returns "?" if it can't be read. */
+async function localVersion(): Promise<string> {
+  try {
+    const cfgPath = join(dirname(fromFileUrl(import.meta.url)), "..", "deno.json");
+    const cfg = JSON.parse(await Deno.readTextFile(cfgPath));
+    return typeof cfg.version === "string" ? cfg.version : "?";
+  } catch {
+    return "?";
+  }
+}
+
+/** The latest published @sprig/core version on JSR, or null if the network/registry is
+ *  unreachable (so `sprig -v` still prints the local version offline). */
+async function jsrLatestVersion(): Promise<string | null> {
+  try {
+    const res = await fetch("https://jsr.io/@sprig/core/meta.json", {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return null;
+    const meta = await res.json();
+    return typeof meta.latest === "string" ? meta.latest : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Compare two semver-ish `a.b.c` strings. Returns >0 if `a` is newer than `b`. */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+/** `sprig -v` / `--version`: print this install's version, then check JSR and, if a newer
+ *  release exists, print a colored upgrade notice with the `sprig update` hint. */
+async function version(): Promise<void> {
+  const local = await localVersion();
+  console.log(`sprig ${local}`);
+  const latest = await jsrLatestVersion();
+  if (latest && local !== "?" && compareVersions(latest, local) > 0) {
+    const G = "\x1b[32m", B = "\x1b[1m", C = "\x1b[36m", R = "\x1b[0m";
+    console.log(
+      `\n${G}${B}A new version of sprig is available: ${local} → ${latest}${R}\n` +
+        `${G}Run ${C}sprig update${G} to upgrade.${R}`,
+    );
+  }
+}
+
 /** Refresh this machine to the latest deployment: download the source bundle to ~/.sprig,
  *  `deno install` its node_modules HERE, reinstall skills, and re-point the `sprig`
  *  launcher — NOT from any local checkout. */
@@ -491,6 +544,7 @@ const USAGE = `sprig — the framework CLI
   sprig serve [entry]            run the app's host entry under its deno.json (default: serve.ts)
   sprig install [--dev]          install the global sprig CLI + Claude Code skills (--dev: from this checkout)
   sprig update                   re-install the global sprig CLI + skills from the latest release
+  sprig -v, --version            print the installed version + check JSR for a newer release
   sprig help
 `;
 
@@ -513,6 +567,11 @@ switch (cmd) {
     break;
   case "install":
     await install(rest.includes("--dev"));
+    break;
+  case "-v":
+  case "--version":
+  case "version":
+    await version();
     break;
   case "isolate": {
     const appArg = rest.find((a) => !a.startsWith("-")) ?? ".";
