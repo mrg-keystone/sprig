@@ -662,7 +662,9 @@
     "mousemove",
     function (e) {
       lastTarget = e.target;
-      if (inspecting) showInspect(e.target);
+      // The page-hover inspector must not run while a popover / tree / css panel is open —
+      // otherwise it clobbers the tree's own row-hover highlight on every mouse move.
+      if (inspecting && !treeEl && !popEl && !cssEl) showInspect(e.target);
     },
     true
   );
@@ -698,9 +700,14 @@
         if (!((e.metaKey || e.ctrlKey) && e.shiftKey)) finishDraw();
         return;
       }
-      if (e.key === "Meta" || e.key === "Control" || e.key === "Shift") chordUsed = false; // re-arm the ⌘+Ctrl toggle
-      if (isOurs(e.target)) return; // ignore key releases from inside our boxes
-      if (e.key === "Meta" || e.key === "Control" || e.key === "Shift") stopInspect();
+      // A modifier release ALWAYS clears the inspector + re-arms the chord — even when focus
+      // is inside our textarea/editor (keyup target isOurs). Otherwise ⌘ stays "stuck" held
+      // after a ⌘+click (which focuses the popover textarea), so the page-hover inspector keeps
+      // fighting the tree highlight until the window is re-focused (the "switch Spaces" symptom).
+      if (e.key === "Meta" || e.key === "Control" || e.key === "Shift") {
+        chordUsed = false;
+        stopInspect();
+      }
     },
     true
   );
