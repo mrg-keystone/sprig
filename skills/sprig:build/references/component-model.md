@@ -76,6 +76,50 @@ effect(() => console.log(count()));   // re-runs on change
 Templates read signals by calling them: `{{ count() }}`, `[value]="count()"`. Reactive
 updates re-render the island in place.
 
+## Optimistic UI (the default for every server write)
+
+**Mandatory** (see SKILL.md): a user action that writes to the server updates the UI
+*immediately*, runs the server call in the background, and rolls back only if it fails. The
+component must be an **island** (it has a `logic.ts`) so it can react on the client.
+
+The shape is **snapshot → mutate → call → reconcile**:
+
+```ts
+import { inject, signal } from "@sprig/core";
+import Api from "../../services/api/mod.ts";
+
+export default class Todo {
+  items = inject(State).items;          // a signal-backed list the template renders
+  error = signal("");
+  api = inject(Api);
+
+  async toggle(item) {
+    const prev = item.done;             // 1. snapshot what we're about to change
+    item.done = !item.done;             // 2. optimistic: update + render NOW
+    this.items.update(x => [...x]);     //    nudge the signal so the view re-renders
+    try {
+      await this.api.setDone(item.id, item.done);   // 3. server, NOT awaited before the UI moved
+    } catch {
+      item.done = prev;                 // 4. failed → roll back the exact change
+      this.items.update(x => [...x]);
+      this.error.set("Couldn't save — reverted.");
+    }
+  }
+}
+```
+
+Rules of thumb:
+- **Capture a precise rollback snapshot** before mutating (the old value, or the removed
+  item + its index for a list delete) — roll back to *that*, don't refetch.
+- **Don't `await` the server call before the UI changes.** Awaiting first = a spinner, which
+  is the thing we're avoiding.
+- **Surface failures** — a rollback that's silent looks like the click did nothing. Show a
+  toast/inline error.
+- **Fall back to a pending/disabled state only when the result is unknowable client-side**
+  (server-generated id, payment auth, a fetched result set). Then show a spinner and `await`.
+- **Overrides:** an inline `data-note` on the element can demand "wait for the server" or
+  "realtime island" — honor it over this default.
+
 ## Dependency injection
 
 `@Injectable` registers a class; `inject(Token)` resolves it from the active injector.

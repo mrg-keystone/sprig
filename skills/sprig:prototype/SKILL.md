@@ -1,7 +1,7 @@
 ---
 name: "sprig:prototype"
 description: Use when the user wants a fast, throwaway, single-file clickable HTML prototype to answer "what are we building" — the complete look-and-feel and main flow of an app, not a production build. Builds ONE self-contained .html with hardcoded data, fake in-memory interactions, CDN scripts only, that opens by double-clicking. Deliberately includes the unglamorous states (empty, loading, error toast, content overflow) where real requirements hide. Also use to change, extend, or iterate on a prototype that already exists — add or rework a screen, fix the flow, restyle, tweak the fake data — when the user points at a *-prototype.html or asks to improve a demo you built. Trigger for "mock up", "prototype", "demo screen", "clickable wireframe", "show me what X looks like", "add a screen to the prototype", "change/iterate on the prototype", or turning a spec/notes/rough draft, or a Figma URL, into a tangible demo. NOT for production code, real backends, component libraries, or anything that must be maintained.
-version: 1.5.0
+version: 1.6.0
 user-invocable: true
 argument-hint: "[app description or change to make] [source: spec, Figma URL, or existing -prototype.html]"
 license: Apache 2.0
@@ -222,6 +222,12 @@ locate the target. Two kinds of entry:
   field names a PNG next to the prototype (the view + their drawing). **Open it**, read
   the `feedback` note, and make the change it indicates.
 
+Also check for **inline annotations in the prototype HTML itself**: the annotate wrapper's
+`inline` save writes the note onto the element as **`data-note="…"`** (and **`data-note-css="…"`**).
+`grep -n 'data-note' <prototype>.html` — apply each as a change to that element (`data-note` =
+what to change, `data-note-css` = declarations) and **strip the attributes** afterward. These
+can coexist with a `feedback.json`; handle both.
+
 See `annotate/README.md` for the full field schema.
 
 For each entry: locate the target (static HTML *or* the function that renders it),
@@ -260,12 +266,16 @@ deno run -A .claude/skills/sprig:prototype/annotate/serve.ts <prototype>.html --
 
 Run it in the background, then tell the user the URL and how to leave feedback:
 
-- **⌘/Ctrl + click any element** → type a note → save. Inside that box, **`⌗ tree`**
-  picks any element from the HTML tree (hover to highlight, click to select) and
-  **`{ } css`** opens a live CSS editor saved as feedback.
+- **⌘/Ctrl + click any element** → type a note → save. The save button is **split:
+  `inline | json`**. **inline** writes the note onto the element in the source HTML as
+  `data-note="…"` (+ `data-note-css="…"` from the CSS editor); **json** writes the sibling
+  `<prototype>.feedback.json`. Inside the box, **`⌗ tree`** picks any element from the HTML
+  tree and **`{ } css`** is a live CSS editor (**Apply** attaches the declarations to the note).
 - **⇧⌘ + drag** → draw on the page → save a **screenshot note**.
+- Every window is **draggable by its header**; **⌘+Ctrl** toggles a clean view (hides the UI).
 
-The wrapper writes each note to `<prototype>.feedback.json` (and screenshot PNGs) next to
-the file — which you apply on the next run (see **Applying click-feedback**). Skip only
-if the user opted out or `deno` isn't available; in that case just name the command so
-they can run it themselves.
+Two persistence targets, same intent: **inline** `data-note` attributes live on the element
+(an LLM rebuilding the file sees them in place — `sprig:build` applies + strips them), while
+**json** notes land in `<prototype>.feedback.json` (selector-keyed, works for JS-rendered
+elements). On the next run you apply either (see **Applying click-feedback**). Skip launching
+only if the user opted out or `deno` isn't available; then just name the command.

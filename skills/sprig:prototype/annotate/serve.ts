@@ -46,12 +46,13 @@ function parseArgs(argv: string[]): Args {
 function printHelp() {
   console.error(
     "Usage: deno run -A serve.ts <prototype.html> [--port 4505] [--open] [--host 127.0.0.1]\n\n" +
-      "  cmd/ctrl+click an element  → type feedback, save\n" +
-      "    · in the box: 'tree' picks any element from the HTML tree,\n" +
-      "      'css' opens a live CSS editor saved as feedback\n" +
-      "  shift+cmd/ctrl + drag      → draw on the page → save a screenshot note\n\n" +
-      "  Feedback → <prototype-basename>.feedback.json next to the prototype\n" +
-      "  (screenshots → <prototype-basename>.feedback.<id>.png alongside it).",
+      "  cmd/ctrl+click an element  → type a note, save: inline | json\n" +
+      "    · inline → data-note=\"…\" written onto the element in the SOURCE html\n" +
+      "    · json   → the sibling <prototype>.feedback.json (selector-keyed)\n" +
+      "    · in the box: 'tree' picks any element, 'css' is a live CSS editor\n" +
+      "  shift+cmd/ctrl + drag      → draw on the page → save a screenshot note\n" +
+      "  windows are draggable by their header; cmd+ctrl toggles a clean view\n\n" +
+      "  Inline notes live in the prototype html; json + screenshots land next to it.",
   );
 }
 
@@ -112,6 +113,67 @@ function decodePngDataUrl(dataUrl: string): Uint8Array | null {
   } catch {
     return null;
   }
+}
+
+// ---- inline mode: patch the SOURCE html with a data-note attribute in place ----
+
+// Regions whose `<tag>` text must NOT be treated as elements (script/style bodies, comments).
+function maskedRegions(src: string): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  const re = /<!--[\s\S]*?-->|<script\b[\s\S]*?<\/script\s*>|<style\b[\s\S]*?<\/style\s*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) out.push([m.index, m.index + m[0].length]);
+  return out;
+}
+
+function escapeAttr(v: string): string {
+  return v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/[\r\n]+/g, " ").trim();
+}
+
+// Set (or, with value=null, remove) an attribute on a single opening-tag string.
+function setTagAttr(openTag: string, name: string, value: string | null): string {
+  const attrRe = new RegExp(`\\s${name}\\s*=\\s*("[^"]*"|'[^']*')`, "i");
+  if (value === null || value === "") return openTag.replace(attrRe, "");
+  const inject = ` ${name}="${escapeAttr(value)}"`;
+  if (attrRe.test(openTag)) return openTag.replace(attrRe, inject);
+  // insert before the closing `>` (or `/>`), preserving self-closing form
+  return openTag.replace(/\s*\/?>$/, (end) => inject + (end.trim().startsWith("/") ? " />" : ">"));
+}
+
+// Find the source opening tag for {tag, classes, id, idx} and set/remove its data-note(+css).
+// Matching is by tag + class-set (+id), then the idx-th such tag in document order — so a
+// JS-rendered element absent from source yields {patched:false} (idx out of range) rather
+// than corrupting the file.
+function patchInlineNote(
+  src: string,
+  o: { tag: string; classes?: string; id?: string; idx?: number; note?: string; css?: string; remove?: boolean },
+): { patched: boolean; src?: string } {
+  const tag = (o.tag || "").toLowerCase();
+  if (!/^[a-z][a-z0-9-]*$/.test(tag)) return { patched: false };
+  const want = (o.classes || "").split(/\s+/).filter(Boolean);
+  const masks = maskedRegions(src);
+  const inMask = (pos: number) => masks.some(([s, e]) => pos >= s && pos < e);
+  const tagRe = new RegExp(`<${tag}\\b[^>]*>`, "gi");
+  const hits: Array<{ index: number; openTag: string }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = tagRe.exec(src))) {
+    if (inMask(m.index)) continue;
+    const openTag = m[0];
+    const clsM = /\sclass\s*=\s*("([^"]*)"|'([^']*)')/i.exec(openTag);
+    const cls = ((clsM && (clsM[2] ?? clsM[3])) || "").split(/\s+/).filter(Boolean);
+    if (want.length && !want.every((c) => cls.includes(c))) continue;
+    if (o.id) {
+      const idM = /\sid\s*=\s*("([^"]*)"|'([^']*)')/i.exec(openTag);
+      if (((idM && (idM[2] ?? idM[3])) || "") !== o.id) continue;
+    }
+    hits.push({ index: m.index, openTag });
+  }
+  if (!hits.length) return { patched: false };
+  const target = hits[Math.min(Math.max(o.idx ?? 0, 0), hits.length - 1)];
+  let nt = setTagAttr(target.openTag, "data-note", o.remove ? null : (o.note ?? ""));
+  nt = setTagAttr(nt, "data-note-css", o.remove || !o.css ? null : o.css);
+  if (nt === target.openTag) return { patched: true, src }; // nothing changed
+  return { patched: true, src: src.slice(0, target.index) + nt + src.slice(target.index + target.openTag.length) };
 }
 
 async function readFeedback(): Promise<Record<string, Entry>> {
@@ -178,6 +240,26 @@ async function handler(req: Request): Promise<Response> {
   if (p === "/__annotate/clear" && req.method === "POST") {
     await writeFeedback({});
     return json({});
+  }
+  // Inline mode: write the note as a `data-note` (+ `data-note-css`) attribute directly
+  // into the SOURCE prototype html, in place — so an LLM reading the file sees it on the element.
+  if (p === "/__annotate/inline" && req.method === "POST") {
+    const o = (await req.json()) as {
+      tag: string; classes?: string; id?: string; idx?: number; note?: string; css?: string; remove?: boolean;
+    };
+    if (!o.tag) return json({ ok: false, error: "missing tag" }, 400);
+    let html: string;
+    try {
+      html = await Deno.readTextFile(protoAbs);
+    } catch {
+      return json({ ok: false, error: "cannot read source" }, 500);
+    }
+    const r = patchInlineNote(html, o);
+    if (!r.patched) {
+      return json({ ok: false, reason: "not-in-source" }); // likely a JS-rendered element
+    }
+    if (r.src && r.src !== html) await Deno.writeTextFile(protoAbs, r.src);
+    return json({ ok: true });
   }
   // Save a drawing/screenshot: write the PNG next to the prototype, record an
   // entry that points at the filename (not the giant data URL).
@@ -259,9 +341,10 @@ console.error(`  prototype : ${protoAbs}`);
 console.error(`  feedback  : ${FEEDBACK_PATH}`);
 console.error(`  open      : ${pageURL}`);
 console.error("");
-console.error("  cmd/ctrl+click an element → type feedback → save.");
+console.error("  cmd/ctrl+click an element → type a note → save: inline | json.");
+console.error("    inline = data-note on the element in source · json = feedback.json");
 console.error("    in the box: 'tree' = pick any element · 'css' = live CSS editor");
-console.error("  shift+cmd/ctrl + drag → draw → save a screenshot note.");
+console.error("  shift+cmd/ctrl + drag → draw → screenshot note. Windows drag by header.");
 console.error("  Then re-run /prototype to apply it. Ctrl+C to stop.");
 console.error("");
 

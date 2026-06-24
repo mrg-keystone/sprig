@@ -19,25 +19,45 @@ skills/sprig:prototype/annotate/
 deno run -A skills/sprig:prototype/annotate/serve.ts <your>-prototype.html --open
 ```
 
-Three ways to leave feedback, all saved to the same place:
+Three ways to leave feedback:
 
-1. **⌘/Ctrl + click any element** → a box opens → type what should change → **save**
-   (or ⌘/Ctrl+Enter). Annotated elements get a numbered outline.
+1. **⌘/Ctrl + click any element** → a box opens → type what should change → **save**.
+   The save button is **split — `inline | json`** (see below). Annotated elements get a
+   numbered outline.
 2. **From inside that box**, two tools refine the note:
    - **`⌗ tree`** — a DevTools-style HTML tree. **Hover** a node to highlight it on
      the page, **click** to re-point the feedback at it. This is how you grab a
      *container* when ⌘-click only caught a child — pick exactly the element you mean.
    - **`{ } css`** — a live CSS editor (CodeMirror). Type declarations and the page
-     **updates in real time**; the computed-value chips insert current values to tweak.
-     **Save as feedback** records the declarations so `/prototype` can apply them.
+     **updates in real time**; the computed-value chips insert current values. **Apply**
+     attaches the declarations to the note; you then pick **inline** or **json**.
 3. **⇧⌘ (Shift+Cmd/Ctrl) + drag** → **draw** on the page. Release the keys, add an
    optional note, **save as feedback** → a **screenshot of the current view with your
    sketch on it** is written next to the prototype.
 
-The bottom-right toolbar shows the count and `list` / `export` / `clear`. Badges for a
-given screen clear themselves when you navigate away (and return when you come back), so
-old outlines don't linger over the wrong view. Typing in any annotate box is sealed off
-from the prototype — its own keyboard shortcuts won't fire while you're writing feedback.
+### Two ways to save an element note: `inline | json`
+
+- **`inline`** *(primary, ⌘/Ctrl+Enter)* — writes the note **onto the element itself in the
+  source HTML** as `data-note="…"` (and `data-note-css="…"` if you used the CSS editor):
+
+  ```html
+  <button class="tbtn solid" data-note="make this terracotta and larger"
+          data-note-css="background:#c2410c; font-size:18px">Home</button>
+  ```
+
+  An LLM rebuilding the prototype sees the instruction right on the element. `sprig:build`
+  knows to apply `data-note` / `data-note-css` and strip them from the output. Inline only
+  works for elements that exist **literally in the source** — for a JS-rendered element the
+  box says so and you fall back to `json`.
+- **`json`** — writes to the sibling **`<prototype>.feedback.json`** (selector-keyed; schema
+  below). Works for any element, including JS-rendered ones.
+
+The bottom-right toolbar shows the count and `list` / `export` / `clear`. Every window
+(note box, tree, CSS panel) is **draggable by its header**, so it never hides the element
+you're annotating. Badges for a given screen clear themselves when you navigate away (and
+return when you come back). Typing in any annotate box is sealed off from the prototype —
+its own keyboard shortcuts won't fire while you're writing feedback. **⌘+Ctrl** toggles a
+clean view (hides all annotate UI; the saved files are untouched).
 
 > The server is what writes the files — a double-clicked `file://` page can't write next
 > to itself. If you *do* open the raw file, the overlay still works and falls back to an

@@ -49,6 +49,44 @@ This is the biggest source of bugs — pretrained instincts reach for the wrong 
   `<router-outlet>`, `<content>` — but no NgModules, decorators-on-components, RxJS, or
   the Angular runtime. Bindings evaluate against the component's `logic.ts` scope.
 
+## Optimistic UI (MANDATORY)
+
+**Every user action that writes to the server MUST be optimistic by default.** Do not make
+the user watch a spinner waiting to learn if their action worked. The UI **acts as if the
+action already succeeded**, then reconciles:
+
+1. On the `(event)`, **apply the change to local island state immediately** and render it.
+2. **Fire the server call in the background** (don't `await` it before updating the UI).
+3. **On failure, roll back** to the pre-action state and surface the error (toast/inline).
+
+This requires the component be an **island** (it needs a `logic.ts`). The full pattern —
+snapshot → mutate → call → roll back — is in `references/component-model.md`
+(**Optimistic UI**).
+
+```ts
+async toggleDone(item) {
+  const prev = item.done;          // 1. snapshot for rollback
+  item.done = !item.done;          // 2. update the UI now (optimistic)
+  try {
+    await inject(Api).setDone(item.id, item.done);   // 3. server, in the background
+  } catch {
+    item.done = prev;              //    rolled back — and tell the user
+    this.error = "Couldn't save — reverted.";
+  }
+}
+```
+
+**Use optimism whenever humanly possible.** Only fall back to a **waiting/pending** UI when
+optimism is genuinely impossible — i.e. the outcome is unknowable on the client and *must*
+come from the server before you can show anything correct (a server-generated id you must
+display, a payment authorization, a search result set). When in doubt, be optimistic.
+
+**Exceptions — and only these:**
+- An **inline `data-note` says otherwise** (e.g. "wait for the server", "show a spinner
+  until confirmed"). The note wins — do exactly what it says for that element.
+- An **inline `data-note` says it must be an island with realtime updates** → build it as a
+  realtime island (live server-pushed updates), not a one-shot optimistic write.
+
 ## Install + scaffold
 
 The CLI lives on JSR. Install it once, then scaffold:
@@ -220,12 +258,40 @@ internals are in **`references/isolate.md`**.
    `deno task start`, and hit a real URL — the build code-splits + scopes CSS and the host
    differs from the dev server.
 
+## Building from an annotated prototype (`data-note`)
+
+A prototype handed to you may carry **inline annotations** left with the `sprig:prototype`
+annotate tool (its "save: inline" mode writes them straight onto the element):
+
+- **`data-note="…"`** — a change/instruction for *that specific element*: what it should do,
+  say, or become. Treat it as a per-element requirement from the user.
+- **`data-note-css="…"`** — CSS declarations the user wants applied to that element
+  (e.g. `color:#c2410c; font-size:18px`). Fold them into the component's `styles.css`
+  (scoped), not inline.
+
+How to consume them when translating the mock into sprig components:
+
+1. **Find them first.** `grep -rn 'data-note' <prototype>.html` — each hit is a pending
+   instruction tied to a concrete element. Build a checklist before writing components.
+2. **Apply to the right component.** The annotated element maps to a folder-component
+   (`template.html` + `logic.ts` + `styles.css`); apply `data-note` as behavior/markup and
+   `data-note-css` as scoped styles on that component.
+   - A `data-note` **overrides the optimistic-UI default** (above): if it says "wait for the
+     server" / "show a spinner", do that for this element; if it says it must be an **island
+     with realtime updates**, build it that way instead of a one-shot optimistic write.
+3. **Strip the attributes from the output.** `data-note` / `data-note-css` are *authoring
+   instructions, not markup* — never emit them into the built `template.html`.
+
+(The other annotate mode writes a sibling `<prototype>.feedback.json` instead — same intent,
+keyed by CSS selector; see `sprig:prototype`. Inline `data-note` lives on the element itself.)
+
 ## Decision matrix
 
 | Task                                                                       | Read                                           |
 | -------------------------------------------------------------------------- | ---------------------------------------------- |
 | Scaffold / project shape / CLI                                             | this file (above)                              |
 | A page/component's data + lifecycle; signals; DI                           | `references/component-model.md`                |
+| Optimistic UI for a server write (snapshot → mutate → call → roll back)     | `references/component-model.md` (Optimistic UI) |
 | Template syntax (bindings, control flow, projection, composing components) | `references/templates.md`                      |
 | Routes & data loading                                                      | `references/routing.md`                        |
 | Persisted state                                                            | `references/component-model.md` (StateService) |
@@ -234,6 +300,9 @@ internals are in **`references/isolate.md`**.
 
 ## Top gotchas
 
+- **Server writes are optimistic by default** (mandatory) — update the UI now, call in the
+  background, roll back on failure. Spinner-and-wait only when the result is unknowable
+  client-side, or an inline `data-note` says otherwise. See **Optimistic UI** above.
 - **A component is a folder, not a `.tsx`.** `template.html` (+ `logic.ts` + `styles.css`).
 - **`logic.ts` = island.** Want client interactivity (events, `onBrowserInit`)? The folder
   needs a `logic.ts`. Static folders ship no JS and their `(event)` bindings never fire.

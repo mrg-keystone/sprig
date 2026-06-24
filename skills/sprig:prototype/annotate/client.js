@@ -381,13 +381,17 @@
       '<button class="chip" data-act="css" title="Edit this element\'s CSS live, save as feedback">{ } css</button>' +
       "</div>" +
       '<textarea class="pop-ta" rows="3" placeholder="What should change here?"></textarea>' +
+      '<div class="pop-msg"></div>' +
       '<div class="pop-b">' +
       (existing ? '<button class="mini danger" data-act="delete">delete</button>' : "<span></span>") +
       '<div class="pop-rgt">' +
       '<button class="mini" data-act="cancel">cancel</button>' +
-      '<button class="mini primary" data-act="save">save</button>' +
-      "</div></div>";
+      '<span class="savesplit">save:' +
+      '<button class="mini primary" data-act="save-inline" title="Write data-note onto the element in the SOURCE html (⌘/Ctrl+Enter)">inline</button>' +
+      '<button class="mini" data-act="save-json" title="Write to the sibling feedback.json">json</button>' +
+      "</span></div></div>";
     root.appendChild(popEl);
+    dragByHeader(popEl, popEl.querySelector(".pop-h")); // header-drag the note box
 
     var selEl = popEl.querySelector(".pop-sel");
     selEl.textContent = ctx.selector;
@@ -413,11 +417,17 @@
       ta.setSelectionRange(ta.value.length, ta.value.length);
     }, 0);
 
-    function commit() {
+    function showMsg(t) {
+      var el = popEl && popEl.querySelector(".pop-msg");
+      if (el) { el.textContent = t || ""; el.style.display = t ? "block" : "none"; }
+    }
+    // `json` → sibling feedback.json (selector-keyed). `inline` → a data-note attribute
+    // written into the SOURCE html on the element itself.
+    function commit(mode) {
       var text = ta.value.trim();
       var css = ctx.css ? String(ctx.css).trim() : "";
+      if (mode === "inline") return commitInline(text, css);
       if (!text && !css) {
-        // nothing to save == delete
         delete store[ctx.key];
         pushEntry(Object.assign({}, ctx, { feedback: "", css: "", _delete: true })).then(after);
       } else {
@@ -425,6 +435,19 @@
         store[ctx.key] = entry;
         pushEntry(entry).then(after);
       }
+    }
+    function commitInline(text, css) {
+      // reflect on the live DOM at once (visual confirmation), then patch the source file
+      if (text) currentEl.setAttribute("data-note", text);
+      else currentEl.removeAttribute("data-note");
+      if (css) currentEl.setAttribute("data-note-css", css.replace(/\s*\n\s*/g, " "));
+      else currentEl.removeAttribute("data-note-css");
+      postInline(Object.assign({}, inlineDescriptor(currentEl), {
+        note: text, css: css, remove: !text && !css,
+      })).then(function (res) {
+        if (res && res.ok) after();
+        else showMsg("Couldn't find this element in the source HTML — it's rendered by JS. Use “json” instead.");
+      });
     }
     function remove() {
       delete store[ctx.key];
@@ -438,7 +461,8 @@
 
     popEl.addEventListener("click", function (e) {
       var act = e.target.getAttribute("data-act");
-      if (act === "save") commit();
+      if (act === "save-inline") commit("inline");
+      else if (act === "save-json") commit("json");
       else if (act === "cancel") dismissAll();
       else if (act === "delete") remove();
       else if (act === "tree") openTree();
@@ -447,12 +471,35 @@
     ta.addEventListener("keydown", function (e) {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
-        commit();
+        commit("inline"); // ⌘/Ctrl+Enter → the primary (inline) save
       } else if (e.key === "Escape") {
         e.preventDefault();
         dismissAll();
       }
     });
+  }
+
+  // Describe `el` for the inline source-patch: tag + class-set (+id) and its index among
+  // same-signature elements in live document order — which the server matches against source.
+  function inlineDescriptor(el) {
+    var tag = el.tagName.toLowerCase();
+    var classes = (el.getAttribute("class") || "").trim();
+    var id = el.id || "";
+    var sel = tag + (id ? "#" + cssEscape(id) : "") +
+      classes.split(/\s+/).filter(Boolean).map(function (c) { return "." + cssEscape(c); }).join("");
+    var all = Array.prototype.filter.call(document.querySelectorAll(sel), function (n) { return !isOurs(n); });
+    var idx = all.indexOf(el);
+    return { tag: tag, classes: classes, id: id, idx: idx < 0 ? 0 : idx };
+  }
+  function cssEscape(s) {
+    return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+  }
+  function postInline(payload) {
+    return fetch("/__annotate/inline", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; });
   }
 
   // Re-point the open popover at a different element (from the tree), keeping the
@@ -818,6 +865,7 @@
     treeEl.addEventListener("click", onTreeClick);
     treeEl.addEventListener("mouseover", onTreeHover);
     treeEl.addEventListener("mouseleave", hideInspect);
+    dragByHeader(treeEl, treeEl.querySelector(".tree-h")); // header-drag the tree panel
     var cur = treeNodes.get(currentEl);
     if (cur) cur.scrollIntoView({ block: "center" });
   }
@@ -947,10 +995,10 @@
       '<button class="pop-x" data-act="cancel">×</button></div>' +
       '<div class="cssref"></div>' +
       '<div class="cssed"></div>' +
-      '<div class="cssnote">Edits preview on the page live. <b>Save as feedback</b> records the declarations for /prototype to apply.</div>' +
+      '<div class="cssnote">Edits preview on the page live. <b>Apply</b> attaches the declarations to this note — then pick <b>inline</b> or <b>json</b> back in the note box.</div>' +
       '<div class="cssb"><button class="mini" data-act="revert">revert</button>' +
       '<div class="pop-rgt"><button class="mini" data-act="cancel">cancel</button>' +
-      '<button class="mini primary" data-act="save">save as feedback</button></div></div>' +
+      '<button class="mini primary" data-act="apply">apply</button></div></div>' +
       "</div>";
     root.appendChild(cssEl);
     cssEl.querySelector(".csssel").textContent = currentCtx.selector;
@@ -968,7 +1016,7 @@
       } else if (act === "revert") {
         setEditor("");
         revertLive();
-      } else if (act === "save") saveCss();
+      } else if (act === "apply") applyCss();
     });
 
     // Drag the panel by its header so it never permanently hides the element you're styling.
@@ -983,7 +1031,10 @@
       e.preventDefault();
       var r = card.getBoundingClientRect();
       var dx = e.clientX - r.left, dy = e.clientY - r.top;
-      card.style.right = "auto";
+      card.style.right = "auto"; // switch to left/top positioning regardless of original anchor
+      card.style.bottom = "auto";
+      card.style.left = r.left + "px";
+      card.style.top = r.top + "px";
       function move(ev) {
         card.style.left = Math.max(4, Math.min(window.innerWidth - 40, ev.clientX - dx)) + "px";
         card.style.top = Math.max(4, Math.min(window.innerHeight - 40, ev.clientY - dy)) + "px";
@@ -1099,23 +1150,15 @@
     scheduleReflow();
   }
 
-  function saveCss() {
-    var css = getEditor().trim();
-    currentCtx.css = css;
-    applyLive(css); // keep the preview applied
-    var text = popEl ? popEl.querySelector(".pop-ta").value.trim() : "";
-    if (!css && !text) {
-      delete store[currentCtx.key];
-      pushEntry(Object.assign({}, currentCtx, { feedback: "", css: "", _delete: true }));
-    } else {
-      var entry = Object.assign({}, currentCtx, { feedback: text, css: css });
-      store[currentCtx.key] = entry;
-      pushEntry(entry);
-    }
+  // Attach the declarations to the current note (keeping the live preview) and return to the
+  // note box — persistence (inline → data-note-css, or json) happens there via the split save.
+  function applyCss() {
+    currentCtx.css = getEditor().trim();
+    applyLive(currentCtx.css); // keep the preview applied
+    var seed = popEl ? popEl.querySelector(".pop-ta").value : undefined; // keep the typed note
     closeCssModal();
     updateCssDot();
-    renderToolbar();
-    renderBadges();
+    if (currentEl && currentCtx) openPopover(currentEl, currentCtx, seed); // back to the note box
   }
 
   function closeCssModal() {
@@ -1383,8 +1426,11 @@
     ".mini.primary{background:#c2410c}.mini.primary:hover{background:#9a3412}" +
     ".mini.danger{background:#3a2420;color:#fca5a5}.mini.danger:hover{background:#4a2a24}" +
     ".pop{position:fixed;width:280px;background:#fffdf8;color:#17150f;border:1px solid #d6ccb4;border-radius:10px;box-shadow:0 16px 50px -12px rgba(23,21,15,.4);padding:10px;pointer-events:auto;font:400 12px/1.4 ui-monospace,Menlo,monospace}" +
-    ".pop-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}" +
+    ".pop-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;cursor:move;user-select:none}" +
     ".pop-sel{color:#c2410c;font-weight:600;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+    ".pop-msg{display:none;margin-top:6px;padding:5px 7px;border-radius:6px;background:#fbe9e0;color:#9a3412;font-size:11px;line-height:1.3}" +
+    ".savesplit{display:inline-flex;align-items:center;gap:4px;color:#6b6453;font-size:11px}" +
+    ".savesplit .mini{padding:4px 7px}" +
     ".pop-x{all:unset;cursor:pointer;color:#9b927c;font-size:16px;line-height:1;padding:0 2px}" +
     ".pop-tgt{color:#6b6453;font-size:11px;max-height:34px;overflow:hidden;margin-bottom:6px;padding:4px 6px;background:#faf6ec;border-radius:6px}" +
     ".pop-ta{width:100%;box-sizing:border-box;resize:vertical;border:1px solid #d6ccb4;border-radius:6px;padding:6px;font:inherit;background:#fff;color:#17150f}" +
@@ -1409,7 +1455,7 @@
     ".chip.has{background:#f7e7dd;color:#c2410c;border-color:#e8c8b6}" +
     // tree picker
     ".tree{position:fixed;left:16px;bottom:64px;width:340px;max-height:60vh;display:flex;flex-direction:column;background:#17150f;color:#f3eee2;border-radius:10px;box-shadow:0 16px 50px -12px rgba(0,0,0,.55);z-index:5;pointer-events:auto;font:400 11px/1.5 ui-monospace,Menlo,monospace}" +
-    ".tree-h{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #2a2620}" +
+    ".tree-h{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #2a2620;cursor:move;user-select:none}" +
     ".tree-h .tree-hint{margin-left:auto;color:#6b6453;font-size:10px;font-weight:500}" +
     ".tree-body{overflow:auto;padding:4px 0}" +
     ".tnode{display:flex;align-items:center;gap:4px;padding:2px 8px 2px 0;white-space:nowrap;cursor:pointer;border-radius:4px}" +
