@@ -6,10 +6,10 @@ for an area you're unsure about. Start from `../SKILL.md`.
 | File | Covers |
 |---|---|
 | `component-model.md` | Folder-components; `logic.ts` as a class vs `defineComponent({ setup })`; lifecycle hooks (`onServerInit`/`onBrowserInit`/`onServerDestroy`/`onBrowserDestroy`) + the server→client snapshot; signals; dependency injection (`@Injectable`/`inject`/`Backend`); `StateService` persisted state |
-| `templates.md` | Angular-flavored HTML: `{{ }}` interpolation, `[prop]` inputs, `(event)` handlers, `@if`/`@else`/`@for`/`@empty`, composing child components by selector, `<ng-content>` projection, `<router-outlet>`, scoped `styles.css` |
+| `templates.md` | Angular-flavored HTML: `{{ }}` interpolation, `[prop]` inputs, `(event)` handlers, `@if`/`@else`/`@for`/`@empty`, composing child components by selector, `<content>` projection (self-close + fallback; `<ng-content>` alias), `<router-outlet>`, scoped `styles.css` |
 | `routing.md` | `defineRoutes` + `load`; auto-loading a page's `logic.ts`/`resolve.ts` data (no module map); `createRenderer` + `bootstrap` |
 | `serving.md` | `sprigUi` middleware (`app.use(ui)` in Danet/Oak/Hono) and `serveSprig` single-origin; the `static/` build output |
-| `isolate.md` | `sprig isolate` — discover + preview every component/page in isolation with HMR |
+| `isolate.md` | `sprig isolate` — the Storybook-style workbench: components that have an `isolate/` folder (fixture + named cases), with a controls panel, console, tests, and HMR |
 
 ## Task → file
 

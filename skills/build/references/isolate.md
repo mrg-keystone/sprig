@@ -1,49 +1,59 @@
 # `sprig isolate` — the component/page workbench
 
-`sprig isolate` lets you develop and debug **one component at a time**, rendered standalone
-instead of inside a full page. Run it from the app directory:
+`sprig isolate` is a Storybook-style **workbench** for developing and debugging components in
+isolation — each rendered standalone, in named states ("cases"), with live controls, a console,
+and Playwright tests. Run it from the app directory:
 
 ```sh
-sprig isolate          # → http://localhost:8000/ui   (PORT env to change)
+sprig isolate          # → http://localhost:8000/   (PORT env to change; picks the next free port)
 ```
 
-## What it does
+## A component shows only if it has an `isolate/` folder
 
-1. **Discovers** every folder-component under `src` (any folder with a `template.html`,
-   skipping `shell` and the generated `_isolate`).
-2. For each **component**, generates a wrapper preview page that renders it in isolation —
-   `src/_isolate/iso-<selector>/template.html` containing `<selector></selector>` (the
-   `iso-` prefix keeps the wrapper's selector from colliding with the real component).
-   **Pages** (under `pages/`) render directly.
-3. Builds the app and serves it **through the dev server**, so islands get their AST
-   endpoint + **HMR** — edit a component and the isolated preview hot-reloads.
-4. Serves an **index picker** at `/ui` listing every component (with `page`/`component`
-   tags); each links to `/ui/<selector>` where it renders alone.
+Discovery scans **every** top-level folder under `src/` (`shared-components/`, `pages/`, or
+whatever layout you use; `shell` is skipped). A folder-component (a folder with a
+`template.html`) appears in the workbench **only when it also has an `isolate/` folder** — its
+`fixture.json` + `cases/`. No `isolate/` → it is **not** shown (you'll see *"Nothing to isolate —
+no folder-component has an isolate/ folder yet."*). There is no auto/"default" case.
 
-Islands hydrate in isolation exactly as they would in a page (their `(event)` bindings,
-`onBrowserInit`, signals all work), so you can interact with the component and watch it
-behave.
+A folder under `pages/` is treated as a page; anything else is a component. Author the
+`isolate/` folder per **`breakdown/references/isolate-format.md`** (fixture + cases + tests):
 
-## Usage
-
-```sh
-sprig isolate          # from the app dir; pick a component from the index, see it standalone
+```
+src/shared-components/ui-button/
+  template.html
+  logic.ts
+  isolate/
+    fixture.json                  # category, controls (the controls panel), …
+    cases/
+      primary/primary.json        # one named state → one entry in the sidebar
+      disabled/disabled.json
+      disabled/tests/*.spec.ts     # optional Playwright tests for this case
 ```
 
-- Generated previews live in a gitignorable `src/_isolate/` (cleared and regenerated each
-  run) — add `src/_isolate/` to `.gitignore`.
-- It reuses the framework end to end — no separate workbench app or extra config.
+## What you get
+
+- **Sidebar** — every component/page grouped by category, each with its named cases.
+  `⌘K` / "Jump to a case…" to fuzzy-find.
+- **Stage** — the selected case rendered in an iframe (it hydrates exactly as in a page:
+  `(event)` bindings, `onBrowserInit`, signals all work). Viewport presets (fit/360/768/1024/
+  full), zoom, and a stage-background picker.
+- **Controls** — edit the case's inputs/signals live (declared in `fixture.json`).
+- **Console** — the component's console output.
+- **Tests** — run the case's Playwright specs ("Run all tests", per-case results).
+- **HMR** — edit the component's `template.html`/`styles.css`/`logic.ts` (or a case's JSON) and
+  the stage hot-swaps **without a restart**.
+
+## How it works (internals)
+
+It builds a small workbench app (a separate sprig app shipped with the CLI) in dev mode,
+copies each discovered case's component into the workbench's previews, and serves the whole
+thing — UI + the in-process keep backend (discovery + test runner) — through the compiler's dev
+server for HMR. None of this lands in your project (the build goes to a temp cache, not
+`static/`); your `src/` only ever holds the `isolate/` folders you author.
 
 ## When to use it vs `sprig dev`
 
-- **`sprig isolate`** — building or debugging a single component/island; you want it on its
-  own, with HMR, without wiring it into a page.
-- **`sprig dev`** — the whole app: real routes, pages composing many components, full
-  navigation.
-
-## Limitations (current)
-
-It renders each component standalone with **default/empty inputs** — there is not yet a
-controls panel, per-scenario cases, or an event log. To exercise a component with specific
-inputs today, compose it in a throwaway page (or a `pages/` route) with the bindings you
-want and use `sprig dev`. The isolation + HMR + per-component picker is the core loop.
+- **`sprig isolate`** — building/debugging a single component in named states, with controls +
+  tests, on its own.
+- **`sprig dev`** — the whole app: real routes, pages composing many components, full nav.

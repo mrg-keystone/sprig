@@ -46,7 +46,7 @@ This is the biggest source of bugs — pretrained instincts reach for the wrong 
 - **The CLI is `sprig`** (`init`/`dev`/`build`/`isolate`/`serve`/`update`), installed from
   `jsr:@sprig/core/cli`. There's no `_fresh/`, no `vite.config.ts`, no manifest.
 - **It's Angular's _syntax_, not Angular.** `{{ }}`, `[prop]`, `(event)`, `@if`/`@for`,
-  `<router-outlet>`, `<ng-content>` — but no NgModules, decorators-on-components, RxJS, or
+  `<router-outlet>`, `<content>` — but no NgModules, decorators-on-components, RxJS, or
   the Angular runtime. Bindings evaluate against the component's `logic.ts` scope.
 
 ## Install + scaffold
@@ -159,7 +159,8 @@ The most-reached-for bindings — full reference in **`references/templates.md`*
 - `@if (cond) { … } @else { … }`, `@for (x of list; track x.id) { … } @empty { … }` —
   control flow blocks.
 - `<router-outlet>` — in the shell, where the matched page renders.
-- `<ng-content>` — projects a component's children into its template.
+- `<content>` — projects a component's children into its template (may self-close, `<content/>`;
+  its own children are the fallback when nothing is projected; `<ng-content>` is an alias).
 - `<child-selector [in]="x" (ev)="f()">` — compose another folder-component by its
   selector (basename).
 
@@ -195,19 +196,18 @@ all-in-one alternative. The host owns every other route; sprig owns `/ui`. Detai
 
 ## Preview & test one component in isolation (`sprig isolate`)
 
-`sprig isolate` is the component/page workbench: it discovers every folder-component in the
-app, renders each one **in isolation** (a generated wrapper page per component; pages render
-directly), serves an index picker, and runs through the dev server so islands hydrate and
-HMR works.
+`sprig isolate` is a Storybook-style **workbench**: it discovers every folder-component that
+has an `isolate/` folder (its `fixture.json` + named `cases/`) and serves a sidebar of
+components + cases, a live stage, a controls panel, a console, and per-case Playwright tests —
+with **HMR** (edit a component or a case and the stage hot-swaps).
 
 ```sh
-sprig isolate          # from the app dir → http://localhost:8000/ui : pick a component, see it alone
+sprig isolate          # from the app dir → http://localhost:8000/ : pick a case, see it alone
 ```
 
-Reach for it when building or debugging _one_ component without wiring it into a page —
-edit the component and the isolated preview hot-reloads. Generated previews live in a
-gitignorable `src/_isolate/`. More — what it discovers, the picker, limitations — in
-**`references/isolate.md`**.
+A component shows **only if it has an `isolate/` folder** (no `isolate/` → *"Nothing to
+isolate"*). Author cases per **`breakdown/references/isolate-format.md`**; the workbench + its
+internals are in **`references/isolate.md`**.
 
 ## The dev loop
 

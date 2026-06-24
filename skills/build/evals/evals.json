@@ -48,13 +48,13 @@
       "id": 3,
       "name": "preview-in-isolation",
       "prompt": "How do I develop and preview a single component in my sprig app without wiring it into a full page?",
-      "expected_output": "Run `sprig isolate` from the app directory — it discovers every folder-component, renders each in isolation (via the dev server so islands hydrate + HMR works), and serves an index picker at /ui where each component links to /ui/<selector> rendered standalone. Generated previews live in a gitignorable src/_isolate/.",
+      "expected_output": "Add an `isolate/` folder to the component (a `fixture.json` + one or more `cases/<name>/<name>.json` named states), then run `sprig isolate` from the app directory. It opens a Storybook-style workbench (sidebar of components + cases, a live stage, a controls panel, console, and per-case Playwright tests) with HMR — edit the component or a case and the stage hot-swaps. A component shows only if it has an `isolate/` folder.",
       "files": [],
       "assertions": [
         "Uses `sprig isolate` (the built-in CLI command), not a separate Storybook/Fresh app",
-        "Each component renders in isolation with islands hydrating + HMR",
-        "An index picker lists components; /ui/<selector> shows one alone",
-        "Generated previews are under src/_isolate/ (gitignore it)"
+        "Says the component needs an `isolate/` folder (fixture + cases) to show",
+        "Describes the workbench: cases sidebar, live stage, controls, tests, HMR",
+        "Editing a component/case hot-swaps the stage (HMR)"
       ]
     }
   ]
