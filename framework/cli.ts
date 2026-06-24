@@ -16,7 +16,7 @@ import { dirname, fromFileUrl, join, resolve, toFileUrl } from "@std/path";
 import { buildClient } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
 import { sprigUi } from "../packages/keep/mod.ts";
-import { assertWorkbench, installRuntimeFromDeployment, installRuntimeFromWorkingTree } from "./.sprig/install.ts";
+import { assertWorkbench, installRuntimeFromDeployment, installRuntimeFromWorkingTree, latestRuntimeVersion } from "./.sprig/install.ts";
 
 // the published-package version range a scaffolded app pins (core + its /keep + /cli
 // sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
@@ -473,21 +473,6 @@ async function localVersion(): Promise<string> {
   }
 }
 
-/** The latest published @sprig/core version on JSR, or null if the network/registry is
- *  unreachable (so `sprig -v` still prints the local version offline). */
-async function jsrLatestVersion(): Promise<string | null> {
-  try {
-    const res = await fetch("https://jsr.io/@sprig/core/meta.json", {
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!res.ok) return null;
-    const meta = await res.json();
-    return typeof meta.latest === "string" ? meta.latest : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Compare two semver-ish `a.b.c` strings. Returns >0 if `a` is newer than `b`. */
 function compareVersions(a: string, b: string): number {
   const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
@@ -499,12 +484,13 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** `sprig -v` / `--version`: print this install's version, then check JSR and, if a newer
- *  release exists, print a colored upgrade notice with the `sprig update` hint. */
+/** `sprig -v` / `--version`: print this install's version, then check the GitHub runtime
+ *  release (the SAME source `sprig update` installs from) and, if a newer release exists,
+ *  print a colored upgrade notice with the `sprig update` hint. */
 async function version(): Promise<void> {
   const local = await localVersion();
   console.log(`sprig ${local}`);
-  const latest = await jsrLatestVersion();
+  const latest = await latestRuntimeVersion();
   if (latest && local !== "?" && compareVersions(latest, local) > 0) {
     const G = "\x1b[32m", B = "\x1b[1m", C = "\x1b[36m", R = "\x1b[0m";
     console.log(

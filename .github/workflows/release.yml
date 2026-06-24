@@ -1,24 +1,41 @@
-# Push to main → (re)publish the "runtime-latest" GitHub release whose
-# `sprig-runtime.tar.gz` asset is the SOURCE bundle the CLI runs from locally:
-# framework/ (incl. the tree-sitter grammar.wasm) + packages/ + skills/ + the isolate
-# workbench (app/ + server/ + cli/ + serve.ts) + the workspace deno.json — but NO
-# node_modules. `sprig install` / `sprig update` (framework/.sprig/install.ts) download it,
-# extract to ~/.sprig, run `deno install` THERE to build every workspace member's node_modules
-# on the machine, install the skills, and write the `sprig` launcher — so the compiler loads
-# grammar.wasm + its deps locally and `sprig isolate` serves the workbench from ~/.sprig.
-# Runs alongside publish.yml (which publishes @sprig/core to JSR for the `install`
-# bootstrap). Self-update only reflects changes once committed, pushed, AND released.
+# Build the "runtime-latest" GitHub release whose `sprig-runtime.tar.gz` asset is the SOURCE
+# bundle the CLI runs from locally: framework/ (incl. the tree-sitter grammar.wasm) + packages/
+# + skills/ + the isolate workbench (app/ + server/ + cli/ + serve.ts) + the workspace deno.json
+# — but NO node_modules. `sprig install` / `sprig update` (framework/.sprig/install.ts) download
+# it, extract to ~/.sprig, run `deno install` THERE to build every workspace member's
+# node_modules on the machine, install the skills, and write the `sprig` launcher.
+#
+# LOCKSTEP WITH JSR: this runs on `workflow_run` AFTER publish.yml succeeds — NOT on `push`.
+# publish.yml computes the next version from JSR, bumps deno.json, publishes to JSR, and commits
+# the bump back to main. By the time it completes, main's tip carries that bump, so we check out
+# main HEAD and bundle the EXACT version that just went to JSR. (On a `push` trigger we'd bundle
+# the pre-bump tree and ship one release behind JSR forever.)
 name: release-runtime
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: ["publish"]
+    types: [completed]
 permissions:
   contents: write
 jobs:
   release-runtime:
+    # Only after a successful JSR publish — so the runtime bundle's version == JSR's.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main # post-bump tip: includes publish.yml's `release: vX (auto-bump)` commit
+          fetch-depth: 0
+      - name: Resolve the version JSR just published
+        id: ver
+        run: |
+          set -eu
+          v=$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')
+          sha=$(git rev-parse HEAD)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Bundling runtime for v$v @ $sha"
       - name: Build the source runtime bundle (no node_modules)
         run: |
           set -eu
@@ -38,13 +55,19 @@ jobs:
       - name: Refresh the runtime-latest release with the bundle
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          SHA: ${{ steps.ver.outputs.sha }}
         run: |
           set -eu
           tag="runtime-latest"
-          # Move the rolling tag to this commit: drop the old release+tag, recreate it.
+          # Move the rolling tag to the bumped commit: drop the old release+tag, recreate it.
+          # The notes carry `version: <v>` so `sprig -v` (latestRuntimeVersion) reads the shipped
+          # version straight from the release — in lockstep with JSR by construction.
           gh release delete "$tag" --repo "${{ github.repository }}" --yes --cleanup-tag || true
           gh release create "$tag" sprig-runtime.tar.gz \
             --repo "${{ github.repository }}" \
-            --target "${{ github.sha }}" \
-            --title "sprig runtime (latest)" \
-            --notes "Source runtime bundle (framework + packages + skills + grammar.wasm + isolate workbench: app/server/cli/serve.ts) from ${{ github.sha }}. Installed by 'sprig install' / 'sprig update' → ~/.sprig (deno install runs on the machine)."
+            --target "$SHA" \
+            --title "sprig runtime $VERSION" \
+            --notes "version: $VERSION
+
+          Source runtime bundle (framework + packages + skills + grammar.wasm + isolate workbench: app/server/cli/serve.ts) from $SHA. Installed by 'sprig install' / 'sprig update' → ~/.sprig (deno install runs on the machine). Lockstepped with the @sprig/core $VERSION release on JSR."

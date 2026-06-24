@@ -138,6 +138,40 @@ export async function installRuntimeFromDeployment(): Promise<void> {
   await installLauncher(dest);
 }
 
+/** The version `sprig update` would install: the GitHub `runtime-latest` release. release.yml
+ *  locksteps this with JSR (it runs after the JSR publish + bump) and stamps the version into
+ *  the release title (`sprig runtime <v>`) and notes (`version: <v>`), so read it straight from
+ *  there. Falls back to reading deno.json at the build commit named in the body (older releases
+ *  predating the stamp). NOT a JSR lookup — JSR is a separate pipeline. Returns null if the
+ *  network/registry is unreachable (so `sprig -v` still prints the local version offline). */
+export async function latestRuntimeVersion(): Promise<string | null> {
+  const SEMVER = /\b(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b/;
+  try {
+    const rel = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/${RUNTIME_TAG}`, {
+      headers: { ...UA, accept: "application/vnd.github+json" },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!rel.ok) return null;
+    // deno-lint-ignore no-explicit-any
+    const j: any = await rel.json();
+    // Preferred: the stamped version in the notes (`version: 0.10.3`) or title (`sprig runtime 0.10.3`).
+    const stamped = (j.body ?? "").match(/version:\s*(\S+)/i)?.[1] ??
+      (j.name ?? "").match(SEMVER)?.[1];
+    if (stamped) return stamped;
+    // Fallback for pre-stamp releases: read deno.json at the build commit named in the body.
+    const sha = (j.body ?? "").match(/\b([0-9a-f]{40})\b/)?.[1] ?? "main";
+    const cfg = await fetch(`https://raw.githubusercontent.com/${REPO}/${sha}/deno.json`, {
+      headers: UA,
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!cfg.ok) return null;
+    const meta = await cfg.json();
+    return typeof meta.version === "string" ? meta.version : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Dev install: wire the launcher to THIS checkout (it already has node_modules + the
  *  wasm) and install its skills — for repo devs (`deno task install:dev`). */
 export async function installRuntimeFromWorkingTree(repoRoot: string): Promise<void> {
