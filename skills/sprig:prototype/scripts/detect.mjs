@@ -10,7 +10,7 @@
  * source of truth.
  *
  * Invocation (unchanged for the agent):
- *   node .claude/skills/prototype/scripts/detect.mjs --json <targets...>
+ *   node .claude/skills/sprig:prototype/scripts/detect.mjs --json <targets...>
  *
  * Resolving design-lint (first hit wins):
  *   1. $DESIGN_LINT_BIN   — absolute path to design-lint/bin/detect.mjs

@@ -9,7 +9,7 @@ no build step) and **Lucide** icons, with correct daisyUI markup pulled from the
 Two pieces ship together in this repo:
 
 ```
-skills/prototype/
+skills/sprig:prototype/
 ├── SKILL.md             The prototype skill (one cohesive SKILL.md). Turns an
 ├── scripts/             app description or spec into ONE self-contained .html:
 │                        every screen clickable, hardcoded data, fake in-memory
@@ -89,7 +89,7 @@ and writes the notes to `<prototype>.feedback.json` next to the file, which the
 skill reads on the next iteration. See `annotate/README.md`.
 
 ```sh
-deno run -A skills/prototype/annotate/serve.ts <your>-prototype.html --open
+deno run -A skills/sprig:prototype/annotate/serve.ts <your>-prototype.html --open
 ```
 
 ## Requirements
@@ -112,7 +112,7 @@ the repo README. The skill is self-contained, so a per-project install is a
 plain copy:
 
 ```sh
-cp -R skills/prototype /path/to/project/.claude/skills/prototype
+cp -R skills/sprig:prototype /path/to/project/.claude/skills/sprig:prototype
 ```
 
 ## Use the linter directly (CI / scripts)

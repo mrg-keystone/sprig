@@ -1,5 +1,5 @@
 ---
-name: "isolate:prototype"
+name: "sprig:prototype"
 description: Use when the user wants a fast, throwaway, single-file clickable HTML prototype to answer "what are we building" — the complete look-and-feel and main flow of an app, not a production build. Builds ONE self-contained .html with hardcoded data, fake in-memory interactions, CDN scripts only, that opens by double-clicking. Deliberately includes the unglamorous states (empty, loading, error toast, content overflow) where real requirements hide. Also use to change, extend, or iterate on a prototype that already exists — add or rework a screen, fix the flow, restyle, tweak the fake data — when the user points at a *-prototype.html or asks to improve a demo you built. Trigger for "mock up", "prototype", "demo screen", "clickable wireframe", "show me what X looks like", "add a screen to the prototype", "change/iterate on the prototype", or turning a spec/notes/rough draft, or a Figma URL, into a tangible demo. NOT for production code, real backends, component libraries, or anything that must be maintained.
 version: 1.5.0
 user-invocable: true
@@ -236,7 +236,7 @@ This skill grew out of a visual-design linter, which still ships alongside as
 file:
 
 ```
-node .claude/skills/prototype/scripts/detect.mjs --json <file>.html
+node .claude/skills/sprig:prototype/scripts/detect.mjs --json <file>.html
 ```
 
 It flags visual slop (low contrast, flat type hierarchy, etc.). Treat it as a
@@ -255,7 +255,7 @@ screen — the fastest feedback on something you look at is clicking it, so make
 default ending for every create/iterate rather than waiting to be asked:
 
 ```
-deno run -A .claude/skills/prototype/annotate/serve.ts <prototype>.html --open
+deno run -A .claude/skills/sprig:prototype/annotate/serve.ts <prototype>.html --open
 ```
 
 Run it in the background, then tell the user the URL and how to leave feedback:

@@ -5,7 +5,7 @@ leave feedback; everything is written **right next to the prototype**, ready for
 `/prototype` to read and apply on the next iteration.
 
 ```
-skills/prototype/annotate/
+skills/sprig:prototype/annotate/
 ├── serve.ts     Deno server: serves the prototype, injects the overlay,
 │                persists <prototype-basename>.feedback.json (+ screenshot PNGs)
 │                next to the file
@@ -16,7 +16,7 @@ skills/prototype/annotate/
 ## Collect feedback
 
 ```sh
-deno run -A skills/prototype/annotate/serve.ts <your>-prototype.html --open
+deno run -A skills/sprig:prototype/annotate/serve.ts <your>-prototype.html --open
 ```
 
 Three ways to leave feedback, all saved to the same place:
