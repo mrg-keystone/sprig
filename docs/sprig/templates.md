@@ -151,13 +151,16 @@ An unknown pipe name passes the value through unchanged.
 <ng-container>…</ng-container>           <!-- groups children with no DOM element -->
 <content/>                               <!-- content projection slot (may self-close) -->
 <content select="[footer]"/>             <!-- a named projection slot -->
+<content>default</content>               <!-- fallback shown when nothing is projected -->
 ```
 
 `<router-outlet>` is emitted as a persistent `<sprig-outlet>` boundary (the soft-nav swap
 target — see [routing.md](./routing.md)). Content placed between a component's tags is
 projected via **`<content>`** (which may self-close, `<content/>`; optionally
 `select="tag"` / `select=".class"` / `select="[attr]"`; the unmatched remainder fills the
-default `<content>`). The Angular-flavoured `<ng-content>` is accepted as an alias.
+default `<content>`). A slot's **own children are the fallback** rendered (in the component's
+scope) when nothing is projected — so `<content>{{ label() }}</content>` shows the label by
+default. The Angular-flavoured `<ng-content>` is accepted as an alias.
 
 ## Keep templates dumb
 

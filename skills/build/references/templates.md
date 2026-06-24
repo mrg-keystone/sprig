@@ -79,7 +79,8 @@ may self-close as `<content/>`). `<ng-content>` is accepted as an alias.
 ```
 
 Scope a slot with `select="tag" / ".class" / "[attr]"`; the unmatched remainder fills the
-default `<content/>`. (There's no fallback content — an empty slot renders nothing.)
+default `<content/>`. A slot's own children are the fallback shown when nothing is projected:
+`<content>default label</content>`.
 
 ## The shell + `<router-outlet>`
 

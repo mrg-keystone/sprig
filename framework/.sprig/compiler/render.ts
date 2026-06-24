@@ -197,8 +197,9 @@ function renderElement(node: Node, opts: RenderOpts): string {
   // the outlet is a persistent boundary element (the soft-nav swap target)
   if (tag === "router-outlet") return `<sprig-outlet>${opts.outlet ?? ""}</sprig-outlet>`;
 
-  // content projection: <content>/<ng-content> emits projected nodes; <ng-container> groups w/o a DOM element
-  if (isContentTag(tag)) return renderContent(attrs, opts);
+  // content projection: <content>/<ng-content> emits projected nodes (or its own children as a
+  // fallback when nothing is projected); <ng-container> groups w/o a DOM element
+  if (isContentTag(tag)) return renderContent(attrs, children, opts);
   if (tag === "ng-container") return renderNodes(children, opts);
 
   // a custom (non-native) tag may resolve to a registered component
@@ -498,14 +499,18 @@ function injectRootAttrs(html: string, extra: string): string {
   return extra ? html.replace(/^(\s*<[a-zA-Z][\w-]*)/, `$1${extra}`) : html;
 }
 
-// render <ng-content> by emitting the projected nodes (in the parent's scope)
-function renderContent(attrs: Node[], opts: RenderOpts): string {
+// Render <content>/<ng-content>: emit the projected nodes (in the PARENT's scope). When
+// nothing is projected into this slot, fall back to the slot's OWN children — the component's
+// default content, in the COMPONENT's scope (so `<content>default</content>` shows "default").
+function renderContent(attrs: Node[], children: Node[], opts: RenderOpts): string {
+  const fallback = () => renderNodes(children, { ...opts, projected: undefined });
   const p = opts.projected;
-  if (!p) return "";
+  if (!p) return fallback();
   const sel = attrValue(attrs, "select");
   const picked = sel
     ? p.nodes.filter((n) => matchesSelect(n, sel))
     : p.nodes.filter((n) => !p.namedSelects.some((s) => matchesSelect(n, s))); // default slot = unmatched
+  if (!picked.length) return fallback();
   // projected nodes belong to the PARENT component → its scope marker, not the child's
   return renderNodes(picked, { ...opts, scope: p.scope, source: p.source, scopeAttr: p.scopeAttr, projected: undefined });
 }

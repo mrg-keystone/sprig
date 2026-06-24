@@ -134,6 +134,15 @@ Deno.test("renderer: <content> is the projection slot (preferred alias, self-clo
   assertStringIncludes(out, "<p>body</p></main>"); // the unmatched <p> → default slot <content/>
 });
 
+Deno.test("renderer: <content>default</content> fallback shows when nothing is projected", async () => {
+  const btnTpl = await parseTemplate(`<button class="b"><content>Click me</content></button>`);
+  const registry = {
+    get: (s: string) => (s === "x-btn" ? { selector: "x-btn", template: btnTpl } : undefined),
+  };
+  assertStringIncludes(await renderSrc(`<x-btn></x-btn>`, {}, registry), ">Click me</button>"); // empty → fallback
+  assertStringIncludes(await renderSrc(`<x-btn>Save</x-btn>`, {}, registry), ">Save</button>"); // projected wins
+});
+
 import { scopeCss, scopeId } from "./scope.ts";
 
 Deno.test("scope: scopeId is stable + deterministic", () => {
