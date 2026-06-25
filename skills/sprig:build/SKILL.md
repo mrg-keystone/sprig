@@ -260,8 +260,10 @@ internals are in **`references/isolate.md`**.
 
 ## Building from an annotated prototype (`data-note`)
 
-A prototype handed to you may carry **inline annotations** left with the `sprig:prototype`
-annotate tool (its "save: inline" mode writes them straight onto the element):
+The UI-pipeline inputs live under **`spec/ui/`**: the build spec at `spec/ui/breakdown/`, the
+source mock at `spec/ui/<app>-prototype.html` (+ its `.feedback.json` sibling), and the brand at
+`spec/ui/design-system/`. A prototype handed to you may carry **inline annotations** left with the
+`sprig:prototype` annotate tool (its "save: inline" mode writes them straight onto the element):
 
 - **`data-note="…"`** — a change/instruction for *that specific element*: what it should do,
   say, or become. Treat it as a per-element requirement from the user.
@@ -271,7 +273,7 @@ annotate tool (its "save: inline" mode writes them straight onto the element):
 
 How to consume them when translating the mock into sprig components:
 
-1. **Find them first.** `grep -rn 'data-note' <prototype>.html` — each hit is a pending
+1. **Find them first.** `grep -rn 'data-note' spec/ui/*-prototype.html` — each hit is a pending
    instruction tied to a concrete element. Build a checklist before writing components.
 2. **Apply to the right component.** The annotated element maps to a folder-component
    (`template.html` + `logic.ts` + `styles.css`); apply `data-note` as behavior/markup and
@@ -282,8 +284,8 @@ How to consume them when translating the mock into sprig components:
 3. **Strip the attributes from the output.** `data-note` / `data-note-css` are *authoring
    instructions, not markup* — never emit them into the built `template.html`.
 
-(The other annotate mode writes a sibling `<prototype>.feedback.json` instead — same intent,
-keyed by CSS selector; see `sprig:prototype`. Inline `data-note` lives on the element itself.)
+(The other annotate mode writes a sibling `spec/ui/<app>-prototype.feedback.json` instead — same
+intent, keyed by CSS selector; see `sprig:prototype`. Inline `data-note` lives on the element itself.)
 
 ## Decision matrix
 

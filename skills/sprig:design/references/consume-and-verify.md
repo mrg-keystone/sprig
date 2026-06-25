@@ -30,7 +30,7 @@ a dark palette that's illegible). So **always render `showcase.html` and look.**
 1. **Serve over HTTP.** The Playwright MCP blocks `file://`. Start a static server rooted at the
    artifact folder:
    ```bash
-   python3 -m http.server 8787 --directory "<artifact folder>" &
+   python3 -m http.server 8787 --directory spec/ui/design-system &
    ```
 2. **Navigate** to `http://localhost:8787/preview/showcase.html`, **resize** to ~1280×900.
 3. **Wait** ~2–3s so the Tailwind browser compiler scans the DOM and ApexCharts mounts; confirm with a

@@ -1,14 +1,14 @@
 ---
 name: "sprig:audit"
 description: >-
-  Hunt down and FIX bugs and performance problems in a *running* Fresh 2 +
+  Hunt down and FIX bugs and performance problems in a *running* sprig +
   isolate app by orchestrating a pipeline of agents: one agent hunts bugs in the
   live UI with the Playwright MCP, then in the server, then in the client;
   parallel agents root-cause each bug to a file:line across frontend AND backend;
   a fixer agent repairs them one at a time; a validator agent proves every fix
   holds — all recorded in `fixes.md`, a checklist where each section is one issue
   (what's wrong, the cause, and how it was verified fixed). Use whenever the user
-  points at a built/running Fresh app (one made by the build skill) and
+  points at a built/running sprig app (one made by the build skill) and
   wants it checked, debugged, QA'd, hardened, or fixed — phrases like "find and
   fix the bugs", "do a QA pass", "audit the UI", "why is it slow/janky/broken",
   "what's wrong with this app", "go over it and fix what's broken", "make it
@@ -20,10 +20,10 @@ description: >-
   premise is exercising the live app.
 ---
 
-# audit — hunt, root-cause, fix, and verify a running Fresh 2 app
+# audit — hunt, root-cause, fix, and verify a running sprig app
 
-> **Pipeline stage — audit** (end). Consumes the `fresh-app` contract
-> (`../interfaces/fresh-app.md`) and leaves `fixes.md`. Full chain:
+> **Pipeline stage — audit** (end). Consumes the `sprig-app` contract
+> (`../interfaces/sprig-app.md`) and leaves `fixes.md`. Full chain:
 > design → prototype → breakdown → build → audit.
 
 You are the **orchestrator**. You take a running build app from "something's
@@ -55,12 +55,13 @@ HUNT ─▶ ROOT-CAUSE ─▶ FIX ─▶ VALIDATE
    FIX for anything that still fails).
 
 The targets are apps the **build** skill produced, so assume its
-conventions and exploit them: `routes/`+`islands/`+`components/`, a typed
-`define`/`State` in `utils.ts`, a `user-stories.md` at the root (the living spec of
-what the app *should* do — the hunter's oracle), per-story Playwright tests,
-`isolate/` folders for component-level checks, an optional rune/keep backend called
-in-process. Every fix anchors to the canonical pattern in the **build**
-skill's `references/` — no Fresh-internals guesswork.
+conventions and exploit them: a `src/` tree (`shell/`+`pages/`+`components/`+`islands/`+
+`services/`), `main.ts` (`defineRoutes`/`createRenderer`/`bootstrap`), `serve.ts`
+(`serveSprig`), data via `resolve.ts` + `@Injectable` services + the in-process
+`Backend` token, a `user-stories.md` at the root (the living spec of what the app
+*should* do — the hunter's oracle), per-story Playwright tests, `isolate/` folders for
+component-level checks, an optional keep backend called in-process. Every fix anchors
+to the canonical pattern in the **build** skill's `references/` — no runtime guesswork.
 
 ## Think step by step — you and every agent
 
@@ -98,16 +99,17 @@ and the proof. One section per issue, severity-ordered, in the checklist format 
 **`references/fixes-format.md`** (read it before assembling the file):
 
 ```md
-### ☐ [BLOCKER · bug] Unknown /product/:id returns HTTP 200 (soft 404)
+### ☐ [BLOCKER · bug] Unknown /ui/product/:id returns HTTP 200 (soft 404)
 
-**What's wrong** — A missing product shows the "not found" page but responds 200,
+**What's wrong** — A missing product shows the "not found" view but responds 200,
 so crawlers and the browser treat a missing page as real.
-**Evidence** — `fixes-evidence/soft-404.png`; nav to `/product/nope` → `200`.
-**Root cause** — `routes/product/[id].tsx:18` — renders a not-found branch with
-`page({...})` instead of throwing; status is only set by a thrown `HttpError`.
-**Fix** — `throw new HttpError(404)` → `routes/_error.tsx`. (build →
-`references/advanced/error-handling.md`)
-**Verify fixed** — `curl -i …/product/nope | head -1` → `HTTP/1.1 404`.
+**Evidence** — `fixes-evidence/soft-404.png`; nav to `/ui/product/nope` → `200`.
+**Root cause** — `src/services/product/mod.ts:24` — on a missing product the
+resolver returns `null` but never calls `setResponseStatus(req, 404)`, so the
+matched route renders at the default 200.
+**Fix** — capture `currentInjector()` at construction; `setResponseStatus(this.#req, 404)`
+on miss (build → `references/component-model.md`; sprig docs → data-and-di).
+**Verify fixed** — `curl -i …/ui/product/nope | head -1` → `HTTP/1.1 404`.
 ```
 
 The box turns ☑ only when FIX applied the change **and** VALIDATE's check passed.
@@ -116,24 +118,25 @@ The box turns ☑ only when FIX applied the change **and** VALIDATE's check pass
 
 Think through this first; it aims the whole pipeline:
 
-- **Confirm it's a Fresh 2 app** and read its shape: `deno.json` (tasks, imports),
-  `main.ts` (the `App` builder order), `utils.ts` (`State`/`define`),
-  `vite.config.ts`, the `routes/` tree, `islands/`, `components/`.
+- **Confirm it's a sprig app** and read its shape: `deno.json` (tasks, imports),
+  `main.ts` (`defineRoutes`/`createRenderer`/`bootstrap`), `serve.ts` (`serveSprig`),
+  the `src/` tree (`shell/`, `pages/`, `components/`, `islands/`, `services/`).
 - **Read `user-stories.md` end to end** if present — each bullet is a contract the
   hunter verifies (often naming the HTTP fact: status, redirect). No file? The
-  hunter derives the story list from routes/islands and notes its absence.
+  hunter derives the story list from the route table + islands and notes its absence.
 - **Determine data ownership** — owns its data (in-app store, Deno KV, local JSON)
-  or **fronts** a rune/keep backend in-process (`api.backend.fetch(...)`, a
-  live-first/fixture-fallback adapter)? If it fronts one, the backend failure modes
-  in build's `references/rune-backend.md` (silent empty-store fallback,
-  `live:false` shown as real) are in scope — invisible from the DOM.
-- **Boot a FRESH server and keep its lifecycle.** Start `deno task dev` on a known
-  port (background) — *fresh*, not a long-lived server you've been poking, which
-  serves stale modules and makes the audit lie (build →
-  `playwright-and-dev-loop.md`). For a "production-ready" audit also build and serve
-  (`deno task build && deno serve -A _fresh/server.js`) — some bugs exist only in
-  the build. **After FIX edits code, restart a fresh server before VALIDATE** — the
-  Vite module graph caches, so validating against the edited-but-stale server lies.
+  or **fronts** a keep backend in-process (`inject(Backend)` in `resolve.ts`/services,
+  islands via `fetch("/api/…")`, a live-first/fixture-fallback service)? If it fronts
+  one, the **Backend bugs** in `references/sprig-bug-catalog.md` (silent empty-store /
+  no-op-keep fallback, `live:false` shown as real) are in scope — invisible from the DOM.
+- **Boot a FRESH server and keep its lifecycle.** Start `sprig dev` on a known
+  port (background) — *fresh*, not a long-lived server you've been poking, which can
+  serve stale modules and make the audit lie. For a "production-ready" audit also build
+  and serve (`sprig build && sprig serve`, or `deno serve -A --unstable-kv serve.ts`) —
+  some bugs exist only in the build (minified `StateService` keys, CSS scoping, env).
+  **After FIX edits code, restart a fresh server before VALIDATE** — `sprig dev`
+  rebuilds on `logic.ts`/server edits, but validating against an edited-but-stale
+  server lies; restart, or test the prod build.
 
 ## Stage 1 — HUNT (one agent: UI → server → client)
 
@@ -147,8 +150,8 @@ imply (handlers, `main.ts`, middleware, the backend adapter), **then** the
 — each with evidence, the suspected layer, and a one-line lead — and writes
 evidence files to `fixes-evidence/`. It does **not** fix anything.
 
-The Fresh-2-specific detection playbook (what to hunt, how to detect it,
-thresholds) is `references/fresh2-bug-catalog.md`; the exact MCP call sequences are
+The sprig-specific detection playbook (what to hunt, how to detect it,
+thresholds) is `references/sprig-bug-catalog.md`; the exact MCP call sequences are
 `references/playwright-mcp-recipes.md`. The brief points the agent at both.
 
 ## Stage 2 — ROOT-CAUSE (parallel, one agent per bug)
@@ -199,8 +202,8 @@ green or still-failing.
 - **Reproduced → fix queue. Suspected → "Needs investigation."** Never let an agent
   edit code to chase a bug nobody reproduced.
 - **Causes proven from code; fixes cite the canonical pattern.** The build
-  references are right there — don't reconstruct Fresh internals from memory (that's
-  how Fresh-1 habits creep in).
+  references are right there — don't reconstruct sprig internals from memory (that's
+  how Fresh/Next/Angular habits creep in; sprig is none of them).
 - **One issue at a time in FIX**, each verified before the next.
 - **Don't "fix" correct code.** Refute false positives before they reach the fixer;
   a clean pattern verified as fine is a credit in "Checked and healthy", not a diff.

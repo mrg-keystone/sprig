@@ -1,6 +1,6 @@
 ---
 name: "sprig:design"
-description: Create a reusable design-system artifact — a daisyUI-5 brand theme plus tokens, component/chart recipes, and consume guides — that the prototype skill can apply with zero translation. Use this whenever the user wants to build or generate a design system, brand theme, or design tokens: phrases like "create a design system", "make a brand/design system", "build a theme for our brand", "turn this palette/brand/logo/Figma into a design system", "design tokens our prototypes and Fresh apps can share", or "a house style we can reuse". Produces a folder whose single source of truth is one theme.css, with derived files, docs, preview specimens, and its own SKILL.md so the output is itself an invokable skill. NOT for applying an already-built design system (use its consume recipe, or the prototype skill), restyling a single component, or building a one-off throwaway mock (that's the prototype skill).
+description: Create a reusable design-system artifact — a daisyUI-5 brand theme plus tokens, component/chart recipes, and consume guides — that the prototype skill can apply with zero translation. Use this whenever the user wants to build or generate a design system, brand theme, or design tokens: phrases like "create a design system", "make a brand/design system", "build a theme for our brand", "turn this palette/brand/logo/Figma into a design system", "design tokens our prototypes and sprig apps can share", or "a house style we can reuse". Produces a folder whose single source of truth is one theme.css, with derived files, docs, preview specimens, and its own SKILL.md so the output is itself an invokable skill. NOT for applying an already-built design system (use its consume recipe, or the prototype skill), restyling a single component, or building a one-off throwaway mock (that's the prototype skill).
 version: 1.1.0
 user-invocable: true
 argument-hint: "[brand brief: name, palette, fonts, vibe] [optional: Figma URL or reference screenshots]"
@@ -109,9 +109,13 @@ theme with a missing variable or a removed class.
 
 ## Output location & naming
 
-Create the artifact as a sibling folder named for the brand, e.g. `<Brand> Design System/`, unless the
-user says otherwise. Use a generic theme name (`brand` / `brand-dark`) inside `theme.css` so the
-artifact stays a reusable template; refer to the brand by name only in prose.
+Write the artifact to **`spec/ui/design-system/`** (relative to the project root; create `spec/ui/`
+if it doesn't exist) — the shared home for every UI-pipeline artifact (`spec/ui/design-system/`,
+`spec/ui/<app>-prototype.html`, `spec/ui/breakdown/`), so the downstream skills find it at one
+known path. Use a generic theme name (`brand` / `brand-dark`) inside `theme.css` so the artifact
+stays a reusable template; refer to the brand by name only in prose. (Copy the folder elsewhere if
+you want a standalone, brand-named, reusable design-system skill — but the pipeline location is
+`spec/ui/design-system/`.)
 
 ## Lint awareness (prototype's design-lint)
 

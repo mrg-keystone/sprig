@@ -75,8 +75,11 @@ flow is genuinely unknowable.
 
 ### Build the one file
 
-Produce exactly one `.html` file. Write it with the Write tool to a sensible name
-(e.g. `<app>-prototype.html`) in the working directory.
+Produce exactly one `.html` file. Write it with the Write tool to
+**`spec/ui/<app>-prototype.html`** (relative to the project root; create `spec/ui/` if it
+doesn't exist) — the shared UI-pipeline home alongside `spec/ui/design-system/` and
+`spec/ui/breakdown/`, so `breakdown` finds it at one known path. Its `.feedback.json` and
+screenshot siblings land in `spec/ui/` too.
 
 **Hard rules — non-negotiable:**
 
@@ -108,6 +111,12 @@ Set the palette with `data-theme` on `<html>` (e.g. `<html data-theme="corporate
 build screens from daisyUI components (`btn`, `card`, `modal`, `navbar`, `table`,
 `badge`, `alert`…) plus Tailwind utilities for layout, and add icons with Lucide. Swap
 the whole stack if a prototype genuinely needs something else.
+
+**Apply the brand design-system if one exists.** Check for **`spec/ui/design-system/`** (this
+skill's pipeline input). If it's there, follow its `consume/prototype.md`: paste
+`theme.cdn.css` inline and set `<html data-theme="brand">` instead of a stock theme — that's
+the brand, zero translation. If there's no design-system folder, fall back to a stock
+`data-theme` (below).
 
 ### Style with daisyUI
 
@@ -242,7 +251,7 @@ This skill grew out of a visual-design linter, which still ships alongside as
 file:
 
 ```
-node .claude/skills/sprig:prototype/scripts/detect.mjs --json <file>.html
+node .claude/skills/sprig:prototype/scripts/detect.mjs --json spec/ui/<app>-prototype.html
 ```
 
 It flags visual slop (low contrast, flat type hierarchy, etc.). Treat it as a
@@ -261,8 +270,14 @@ screen — the fastest feedback on something you look at is clicking it, so make
 default ending for every create/iterate rather than waiting to be asked:
 
 ```
-deno run -A .claude/skills/sprig:prototype/annotate/serve.ts <prototype>.html --open
+deno run -A .claude/skills/sprig:prototype/annotate/serve.ts spec/ui/<app>-prototype.html --open
 ```
+
+**Point it at the prototype you just wrote — the `spec/ui/*-prototype.html` file — and
+NEVER at an HTML file under `spec/ui/design-system/`.** The design system shares `spec/ui/`
+and ships its own preview specimens (`design-system/preview/showcase.html`, …); those are
+the brand's, not the prototype. (annotate refuses a `design-system/` path outright, so a
+wrong launch fails loudly instead of marking up the wrong file — re-point it at the prototype.)
 
 Run it in the background, then tell the user the URL and how to leave feedback:
 

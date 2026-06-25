@@ -1,11 +1,11 @@
 {
-  "skill_name": "isolate:design",
+  "skill_name": "sprig:design",
   "evals": [
     {
       "id": 1,
       "name": "fintech-budgeting",
-      "prompt": "ok we're building a budgeting app for young people in mexico, it's called Peso. i want it to feel trustworthy but friendly, not like a stuffy bank. main color a deep teal, maybe a lime green accent, clean modern headings. can you build us a design system we can reuse across our clickable prototypes and our actual Fresh app? we'll be making dashboards mostly.",
-      "expected_output": "A self-contained 'Peso Design System' folder: canonical theme.css (daisyUI-5 brand+brand-dark, deep-teal primary, lime accent), derived theme.cdn.css/manifest.json/adherence.oxlintrc.json, docs (README/design-tokens/components/charts), consume/prototype.md, preview specimens incl. a showcase dashboard, and its own SKILL.md.",
+      "prompt": "ok we're building a budgeting app for young people in mexico, it's called Peso. i want it to feel trustworthy but friendly, not like a stuffy bank. main color a deep teal, maybe a lime green accent, clean modern headings. can you build us a design system we can reuse across our clickable prototypes and our actual sprig app? we'll be making dashboards mostly.",
+      "expected_output": "A self-contained spec/ui/design-system/ folder (a Peso-branded design system): canonical theme.css (daisyUI-5 brand+brand-dark, deep-teal primary, lime accent), derived theme.cdn.css/manifest.json/adherence.oxlintrc.json, docs (README/design-tokens/components/charts), consume/prototype.md, preview specimens incl. a showcase dashboard, and its own SKILL.md.",
       "files": [],
       "expectations": [
         "Produces a canonical theme.css with two @plugin \"daisyui/theme\" blocks (light 'brand' + dark 'brand-dark') including the full required daisyUI-5 variable set: base-100/200/300, base-content, primary/secondary/accent/neutral/info/success/warning/error each with a -content pair, radius-selector/field/box, size-selector/field, border, depth, noise.",
@@ -23,8 +23,8 @@
     {
       "id": 2,
       "name": "wellness-meditation",
-      "prompt": "I run a small meditation + sleep studio called Lumen and I want a cohesive design system for our marketing site and our app. The feeling should be calm, soft, airy — think lavender and warm sand, lots of breathing room, a gentle humanist serif for headings and a clean sans for body. Make it something our designers and our Fresh app can both use.",
-      "expected_output": "A 'Lumen Design System' folder with a calm lavender/sand daisyUI-5 theme (serif display + sans body), the full derived/doc/consume/preview structure, and a showcase that reads soft and airy.",
+      "prompt": "I run a small meditation + sleep studio called Lumen and I want a cohesive design system for our marketing site and our app. The feeling should be calm, soft, airy — think lavender and warm sand, lots of breathing room, a gentle humanist serif for headings and a clean sans for body. Make it something our designers and our sprig app can both use.",
+      "expected_output": "A spec/ui/design-system/ folder (Lumen-branded) with a calm lavender/sand daisyUI-5 theme (serif display + sans body), the full derived/doc/consume/preview structure, and a showcase that reads soft and airy.",
       "files": [],
       "expectations": [
         "Produces a canonical theme.css with two @plugin \"daisyui/theme\" blocks (light 'brand' + dark 'brand-dark') including the full required daisyUI-5 variable set: base-100/200/300, base-content, primary/secondary/accent/neutral/info/success/warning/error each with a -content pair, radius-selector/field/box, size-selector/field, border, depth, noise.",
@@ -42,8 +42,8 @@
     {
       "id": 3,
       "name": "gigwork-marketplace",
-      "prompt": "we're launching Chamba, a gig-work marketplace for tradespeople — electricians, plumbers, etc. it needs to feel bold, energetic, get-it-done. bright orange, strong near-black, chunky type. build a reusable design system / theme for it — we use the prototype skill a lot and also have a deno fresh app.",
-      "expected_output": "A 'Chamba Design System' folder with a bold orange/near-black daisyUI-5 theme (chunky display type), the full derived/doc/consume/preview structure, and an energetic showcase.",
+      "prompt": "we're launching Chamba, a gig-work marketplace for tradespeople — electricians, plumbers, etc. it needs to feel bold, energetic, get-it-done. bright orange, strong near-black, chunky type. build a reusable design system / theme for it — we use the prototype skill a lot and also have a sprig app.",
+      "expected_output": "A spec/ui/design-system/ folder (Chamba-branded) with a bold orange/near-black daisyUI-5 theme (chunky display type), the full derived/doc/consume/preview structure, and an energetic showcase.",
       "files": [],
       "expectations": [
         "Produces a canonical theme.css with two @plugin \"daisyui/theme\" blocks (light 'brand' + dark 'brand-dark') including the full required daisyUI-5 variable set: base-100/200/300, base-content, primary/secondary/accent/neutral/info/success/warning/error each with a -content pair, radius-selector/field/box, size-selector/field, border, depth, noise.",

@@ -3,16 +3,16 @@ name: "sprig:breakdown"
 description: >-
   Decompose a UI mock into a build-ready spec — page inventory, shared/page-local
   components, design tokens, the implied data model, the interaction-tier map
-  (which regions are static forms, Fresh Partials, or islands) with feedback and
+  (which regions are static vs islands) with feedback and
   liveness, motion specs with jank findings, cropped screenshots and animation
-  filmstrips, and ready-to-drop-in isolate fixture proposals — so a Fresh 2 +
+  filmstrips, and ready-to-drop-in isolate fixture proposals — so a sprig +
   isolate build session can rebuild the UI mechanically. Use whenever the user points at a mock, prototype,
   reference UI, or finished HTML/screenshot/PDF design and wants it broken down,
   spec'd out, decomposed, reverse-engineered, or turned into components —
   phrases like "break this down", "do a ui-breakdown", "spec this mock", "turn
   this into components", "prep this for the rebuild". Trigger even when they
   don't say "spec": pointing at an HTML mock and asking how to rebuild it in
-  Fresh counts.
+  sprig counts.
 ---
 
 # breakdown — from mock to build spec
@@ -21,7 +21,7 @@ description: >-
 > produces the `ui-breakdown` contract (`../interfaces/ui-breakdown.md`), consumed by `build`.
 > Full chain: design → prototype → breakdown → build → audit.
 
-Read the source mock and produce a `ui-breakdown/` directory that a later build
+Read the source mock and produce a `spec/ui/breakdown/` directory that a later build
 session can work through **mechanically**: scaffold a component, drop in its
 proposed `isolate/` folder, run `isolate dev`, diff against the screenshots,
 write tests from the Events section, run `isolate test`, repeat. Every artifact
@@ -30,18 +30,27 @@ decision by that standard. The spec must be detailed enough that someone could
 rebuild each page and component from the spec alone, **without opening the
 source**.
 
-Create the output directory as a sibling of the source named `ui-breakdown/`
-(source `/foo/bar/app.html` → output `/foo/bar/ui-breakdown/`). Derive the
-output path automatically; never ask for it.
+**Input** is the prototype this skill consumes: by default the
+`spec/ui/<app>-prototype.html` written by the `prototype` stage (glob
+`spec/ui/*-prototype.html`). If the user points at a different mock (any
+HTML/screenshot/PDF path), use that instead.
 
-The rebuild target is **Fresh 2 (Preact + Tailwind 4)**. Source JS/CSS is
-reference ground truth, not deliverable code — what survives translation lives
+**Output** always goes to **`spec/ui/breakdown/`** (relative to the project root;
+create `spec/ui/` if it doesn't exist) — the shared UI-pipeline home alongside
+`spec/ui/design-system/` and `spec/ui/<app>-prototype.html`. Derive the output
+path automatically; never ask for it.
+
+The rebuild target is **sprig** — a Deno SSR framework with Angular-flavored HTML
+templates (`{{ }}`, `[prop]`, `(event)`, `@if`/`@for`), folder-components
+(`template.html` + optional `logic.ts` + `styles.css`), selective island
+hydration, and Tailwind v4. **Not Fresh/Preact, Next, or Angular.** Source JS/CSS
+is reference ground truth, not deliverable code — what survives translation lives
 in `design-tokens.md` and the component specs.
 
 ## Target structure
 
 ```
-ui-breakdown/
+spec/ui/breakdown/
 ├── index.md                    # page inventory, usage matrix, build order, unassigned list
 ├── design-tokens.md            # palette, type, spacing, radii, shadows, easing, breakpoints,
 │                               #   per-theme token sets → tailwind mapping
@@ -74,40 +83,43 @@ architecture**: which regions ship JS, who owns each interaction, and how
 feedback flows. Get these wrong and the build inherits slow, reload-heavy,
 over-hydrated pages.
 
-**Classify every interaction by the question that actually matters** — not "is
-it interactive?" (almost everything is), but **"does it mutate server state, or
-is it client-only?"** That answer picks a tier:
+**sprig has exactly two folder tiers — `static` vs `island`** — and the line
+between them is one fact: **does the region need a `logic.ts` (client JS the
+server can't re-render)?** A folder with only `template.html` ships **zero JS**;
+add a `logic.ts` and it becomes an **island** that hydrates. So classify each
+region:
 
-- **Server mutation, full re-render is fine** → a `<form method="POST">` +
-  **Post/Redirect/Get**: POST mutates, 303-redirects, the GET re-renders the new
-  state. **Zero JS — static.** Most buttons (enable/disable, save, delete,
-  toggle, submit, run) are this.
-- **Server mutation, but no full reload** (preserve scroll/focus, feel instant)
-  → a **Fresh Partial** (`f-partial`): the click hits the server, the server
-  re-renders just that fragment, it's swapped in. **Minimal JS, no client fetch
-  code, no `reload()`.** The sweet spot for "mutate + re-render this region".
-- **Client-only** — no server round-trip, or must feel optimistic: dropdowns,
-  modals, command palette, a client-side filter/sort, inline validation,
-  drag-drop → **island**. This bucket is small.
-- **Pure display** → static.
+- **Pure display, or server-rendered content** → **static**. Most of the page.
+  No events fire client-side; data arrives via the page's `resolve.ts` /
+  `onServerInit`.
+- **Genuine client interactivity** — dropdowns, modals, command palette, a
+  client-side filter/sort, inline validation, drag-drop, **and any server write**
+  → **island**. The island owns client state (signals) and wires `(event)`
+  handlers.
 
-The **dominant interaction is `click → server mutates → page re-renders the new
-state`**, with feedback (a toast) riding along as a **flash message** on the
-redirect — the toast is a *passenger*, the re-rendered state is the cargo. Spec
-feedback as that SSR-native pattern (a flash cookie consumed and cleared on the
-next render), **never** a client-held toast + a `setTimeout` before
-`location.reload()` — that band-aid is precisely what you're designing out.
+For an island that **writes to the server**, sprig's mandatory pattern is
+**optimistic UI**: on the event, apply the change to local island state and
+re-render **now**; fire the server call in the background (don't `await` before
+updating); on failure, **roll back** and surface the error (an inline message /
+toast held in island state). Spec the write that way — snapshot → mutate → call
+→ roll back — **never** a frozen-props island that `location.reload()`s to re-read
+server state after an action. That reload band-aid is precisely what you're
+designing out. (Exception: a `data-note` may say "wait for the server / show a
+spinner" or "realtime island" — honor it.)
 
-**Defaults & smells:** default to static / form / Partial; an **island must be
-justified by a genuine client-only need.** A whole view wrapped in one island
-that takes server data as frozen props and `reload()`s after actions is THE
-anti-pattern — flag it. Islands own *client* state and refresh in place; they
-never `location.reload()` to re-read server state.
+**Defaults & smells:** default to **static**; an **island must be justified by a
+genuine need for client JS.** A whole view wrapped in one island that takes
+server data as frozen props and `reload()`s after actions is THE anti-pattern —
+flag it. Islands own *client* state and reconcile in place (optimistic write, or
+a server-pushed update for a realtime island); they never `location.reload()` to
+re-read server state.
 
 **Liveness:** mark each live-looking panel **request-response** (re-rendered on
-nav/action) vs **pushed** (updates on its own — an activity feed, a queue,
-cross-client changes). Pushed panels need a stream (SSE) at build time; a mock
-faking liveness with `setInterval` signals *intent*, not a mechanism.
+navigation — sprig soft-nav re-runs `resolve` and swaps the `<router-outlet>`) vs
+**pushed** (updates on its own — an activity feed, a queue, cross-client changes).
+A pushed panel is a **realtime island** consuming a stream (SSE/WebSocket) at
+build time; a mock faking liveness with `setInterval` signals *intent*, not a
+mechanism.
 
 **Honest-empty:** the mock always has data; note each panel's real backing
 source, and where there is none, spec a **placeholder, never fabricated data**.
@@ -142,10 +154,12 @@ pages — and a page is *not* the same thing as an HTML file:
 
 **`design-tokens.md`** — palette, type scale, spacing scale, radii, shadows,
 easing curves, z-index layers, breakpoints, and a proposed Tailwind mapping.
-Fresh 2 scaffolds **Tailwind 4**: tokens map to a CSS-first `@theme` block of
-custom properties (`--color-accent: #4f46e5;`), not a `tailwind.config.js`
-theme extension — emitting a Tailwind-3-style config hands the build session
-something its toolchain can't use. If the source defines **theme
+`sprig build` runs the **Tailwind v4** CLI over the templates + component CSS:
+tokens map to a CSS-first `@theme` block of custom properties
+(`--color-accent: #4f46e5;`) in a document-level `:global(...)` rule (usually
+`shell/styles.css`), not a `tailwind.config.js` theme extension — emitting a
+Tailwind-3-style config hands the build session something its toolchain can't
+use. If the source defines **theme
 variants** (e.g. a `[data-theme="dark"]` block re-declaring custom properties),
 capture every variant as parallel columns of the same token table — the build
 session must get both palettes, not just the default. Record how
@@ -185,27 +199,27 @@ Walk each page's DOM and carve it into components. For each one, decide:
   page-local — promotion later is cheap, demotion is churn. Record the
   evidence either way in the component's "Used on" section.
 - **Classification** — `static` | `island` | `page-composition` (this picks the
-  Fresh folder). Decide it with the **Interactivity, data flow & component
-  tiers** rules above. The test for `island` is *needs client JS the server
-  can't re-render*, **NOT** *looks interactive*:
-  - `static`: pure display **or a server-mutating button** — a form+PRG
-    submission, or a region the server re-renders as a **Partial** on action.
-    No client JS owned → Fresh `components/`. Most "interactive" buttons land
-    here.
-  - `island`: genuine client-only state — dropdown/modal/command-palette,
-    client-side filter/sort, optimistic toggle, inline validation, drag-drop →
-    Fresh `islands/`. A CSS-only hover is static; a button that just POSTs is a
-    form. **Justify every island; a whole-page island is a smell.**
-  - `page-composition`: a page-level arrangement of other components → Fresh
-    `pages/` in isolate terms.
-  Record the finer **interaction tier** (form+PRG / Partial / island /
-  client-only) and its data/feedback/liveness in the component's Behavior
-  section (anatomy below), not just the folder bucket.
+  sprig `src/` folder). Decide it with the **Interactivity, data flow & component
+  tiers** rules above. The test for `island` is *needs a `logic.ts` (client JS
+  the server can't re-render)*, **NOT** *looks interactive*:
+  - `static`: pure display or server-rendered content — `template.html` only, no
+    `logic.ts` → sprig `components/`. Ships zero JS; its `(event)` bindings would
+    never fire (that's the point). A CSS-only hover is static.
+  - `island`: genuine need for client JS — dropdown/modal/command-palette,
+    client-side filter/sort, an **optimistic server write**, inline validation,
+    drag-drop, a realtime panel → sprig `islands/` (has a `logic.ts`).
+    **Justify every island; a whole-page island is a smell.**
+  - `page-composition`: a page-level arrangement of other components → sprig
+    `pages/`.
+  Record the finer **interaction tier** (static / pure-client island /
+  optimistic-write island / realtime island) and its data/feedback/liveness in
+  the component's Behavior section (anatomy below), not just the folder bucket.
 
-Name component folders **kebab-case** such that `PascalCase(folder)` is the
-intended component name (`command-palette` → `CommandPalette.tsx`) — isolate
-resolves the component file by exactly that rule, so the proposed `isolate/`
-folder only drops in cleanly if the names line up.
+Name component folders **kebab-case** — the folder **basename is the selector**
+(the custom tag other templates use: `command-palette/` → `<command-palette>`),
+and the component itself is the folder's `template.html` (+ optional `logic.ts`),
+**not** a `.tsx` file. So a folder name reads as the tag you spec'd, and the
+proposed `isolate/` folder drops in cleanly.
 
 ### 4 · Capture passes (renderable HTML sources)
 
@@ -259,9 +273,9 @@ row of the States table. Real files, not JSON blocks in markdown: they
 hypothesize the component's API, and the build session starts from something
 it can run, adjusting as needed. **Follow `references/isolate-format.md`** —
 the format has non-obvious rules (route built from `category`/`folder`, the
-`PascalCase(folder).tsx` naming rule, `signal: true` for island props,
+folder-basename-is-the-selector rule, `signal: true` for island state,
 `_signals`/`_mocks`/`_innerHtml` specials) and an invalid proposal is worse
-than none, because `isolate dev` fails fast on malformed fixtures.
+than none, because `sprig isolate` fails fast on malformed fixtures.
 
 **Case values must be the real captured data, never invented stand-ins.**
 The build session's core check is *render the case → diff against your
@@ -279,8 +293,8 @@ values belong, *because* the screenshots show them.
 - Page inventory (one line per page: purpose + its components).
 - Shared-component **usage matrix** (component × page).
 - **Interaction/tier summary** — the runtime architecture at a glance: which
-  regions are forms (PRG), which are Partials, which are islands (and why);
-  the pushed/SSE panels; and the flagged data-shape hazards.
+  regions are static vs islands (and why), which islands do optimistic server
+  writes vs realtime updates; the pushed panels; and the flagged data-shape hazards.
 - **Build order**: design tokens → shared components (dependency order:
   primitives like button/badge/avatar before composites like card/modal that
   embed them) → page-local components → page compositions.
@@ -292,10 +306,10 @@ Before declaring done, walk each page's top-level DOM regions and check each
 one maps to exactly one component or composition entry; walk the source JS and
 check every behavior (each listener, timer, observer, animation) is owned by
 some component's Events or Motion section. Also check every **interaction has a
-tier** (form+PRG / Partial / island / client-only), every **`island` is
-justified** by a genuine client-only need (no whole-page islands, nothing
-`location.reload()`-ing server state), and every live panel is marked
-request-response vs pushed and has an honest-empty note. Anything unmapped goes
+tier** (static / pure-client island / optimistic-write island / realtime island),
+every **`island` is justified** by a genuine need for client JS (no whole-page
+islands, nothing `location.reload()`-ing server state), and every live panel is
+marked request-response vs pushed and has an honest-empty note. Anything unmapped goes
 in an **"Unassigned"** list at the bottom of `index.md` — an empty list is the
 goal, a populated one is honest; silence is the only failure.
 
@@ -305,14 +319,17 @@ Every component markdown contains, in order:
 
 1. **Classification & behavior** — the folder bucket (`static` | `island` |
    `page-composition`) **plus the interaction tier and data contract**: for each
-   interaction its tier (form+PRG mutation / Partial / island / client-only);
-   for server mutations, the action + redirect target + **flash** feedback
-   (never a client toast + `reload()`); for islands, the **client state owned**
-   and how it refreshes in place (re-fetch / Partial — never `location.reload()`
-   on server state); each region's **data source** with honest-empty where there
-   is none; **liveness** (request-response vs pushed/SSE); and any **data-shape
-   hazard** flagged for the builder. One-line justification per island
-   ("island — owns the drag pointer listeners").
+   interaction its tier (static / pure-client island / optimistic-write island /
+   realtime island); for **server writes**, the **optimistic flow** (snapshot →
+   mutate local island state → fire the call in the background → roll back +
+   surface the error on failure) — never a client toast + `location.reload()`;
+   for islands, the **client state owned** (signals) and how it reconciles in
+   place (optimistic write / server-pushed update — never `location.reload()` on
+   server state); each region's **data source** (`resolve.ts` / `Backend` /
+   island `fetch("/api/…")`) with honest-empty where there is none; **liveness**
+   (request-response via soft-nav vs pushed realtime island); and any
+   **data-shape hazard** flagged for the builder. One-line justification per
+   island ("island — owns the drag pointer listeners").
 2. **Anatomy** — DOM/visual structure sketch; slots/children it accepts.
 3. **Props table** — `name · type · default · control widget · signal?`.
    Each row maps 1:1 to a `fixture.json` control
@@ -360,9 +377,9 @@ Every component markdown contains, in order:
 ## Rules
 
 - One folder per page under `pages/`, named after the page.
-- Classify interactions by **server-mutation vs client-only**, not "interactive
-  vs not": default form-PRG / Partial / static, justify every island, and spec
-  action feedback as **flash/PRG**, never a client toast + `location.reload()`.
+- Classify by **does it need a `logic.ts`**, not "interactive vs not": default
+  **static**, justify every island, and spec server writes as **optimistic UI**
+  (snapshot → mutate → call → roll back), never a client toast + `location.reload()`.
   Performance is the build's job, not the breakdown's (the mock is always fast);
   here you only flag expensive data *shapes*.
 - Page-local by default; promote to `shared-components/` only with evidence

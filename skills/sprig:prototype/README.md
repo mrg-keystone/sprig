@@ -89,7 +89,7 @@ and writes the notes to `<prototype>.feedback.json` next to the file, which the
 skill reads on the next iteration. See `annotate/README.md`.
 
 ```sh
-deno run -A skills/sprig:prototype/annotate/serve.ts <your>-prototype.html --open
+deno run -A skills/sprig:prototype/annotate/serve.ts spec/ui/<your>-prototype.html --open
 ```
 
 ## Requirements

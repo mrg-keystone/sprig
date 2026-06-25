@@ -22,8 +22,8 @@ the final file honestly shows fixed-vs-open at a glance. Use `☐`/`☑` (or `- 
 
 | # | Severity | Cat | Issue | Where |
 |---|---|---|---|---|
-| 1 | blocker | bug | Unknown slug returns 200 (soft 404) | routes/blog/[slug].tsx |
-| 2 | high | perf | Row-expand animates height (drops frames) | islands/Row.tsx |
+| 1 | blocker | bug | Unknown slug returns 200 (soft 404) | src/services/blog/mod.ts |
+| 2 | high | perf | Row-expand animates height (drops frames) | src/islands/row/styles.css |
 | … |
 
 ---
@@ -63,13 +63,13 @@ reduced-motion user) actually experiences. No jargon-only descriptions.
 a network entry, an HTTP status, or a measured number *with its conditions*
 ("INP 480 ms after clicking Subscribe, 1280×800, dev"). Link, don't describe.
 
-**Root cause** — `path/to/file.tsx:LINE` — the mechanism, proven from the code (a
+**Root cause** — `src/path/to/file.ts:LINE` — the mechanism, proven from the code (a
 short quote of the offending line earns its place). Name the backend file if the
 cause is server-side.
 
-**Fix** — the concrete change, anchored to the canonical pattern: "throw
-`HttpError(404)` … see build → `references/advanced/error-handling.md`." Not
-"handle the error better."
+**Fix** — the concrete change, anchored to the canonical pattern:
+"`setResponseStatus(req, 404)` on miss … see build → `references/component-model.md`."
+Not "handle the error better."
 
 **Verify fixed** — a single runnable check and its expected result (recipes below).
 This is the box's exit criteria: when this passes, tick ☐ → ☑.
@@ -87,27 +87,26 @@ default.
 ## Worked example (excerpt)
 
 ```md
-### ☐ [BLOCKER · bug] Subscribe island is dead — clicking does nothing
+### ☐ [BLOCKER · bug] Subscribe is dead — clicking does nothing
 
-**What's wrong** — On `/`, the "Subscribe" button renders but clicking it never
-adds the email or shows feedback; the whole page's interactivity is gone.
+**What's wrong** — On `/ui`, the "Subscribe" button renders but clicking it never
+adds the email or shows feedback; nothing reacts.
 
-**Evidence** — `fixes-evidence/subscribe-noop.png` (count stayed 0 after 3 clicks);
-console: `Failed to resolve module specifier "fresh-island:Subscribe.tsx"`.
+**Evidence** — `fixes-evidence/subscribe-noop.png` (input unchanged after 3 clicks);
+console clean; no island chunk for `subscribe` in the network log.
 
-**Root cause** — `islands/Subscribe.tsx` was added while `deno task dev` was
-running, so the island registry drifted and the client entry emitted a bare
-`fresh-island:Subscribe.tsx` specifier. The browser reads `fresh-island:` as a URL
-scheme → 404 → **no island on the page hydrates** (one bad specifier takes them
-all down). The source is correct; the running server is stale.
+**Root cause** — `src/components/subscribe/` has a `template.html` with a
+`(click)="add()"` binding but **no `logic.ts`**, so it's a *static* folder — it ships
+zero JS and the `(event)` never fires. A folder is an island only if it has a
+`logic.ts`.
 
-**Fix** — Restart the dev server (`deno task dev`); for CI/preview, test the prod
-build. Adding an island/route file always needs a restart — see build →
-`references/playwright-and-dev-loop.md`.
+**Fix** — Add `src/components/subscribe/logic.ts` (`defineComponent({ setup })`) that
+owns the `add()` handler + signal state (and move the folder under `islands/` if you
+group by convention) — see build → `references/component-model.md`.
 
-**Verify fixed** — reload `/`, click Subscribe → the count increments and the
-confirmation appears; `browser_console_messages` shows no `fresh-island:` error;
-`curl -s localhost:8000/ | grep -c 'fresh-island:'` → `0`.
+**Verify fixed** — reload `/ui`, wait for hydration, click Subscribe → the email is
+added and the confirmation appears; the network log shows the island chunk loaded;
+console clean.
 
 ### ☐ [HIGH · perf] Row expand animates `height` — drops ~38% of frames
 
@@ -117,8 +116,8 @@ worse.
 **Evidence** — `fixes-evidence/row-expand-jank.json`: dropped-frame 0.38, max frame
 61 ms while expanding row 4 (1280×800, dev). One `long-animation-frame` of 72 ms.
 
-**Root cause** — `islands/Row.tsx:44` transitions `height` (`transition: height
-240ms`), forcing layout + paint every frame for every row below it.
+**Root cause** — `src/islands/row/styles.css:44` transitions `height`
+(`transition: height 240ms`), forcing layout + paint every frame for every row below it.
 
 **Fix** — Animate `grid-template-rows: 0fr → 1fr` (or `transform: scaleY`) instead
 of `height` (layout-property animations repaint every frame).
@@ -135,15 +134,15 @@ straight into the project's existing harness (Playwright story tests, `isolate`)
 | Issue type | "Verify fixed" recipe |
 |---|---|
 | **Status code** (soft 404, auth bounce, API error code) | `curl -i <url> \| head -1` → expected status. The most reliable status proof; also the cheapest. |
-| **Form PRG / redirect** | Playwright: submit → `waitForURL("**/thanks")`; or `curl -i -X POST … \| grep -i location` → `303`. |
-| **Dead island / hydration** | Drive it: interact → assert the DOM value changed (a story test, or `isolate test` on the island's case). Dead = no change. |
-| **Hydration mismatch** | Reload; assert **no** `Expected server HTML` warning in `browser_console_messages`. |
-| **Component-level bug/regression** | `deno run -A jsr:@mrg-keystone/isolate test --root .` — the component's `isolate/` cases assert events/render in isolation (see build → `references/isolate.md`). |
-| **Whole-story regression** | Add/restore the matching `tests/user_stories.test.ts` step and run it against a **fresh** server (build → `playwright-and-dev-loop.md`). |
+| **Server write (optimistic) / rollback** | Playwright: interact → assert the UI updates instantly; force the `/api` call to fail → assert it rolls back + shows an error (no `location.reload()`). |
+| **Dead island / hydration** | Drive it: `waitHydrated` then interact → assert the DOM value changed (a story test, or the island's `isolate/` case). Dead = no change. |
+| **SSR / DI throw** | Reload; assert **no** unguarded-global or `DI does not cross the SSR/island boundary` throw in `browser_console_messages`, and the route is `200`. |
+| **Component-level bug/regression** | `sprig isolate` (or run the case's `tests/*.spec.ts`) — the component's `isolate/` cases assert events/render in isolation (see build → `references/isolate.md`). |
+| **Whole-story regression** | Add/restore the matching Playwright story test and run it against a **fresh** server (restart `sprig dev`, or `sprig build` → `sprig serve`). |
 | **Perf (jank/CLS/INP/long task)** | Re-run the same `browser_evaluate` instrument under the same trigger; assert the number crossed back under threshold. State the conditions. |
 | **Network (size/headers/waterfall)** | Re-check `browser_network_requests`: status, `transferSize`, `cache-control`, parallel vs serial. |
-| **Backend live-vs-stub** | Assert the adapter returns `live:true` and the in-process `fetch` is `ok`; confirm in the **prod build** (`deno task build` → `deno serve`), where the env/store bugs surface. |
-| **Env / secret leakage** | `grep -r "<secret>" _fresh/` → no hits; island reads the expected `FRESH_PUBLIC_*` value. |
+| **Backend live-vs-stub** | Assert the service returns `live:true` and the in-process `Backend` call is `ok`; confirm in the **prod build** (`sprig build` → `sprig serve`), where the env/store bugs surface. |
+| **Env / secret leakage** | `grep -r "<secret>" static/` → no hits (secrets stay server-side; islands only get serialized `@inputs` / `/api` responses). |
 
 A good verification is **specific and runnable**: a command with an expected
 output, or an assertion that fails today and passes once fixed. "Check that it

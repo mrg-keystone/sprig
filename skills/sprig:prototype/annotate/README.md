@@ -16,7 +16,7 @@ skills/sprig:prototype/annotate/
 ## Collect feedback
 
 ```sh
-deno run -A skills/sprig:prototype/annotate/serve.ts <your>-prototype.html --open
+deno run -A skills/sprig:prototype/annotate/serve.ts spec/ui/<your>-prototype.html --open
 ```
 
 Three ways to leave feedback:

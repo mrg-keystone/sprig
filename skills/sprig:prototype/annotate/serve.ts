@@ -73,6 +73,19 @@ if (!stat.isFile) {
   Deno.exit(1);
 }
 
+// annotate targets the PROTOTYPE, never a design-system specimen. Both now live under
+// spec/ui/, and a generated design system ships its own preview HTML (preview/showcase.html,
+// preview/*.html). Refuse to annotate one so a mis-pointed launch self-corrects loudly
+// instead of marking up the wrong file.
+if (/\/design-system\//.test(protoAbs.replace(/\\/g, "/"))) {
+  console.error(
+    `Refusing to annotate a design-system file:\n  ${protoAbs}\n\n` +
+      `annotate targets the prototype, not the brand's preview specimens.\n` +
+      `Point it at the prototype, e.g. spec/ui/<app>-prototype.html.`,
+  );
+  Deno.exit(1);
+}
+
 const ROOT = dirname(protoAbs);
 const PROTO_NAME = basename(protoAbs);
 const FEEDBACK_NAME = PROTO_NAME.replace(/\.html?$/i, "") + ".feedback";

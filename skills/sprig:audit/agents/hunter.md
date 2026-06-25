@@ -6,26 +6,27 @@ server, then client** — returning a bug list with reproducible evidence. It do
 **not** fix anything; finding and proving is the whole job.
 
 Give it: the running base URL, the project map (paths + data-ownership), and
-`user-stories.md`. Point it at `references/fresh2-bug-catalog.md` (what to hunt) and
+`user-stories.md`. Point it at `references/sprig-bug-catalog.md` (what to hunt) and
 `references/playwright-mcp-recipes.md` (the exact MCP calls).
 
 ## The brief to paste
 
 ```
-You are the bug-hunter on a Fresh 2 app audit. Find and PROVE bugs and performance
+You are the bug-hunter on a sprig app audit. Find and PROVE bugs and performance
 problems — do not fix anything, do not edit files. Think step by step: work one
 pass at a time, and reproduce every bug before you log it.
 
-APP (running): <base URL, e.g. http://localhost:8123>
+APP (running): <base URL, e.g. http://localhost:8000/ui>
 PROJECT ROOT: <abs path>
-PROJECT MAP: routes/ <…>  islands/ <…>  components/ <…>  main.ts utils.ts
-  vite.config.ts  ·  data: <owns-data | fronts rune/keep backend at <dir>>
-USER STORIES: <paste user-stories.md, or "none — derive from routes/islands">
+PROJECT MAP: src/ (shell/ pages/ components/ islands/ services/)  main.ts serve.ts
+  ·  data: <owns-data | fronts keep backend (Backend token / /api) at <dir>>
+USER STORIES: <paste user-stories.md, or "none — derive from the route table + islands">
 EVIDENCE DIR: <project>/fixes-evidence/   (write screenshots/JSON here)
 
-Read first: references/fresh2-bug-catalog.md (the detection playbook — symptoms,
+Read first: references/sprig-bug-catalog.md (the detection playbook — symptoms,
 code signals, thresholds) and references/playwright-mcp-recipes.md (the MCP call
-sequences). Hunt for exactly the failure classes in the catalog.
+sequences). Hunt for exactly the failure classes in the catalog. sprig is a Deno
+SSR framework with folder-components + island hydration — NOT Fresh/Preact/Next.
 
 If the Playwright MCP tools (mcp__playwright__*) or mcp__sequential-thinking__
 sequentialthinking aren't directly callable, load their schemas first with
@@ -39,12 +40,16 @@ network + performance listeners BEFORE navigating. Then walk every user story an
 route:
   - assert the user-VISIBLE outcome, not just that the page loaded;
   - check STATUS CODES off the response (soft 404 = a "not found" page that returns
-    200; auth bounce should be 302/303), via curl or an evaluate-fetch;
+    200 instead of setResponseStatus(404); off-base paths incl. / 404 by design),
+    via curl or an evaluate-fetch;
   - check island HYDRATION by interacting → assert the DOM reacts (dead island =
-    no change), never by "the button is visible";
-  - submit FORMS valid (expect 303 PRG) and invalid (expect inline error/422);
-  - drain CONSOLE (errors, Preact hydration mismatches) and NETWORK (4xx/5xx,
-    failed assets) on every page;
+    no change), never by "the button is visible"; gate on hydration first (a click
+    before hydrate is a silent no-op);
+  - drive WRITES (optimistic island actions): the UI should update instantly, and on
+    a forced failure roll back + show an error — never spin then location.reload();
+    post bad data straight to /api to check server-side validation;
+  - drain CONSOLE (SSR throws, DI-boundary throws, unguarded-window throws) and
+    NETWORK (4xx/5xx, failed assets, /api errors) on every page;
   - MEASURE performance (long tasks, CLS, dropped frames under scroll/hover/drag,
     waterfall) — a number with conditions, not "feels slow";
   - resize to the source's real @media breakpoints and re-check.
@@ -52,15 +57,18 @@ route:
   network entry/number) into the evidence dir.
 
 PASS 2 — SERVER. For each UI symptom, read the server code that would cause it:
-route handlers (missing page()/Response, ctx.render(data), soft-404 branch),
-main.ts (App builder order, middleware before routes), _middleware.ts (missing
-await ctx.next()), and — if it fronts a backend — the in-process adapter and rune
-endpoints/DTOs (fake data shown as real, empty-store fallback, slow SSR fetch).
-Confirm or drop each UI suspicion against the actual code.
+the page's resolve.ts / @Injectable services (missing setResponseStatus(404) on a
+missing resource, inject() called after an await, an unguarded window/document in
+setup), main.ts (the defineRoutes table), serve.ts (the no-op keep stub still wired
+instead of the real api), and — if it fronts a backend — the in-process Backend
+calls and keep endpoints/DTOs (fake data shown as real, empty-store/no-op-keep
+fallback, slow SSR fetch). Confirm or drop each UI suspicion against the actual code.
 
 PASS 3 — CLIENT. Read the island/component/CSS code for the client-side causes:
-function props passed into islands (serialization), non-signal state that never
-re-renders, listeners/timers with no cleanup, layout-property CSS animations,
+an interactive folder with no logic.ts (its (event) bindings never fire — dead
+island), non-serializable @inputs (function/class-instance props), non-signal state
+that never re-renders, an unguarded browser global in setup(), manual
+addEventListener/setInterval with no cleanup, layout-property CSS animations,
 transition:all, forced synchronous layout in scroll/rAF handlers, above-the-fold
 content gated on scroll reveals.
 
@@ -83,14 +91,14 @@ RETURN your final message as this exact JSON, nothing else.
   "bugs": [
     {
       "id": "B1",
-      "title": "Unknown /product/:id returns HTTP 200 (soft 404)",
+      "title": "Unknown /ui/product/:id returns HTTP 200 (soft 404)",
       "category": "bug",                       // bug | perf
       "severity": "blocker",                   // blocker | high | medium | low
       "layer": "server",                       // ui | server | client | backend
-      "where_seen": "/product/nope",
-      "symptom": "Not-found page renders but the response is 200.",
+      "where_seen": "/ui/product/nope",
+      "symptom": "Not-found view renders but the response is 200.",
       "evidence": ["fixes-evidence/soft-404.png", "nav response status = 200"],
-      "lead": "routes/product/[id].tsx renders a not-found branch instead of throwing"
+      "lead": "src/services/product/mod.ts returns null without setResponseStatus(404)"
     }
   ],
   "needs_investigation": [

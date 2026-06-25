@@ -1,4 +1,4 @@
-# Capture recipes — Playwright evidence collection for ui-breakdown
+# Capture recipes — Playwright evidence collection for the breakdown
 
 Copy-adaptable recipes for the capture passes. They are plain Node scripts
 (CommonJS, `.cjs`) so they run with zero project setup.

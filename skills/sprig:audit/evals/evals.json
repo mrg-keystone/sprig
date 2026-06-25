@@ -1,35 +1,36 @@
 {
-  "skill_name": "isolate:audit",
-  "notes": "Targets a running build app with planted bugs. The fixture is fixtures/buggy-shop (boot per its README: symlink node_modules from fixtures/fresh-app, then `deno task dev`). The skill orchestrates a 4-stage agent pipeline (hunt -> root-cause -> fix -> validate) and leaves fixes.md as the record. Run the with-skill subagent with the app already booted and the base URL provided; the baseline gets the same.",
+  "skill_name": "sprig:audit",
+  "notes": "Targets a running build app (a sprig app) with planted bugs. The fixture is fixtures/buggy-shop (boot per its README: `sprig dev`, default base http://localhost:8000/ui). The skill orchestrates a 4-stage agent pipeline (hunt -> root-cause -> fix -> validate) and leaves fixes.md as the record. Run the with-skill subagent with the app already booted and the base URL provided; the baseline gets the same.",
   "evals": [
     {
       "id": 0,
       "name": "full-audit-and-fix",
-      "prompt": "This is a Fresh 2 app (made by the build skill) at <SOURCE_DIR>, running at http://127.0.0.1:8123. Something's off across the app — go over it end to end, find the bugs and performance problems, fix them, and prove the fixes hold. Leave me a fixes.md I can read.",
-      "expected_output": "A 4-stage run (hunt -> root-cause -> fix -> validate) and a fixes.md at the project root with one section per issue (what's wrong, evidence, root cause at file:line, fix, how to verify). All 6 planted bugs found and fixed: stub-stats-shown-as-real (routes/index.tsx, surface `live`), soft-404 (routes/product/[id].tsx, throw HttpError(404)), dead AddToCart island (useSignal), contact form missing 303 PRG (+ /contact/thanks route), contact missing server validation (422 + inline error), and the parallax forced-sync-layout/leaked-listener handler. The two correct patterns (scaleX bar, request-time read) are NOT flagged as bugs. Validation re-runs every check on a fresh server and reports pass with no regressions.",
+      "prompt": "This is a sprig app (made by the build skill) at <SOURCE_DIR>, running at http://localhost:8000/ui. Something's off across the app — go over it end to end, find the bugs and performance problems, fix them, and prove the fixes hold. Leave me a fixes.md I can read.",
+      "expected_output": "A 4-stage run (hunt -> root-cause -> fix -> validate) and a fixes.md at the project root with one section per issue (what's wrong, evidence, root cause at file:line, fix, how to verify). All 6 planted bugs found and fixed: stub-stats-shown-as-real (src/pages/home, surface `live`), soft-404 (src/services/product, setResponseStatus(req, 404) on miss), dead add-to-cart (a folder with (click) bindings but no logic.ts / non-signal state — add a logic.ts using a signal), contact write blocks/reloads instead of optimistic (snapshot -> mutate -> call -> roll back), contact missing server-side validation (the keep endpoint rejects bad input + the island shows an inline error), and the parallax forced-sync-layout/leaked-listener handler. The two correct patterns (scaleX bar, request-time read in resolve) are NOT flagged as bugs. Validation re-runs every check on a fresh server and reports pass with no regressions.",
       "files": ["fixtures/buggy-shop"],
       "assertions": [
         "A fixes.md is written at the app root, divided into sections, one per issue, each with what's-wrong + evidence + a root cause at a file:line + the fix + how to verify it's fixed",
-        "Soft 404 found and fixed: /product/<unknown> returns HTTP 404 after the fix (was 200), via throw new HttpError(404) in routes/product/[id].tsx",
-        "Stub-as-real backend bug found and fixed: routes/index.tsx now surfaces the live/stub state (a visible not-live/demo label) instead of dropping `live`",
-        "Dead island found and fixed: islands/AddToCart.tsx uses a signal so clicking #add increments the #qty badge (verified by interaction, not by visibility)",
-        "Contact PRG found and fixed: a valid POST returns 303 to /contact/thanks (which now exists), not a 200 re-render",
-        "Contact validation found and fixed: an invalid/missing email returns HTTP 422 with an inline error; a valid email still 303s",
+        "Soft 404 found and fixed: /ui/product/<unknown> returns HTTP 404 after the fix (was 200), via setResponseStatus(req, 404) in the product service (currentInjector captured at construction)",
+        "Stub-as-real backend bug found and fixed: the home page now surfaces the live/stub state (a visible not-live/demo label) instead of dropping `live`",
+        "Dead island found and fixed: the add-to-cart folder gets a logic.ts (defineComponent) with a signal so clicking #add increments the #qty badge (verified by interaction after hydration, not by visibility)",
+        "Optimistic write found and fixed: submitting contact updates the UI immediately and, on a forced /api failure, rolls back + shows an error — it does not spin-then-location.reload()",
+        "Contact validation found and fixed: bad input posted directly to the /api endpoint is rejected and the island surfaces an inline error; a valid submit succeeds",
         "Parallax perf issue identified (forced synchronous layout + non-passive unthrottled scroll handler + listener leak) and rewritten to a passive, rAF-throttled, read-then-write, cleaned-up effect",
-        "False-positive discipline: the .bar-fill transform:scaleX animation is NOT flagged as a jank bug, and the request-time Deno.readTextFile(new URL(...)) read is NOT flagged as a stale-import bug",
+        "False-positive discipline: the .bar-fill transform:scaleX animation is NOT flagged as a jank bug, and the request-time read in resolve.ts is NOT flagged as a stale-data bug",
         "Causes are proven from code (a file:line is named for each), not guessed, and perf claims carry a measured number",
         "The validate stage re-runs every issue's verification on a freshly-started server and reports all green with no regressions",
-        "The import.meta.url prod-build caveat (catalog B3) is noted under 'Needs investigation' rather than blindly 'fixed'"
+        "The prod-only caveat (catalog B3 — missing --unstable-kv / static key surfacing under sprig serve) is noted under 'Needs investigation' rather than blindly 'fixed'"
       ]
     },
     {
       "id": 1,
       "name": "perf-and-false-positive-discipline",
-      "prompt": "The home page of this Fresh 2 app (<SOURCE_DIR>, running at http://127.0.0.1:8123) feels like it might have a performance problem when you scroll. Can you profile it, tell me exactly what's wrong and why, and not waste my time on things that are actually fine?",
-      "expected_output": "A measured perf audit: the parallax scroll handler flagged as forced synchronous layout (getBoundingClientRect read + style write per dot per scroll event), non-passive, unthrottled, and leaked, with a measured frame/long-task sample and the fix (passive rAF-throttled effect, read-then-write, cleanup). The scaleX loading bar is explicitly confirmed CORRECT (animates transform, not a layout prop) and NOT flagged. Honest about measured impact (negligible at 40 dots today, latent as it scales).",
+      "prompt": "The home page of this sprig app (<SOURCE_DIR>, running at http://localhost:8000/ui) feels like it might have a performance problem when you scroll. Can you profile it, tell me exactly what's wrong and why, and not waste my time on things that are actually fine?",
+      "expected_output": "A measured perf audit: the parallax scroll handler flagged as forced synchronous layout (getBoundingClientRect read + style write per dot per scroll event), non-passive, unthrottled, and a leaked listener (manual addEventListener in setup with no cleanup), with a measured frame/long-task sample and the fix (passive rAF-throttled effect, read-then-write, cleanup). The scaleX loading bar is explicitly confirmed CORRECT (animates transform, not a layout prop) and NOT flagged. Honest about measured impact (negligible at 40 dots today, latent as it scales).",
       "files": ["fixtures/buggy-shop"],
       "assertions": [
-        "The parallax scroll handler is identified as the forced-synchronous-layout anti-pattern at islands/Parallax.tsx, with the rect-read-then-style-write-per-element mechanism named",
+        "The parallax scroll handler is identified as the forced-synchronous-layout anti-pattern at src/islands/parallax, with the rect-read-then-style-write-per-element mechanism named",
+        "The leaked listener is named: a manual addEventListener('scroll', ...) in setup() with no cleanup (not registered via effect)",
         "A real measurement is reported (dropped-frame % / long-task / frame time under scroll), not a vibe",
         "The .bar-fill transform:scaleX animation is explicitly checked and declared healthy (correct compositor-friendly pattern), not flagged",
         "The report is honest that the measured impact is currently small (40 dots) while the pattern is latent/will-scale — severity reflects the evidence"

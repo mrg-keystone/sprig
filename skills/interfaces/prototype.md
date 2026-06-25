@@ -6,8 +6,9 @@ ONE self-contained, throwaway **`.html` mock** that shows the complete look-and-
 main flow — the thing the `breakdown` stage decomposes into a build spec.
 
 ## Artifact
-A single `*-prototype.html` file that **opens by double-click** — CDN scripts only, no build
-step, hardcoded data, fake in-memory interactions.
+A single **`spec/ui/<app>-prototype.html`** file (the shared UI-pipeline home) that **opens by
+double-click** — CDN scripts only, no build step, hardcoded data, fake in-memory interactions.
+Its `.feedback.json` / screenshot siblings live in `spec/ui/` too.
 
 ## Shape (what `breakdown` can rely on)
 - **Renderable with Playwright** as-is (it's just an HTML file) — so breakdown can open it, walk
@@ -19,6 +20,7 @@ step, hardcoded data, fake in-memory interactions.
   client-side routing (hash router / view toggles), so breakdown counts **views, not files**.
 
 ## Invariants
+- **Location:** `spec/ui/<app>-prototype.html` (glob `spec/ui/*-prototype.html`).
 - Fully self-contained — no server, no external build.
 - Data is hardcoded and ideally deterministic (so breakdown's screenshots reproduce).
 - It is **throwaway** — reference ground truth for the spec, never deliverable code.

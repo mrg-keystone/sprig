@@ -4,7 +4,7 @@ The output is a self-contained folder. Three categories of file: **canonical** (
 **derived** (regenerate from the canonical — never hand-edit), and **docs/reference**.
 
 ```
-<Brand> Design System/
+spec/ui/design-system/
   theme.css                 ★ CANONICAL — the only source of truth
   theme.cdn.css             derived — flattened [data-theme] twin for the prototype skill
   manifest.json             derived — token + card index
@@ -58,5 +58,7 @@ never inlines a private copy of the tokens, so a specimen can't drift from the s
 dashboard you render to prove the system holds together.
 
 ## Brand-agnostic by construction
-Use the theme names `brand` / `brand-dark` (not the brand's literal name) so the artifact is a reusable
-template. The brand's identity lives in the *values* and in prose (`README.md`), not in the token names.
+The folder lives at the fixed pipeline path `spec/ui/design-system/`, but its contents stay a reusable
+template: use the theme names `brand` / `brand-dark` (not the brand's literal name) so it can be lifted
+out and reused elsewhere. The brand's identity lives in the *values* and in prose (`README.md`), not in
+the folder name or the token names.

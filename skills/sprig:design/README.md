@@ -1,7 +1,8 @@
 # design
 
-A skill that **generates design-system artifacts** — self-contained, brand-themed folders that the
-sibling `prototype` skill consumes with zero translation.
+A skill that **generates design-system artifacts** — a self-contained, brand-themed folder written to
+`spec/ui/design-system/` (the shared UI-pipeline home), which the `prototype` skill consumes with zero
+translation.
 
 Each artifact's single source of truth is one `theme.css` (a daisyUI-5 brand theme); everything else
 (`theme.cdn.css`, `manifest.json`, `adherence.oxlintrc.json`, preview specimens) is derived from it.
@@ -13,4 +14,5 @@ ApexCharts, and ends by rendering a showcase to verify.
 - **`references/`** — structure (canonical vs derived), theme authoring, components & charts, consume & verify.
 - **`assets/templates/`** — fill-in starter files for every artifact file.
 
-Reference example output: the "Sabor Design System" folder this skill was modeled on.
+Output location: **`spec/ui/design-system/`** (relative to the project root). The folder is brand-generic
+(`brand` / `brand-dark`) so it can be lifted out and reused as a standalone design-system skill.

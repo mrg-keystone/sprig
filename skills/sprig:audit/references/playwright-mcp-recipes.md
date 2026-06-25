@@ -10,7 +10,7 @@ everything the dedicated tools don't cover.
 - [Console & network health](#console--network-health)
 - [Status codes — the soft-404 trap](#status-codes--the-soft-404-trap)
 - [Island hydration check](#island-hydration-check)
-- [Forms & redirects](#forms--redirects)
+- [Writes & validation](#writes-optimistic-actions--validation)
 - [Performance: long tasks, CLS, INP](#performance-instrumentation)
 - [Jank under interaction](#jank-under-interaction)
 - [Animation specs & layout-thrash hunt](#animation-specs)
@@ -40,8 +40,8 @@ screenshot when you need *refs* to click.
 
 ## Booting & sizing
 
-Start the server fresh in the shell (`deno task dev` on a known port, or the prod
-build — see SKILL pass 0), then:
+Start the server fresh in the shell (`sprig dev` on a known port, or the prod
+build `sprig serve` — see SKILL pass 0), then:
 
 1. `browser_resize` to a desktop viewport (e.g. 1280×800) so the first sweep is
    consistent.
@@ -54,9 +54,10 @@ build — see SKILL pass 0), then:
 After **every** navigation and interaction, drain both — these are free findings:
 
 - `browser_console_messages` → triage by level. `error` is a finding. Watch
-  specifically for Preact **hydration mismatch** warnings (`Expected server HTML
-  to contain…`) — they mean SSR output ≠ client render, the classic source of
-  content that flickers on load or an island that resets on hydrate.
+  specifically for **SSR/hydration throws** — an unguarded `window`/`document` in a
+  `setup()` (throws during SSR → a controlled 500), a *"DI does not cross the
+  SSR/island boundary"* throw, or a client `setup()` error that leaves an island
+  un-hydrated (renders but never reacts).
 - `browser_network_requests` → any `4xx`/`5xx` is a finding (failed API call,
   404'd asset, soft-error). Note the document request's own status for the
   status-code check below.
@@ -67,8 +68,10 @@ After **every** navigation and interaction, drain both — these are free findin
 DOM can't tell a real 404 from a 200 that *looks* like one. Two reliable probes:
 
 1. **From the shell (best for the verify step too):**
-   `curl -i http://localhost:8000/blog/does-not-exist | head -1` → expect
-   `HTTP/1.1 404`. A 200 here on a "not found" page is a soft 404.
+   `curl -i http://localhost:8000/ui/blog/does-not-exist | head -1` → expect
+   `HTTP/1.1 404`. A 200 here on a "not found" page is a soft 404 (the resolver
+   never called `setResponseStatus(404)`). Off-base paths (incl. a bare `/` when
+   `base` is `/ui`) 404 by design.
 2. **In-page, no extra navigation cost:** after navigating, read the document
    request's status from the network log, or probe directly:
 
@@ -87,38 +90,43 @@ not a 200 render of the protected page.
 ## Island hydration check
 
 The bug is *renders but doesn't react*. Never assert on visibility — assert that
-**interacting changes the DOM**:
+**interacting changes the DOM** (after hydration; a click before hydrate is a silent
+no-op against the SSR markup):
 
 1. `browser_snapshot` to get the island's element ref.
 2. Read a value (label/aria/state), e.g. `browser_evaluate`
    `() => document.querySelector("#count")?.textContent`.
-3. `browser_click` (or type) the control.
-4. Re-read. **No change = dead island.** Then check the console (a thrown error?)
-   and the page source for the cause class (function prop passed to the island,
-   `fresh-island::Name` specifier, a serialization error). Confirm hydration even
-   ran:
+3. `browser_click` (or type) the control. (If the island's `trigger` is
+   `visible`/`interaction`/`idle`, first do the thing that fires it — scroll it into
+   view / hover it — so its chunk loads.)
+4. Re-read. **No change = dead island.** Then check the console (an SSR/hydration
+   throw?) and the source for the cause class: the folder has **no `logic.ts`** (so
+   it's static and `(event)`s never fire), a **non-serializable `@input`** (a
+   function/class-instance prop dropped on the wire), or an unguarded browser global
+   in `setup()`. Confirm hydration even ran — the island chunks should be in the
+   network:
 
    ```js
-   // browser_evaluate — is anything hydrated at all?
-   () => ({
-     islands: document.querySelectorAll("[data-fresh-island], fresh-island").length,
-     // a bare "fresh-island::" specifier in the client entry = island-registry drift
-     badSpecifier: !!document.querySelector('script[src*="fresh-island:"]'),
-   })
+   // browser_evaluate — did island chunks load at all?
+   () => performance.getEntriesByType("resource")
+     .map(r => r.name).filter(n => /\/(isl\.|chunk-|client)\b.*\.js/.test(n))
    ```
 
-## Forms & redirects
+## Writes (optimistic actions) & validation
 
-Drive the real submit; assert the **redirect**, not the re-render:
+sprig has no PRG forms — a server write is an **optimistic island action**. Drive it
+and assert the optimistic behavior, not a redirect:
 
-1. `browser_fill_form` (or per-field `browser_type`) with valid input.
-2. `browser_click` submit.
-3. `browser_wait_for` the destination URL/marker. A form that lands back on itself
-   with `200` (no `303`) resubmits on reload — a finding. Confirm the status with a
-   `curl` repro of the POST if needed.
-4. Re-run with **invalid** input → expect to stay with an inline error (and ideally
-   a `422`), not a silent accept. Missing server-side validation is a finding even
-   if client validation hides it.
+1. Read the value the action changes, then `browser_click` / `browser_type` /
+   `browser_fill_form`.
+2. Assert the UI updates **immediately** (optimistic) — no spinner-and-wait, and
+   crucially **no `location.reload()`** to re-read server state.
+3. Force a failure (e.g. block the `/api/*` request via `browser_network_request`
+   abort, or feed input the backend rejects) → the UI should **roll back** to the
+   prior value and surface an error, not keep the optimistic state.
+4. Check **server-side validation** independently of the client: `curl -i -X POST`
+   bad data straight to the `/api/…` endpoint → expect a rejection (4xx), no write.
+   Missing server validation is a finding even if the island hides it client-side.
 
 ## Performance instrumentation
 
@@ -155,7 +163,7 @@ after. One combined installer:
 }
 ```
 
-Thresholds that make a number a finding are in `fresh2-bug-catalog.md` (perf half).
+Thresholds that make a number a finding are in `sprig-bug-catalog.md` (perf half).
 Report each reading as one labeled sample with the trigger, not a benchmark.
 
 ## Jank under interaction

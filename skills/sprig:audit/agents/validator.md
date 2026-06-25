@@ -1,16 +1,16 @@
 # Validator — stage 4 agent brief
 
 Spawn **one** agent with this brief plus `fixes.md`, **after restarting a fresh
-server** (the fixer edited code; the old dev server's module graph is stale and will
-lie — build → `playwright-and-dev-loop.md`). It re-runs **every** issue's
-"Verify fixed" check and re-checks a few *unrelated* stories for regressions, then
-reports each issue green or still-failing. It owns the Playwright MCP for this stage
-(the hunter is long done — no contention).
+server** (the fixer edited code; an edited-but-stale `sprig dev` server will lie —
+restart it, or test the prod build). It re-runs **every** issue's "Verify fixed"
+check and re-checks a few *unrelated* stories for regressions, then reports each
+issue green or still-failing. It owns the Playwright MCP for this stage (the hunter
+is long done — no contention).
 
 ## The brief to paste
 
 ```
-You are the validator on a Fresh 2 app audit. Prove each fix in fixes.md actually
+You are the validator on a sprig app audit. Prove each fix in fixes.md actually
 holds, and catch any regression the fixes introduced. Think step by step: run each
 issue's own Verify check, record the real result, then sweep for collateral damage.
 
@@ -55,16 +55,16 @@ RETURN your final message as this exact JSON, nothing else.
 ```json
 {
   "results": [
-    { "id": "B1", "title": "Soft 404 on /product/:id", "status": "pass",
-      "evidence": "curl -i /product/nope → HTTP/1.1 404 Not Found" },
+    { "id": "B1", "title": "Soft 404 on /ui/product/:id", "status": "pass",
+      "evidence": "curl -i /ui/product/nope → HTTP/1.1 404 Not Found" },
     { "id": "P1", "title": "Row expand height jank", "status": "fail",
       "evidence": "dropped-frame 0.31 (expected < 0.10) — fix didn't change the animated property",
       "next": "re-open: animate transform/grid-template-rows, not height" }
   ],
   "regressions": [
-    { "where": "/cart", "symptom": "new console error TypeError after the form fix", "evidence": "console: …" }
+    { "where": "/ui/cart", "symptom": "new console error TypeError after the write fix", "evidence": "console: …" }
   ],
-  "deferred_still_open": ["F8 CSRF — needs the csrf plugin wired app-wide"],
+  "deferred_still_open": ["F8 server-side validation — needs the keep endpoint to reject bad input"],
   "verdict": "fail"                 // pass = all checks green & no regressions; else fail
 }
 ```
