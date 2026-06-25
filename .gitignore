@@ -10,6 +10,8 @@ test-results/
 # generated sprig previews (isolate generates these per discovered case)
 /app/src/_preview/
 /app/src/pages/_preview/
+# the project's design tokens, forwarded into the workbench per isolate run
+/app/src/css-variables.json
 
 # scaffolding kept locally, not shipped — the old code lives in git history
 /reference/

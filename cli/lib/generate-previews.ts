@@ -70,6 +70,16 @@ export async function generatePreviews(entries: ComponentEntry[], appSrcDir: str
   await ensureDir(previewPagesDir);
   await ensureDir(targetsDir);
 
+  // Forward the PROJECT's design tokens into the workbench so the stage themes EXACTLY
+  // like the real app. `build app` runs buildCss(appSrcDir), which reads
+  // <appSrcDir>/css-variables.json; the workbench has none of its own, so copy the
+  // project's in — or clear a stale one left by a previous project so its tokens never
+  // leak into a project that doesn't define them.
+  const projTokens = join(projectSrc, "css-variables.json");
+  const appTokens = join(appSrcDir, "css-variables.json");
+  if (await exists(projTokens)) await Deno.copyFile(projTokens, appTokens);
+  else await Deno.remove(appTokens).catch(() => {});
+
   const routes: { path: string; load: string }[] = [];
   const moduleLines: string[] = [];
   const copiedDeps = new Set<string>(); // dep selectors copied (shared across targets)
