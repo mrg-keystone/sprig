@@ -17,15 +17,15 @@ skills/sprig:prototype/
 │                        loading, error, overflow) — and iterates on a prototype
 │                        that already exists (add a screen, fix the flow, restyle)
 │                        in place, same file.
-├── annotate/            Click-to-feedback wrapper. Serves a prototype locally and
-│                        injects an overlay: cmd/ctrl+click an element, type
-│                        feedback, save → written to <prototype>.feedback.json
-│                        next to the file for the skill to read and apply.
 └── design-lint/         Standalone Deno linter (a visual anti-pattern detector,
                          ported from impeccable, Puppeteer→Astral). The skill
                          uses it as an optional, non-blocking look-and-feel
                          gut-check on the prototype it generates.
 ```
+
+Click-to-feedback (annotate) is now built into the sprig CLI: **`sprig dev --annotate <html>`**
+serves a prototype with the cmd/ctrl+click overlay (the same overlay the full-app build mode
+uses). It lives in the framework (`framework/.sprig/annotate-client.js` + `annotate.ts`).
 
 design-lint is derived from [impeccable](https://github.com/pbakaus/impeccable)
 (Apache-2.0). See `design-lint/NOTICE` for attribution and the list of changes.
@@ -84,12 +84,13 @@ to supply snippets or convert a Figma file. See `SKILL.md` → *Style with daisy
 
 ## Click-to-feedback (annotate)
 
-`annotate/serve.ts` wraps any prototype with a cmd/ctrl+click feedback overlay
-and writes the notes to `<prototype>.feedback.json` next to the file, which the
-skill reads on the next iteration. See `annotate/README.md`.
+**`sprig dev --annotate <html>`** serves a prototype with a cmd/ctrl+click feedback overlay
+and writes the notes to `<prototype>.feedback.json` next to the file, which the skill reads on
+the next iteration. (Same overlay as the full-app build mode — `sprig dev --annotate` with no
+file. The overlay lives in `framework/.sprig/`.)
 
 ```sh
-deno run -A skills/sprig:prototype/annotate/serve.ts spec/ui/<your>-prototype.html --open
+sprig dev --annotate spec/ui/<your>-prototype.html
 ```
 
 ## Requirements
@@ -101,8 +102,8 @@ deno run -A skills/sprig:prototype/annotate/serve.ts spec/ui/<your>-prototype.ht
   styles the page from CDN — you just write the classes directly.
 - **Node** on `PATH` for the skill's optional gut-check wrapper (it just spawns
   Deno).
-- **Deno** on `PATH` only if you use the gut-check or the annotate wrapper; the
-  prototype itself needs nothing but a browser.
+- **Deno / the `sprig` CLI** on `PATH` only if you use the gut-check or `sprig dev --annotate`;
+  the prototype itself needs nothing but a browser.
 
 ## Install
 

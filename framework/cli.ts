@@ -3,21 +3,22 @@
  * `sprig` — the framework CLI.
  *
  *   sprig init [dir]            scaffold a minimal, runnable sprig app
- *   sprig dev  [appDir] [--annotate]  HMR dev server (no Vite); --annotate adds the click-to-edit overlay + isolate workbench
+ *   sprig dev  [appDir] [--annotate [html]]  HMR dev server (no Vite); --annotate adds the click-to-edit overlay +
+ *                                  isolate workbench (full app), or --annotate <html> annotates one prototype file
  *   sprig build [appDir]        code-split islands + scope CSS + Tailwind → static/
  *   sprig serve [entry]         run the app's host entry (e.g. bootstrap/serve.ts)
  *   sprig help
  *
  * The framework runtime lives next to this file at ./.sprig (core + compiler).
  */
-import { dirname, fromFileUrl, join, resolve, toFileUrl } from "@std/path";
+import { basename, dirname, fromFileUrl, join, resolve, toFileUrl } from "@std/path";
 // static relative imports of the package's own modules (computed-path dynamic imports
 // are unanalyzable + don't resolve once this is published to JSR).
 import { buildClient } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
 import { sprigUi } from "../packages/keep/mod.ts";
 import { assertWorkbench, installRuntimeFromDeployment, installRuntimeFromWorkingTree, latestRuntimeVersion } from "./.sprig/install.ts";
-import { makeAnnotate } from "./.sprig/annotate.ts";
+import { makeAnnotate, makePrototypeAnnotate } from "./.sprig/annotate.ts";
 
 // the published-package version range a scaffolded app pins (core + its /keep + /cli
 // sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
@@ -215,11 +216,47 @@ async function serve(entry = "serve.ts"): Promise<void> {
   Deno.exit(code);
 }
 
+/** `sprig dev --annotate <html>` — PROTOTYPE annotate: serve one throwaway HTML file with the
+ *  overlay (keyed to the ELEMENT), no app build, no workbench. The build-mode analog lives in
+ *  dev() below. Refuses a design-system specimen (the overlay targets the prototype). */
+async function devAnnotateHtml(htmlPath: string): Promise<void> {
+  const abs = resolve(htmlPath);
+  try {
+    if (!(await Deno.stat(abs)).isFile) throw new Error("not a file");
+  } catch {
+    console.error(`sprig dev --annotate: not a file: ${abs}`);
+    Deno.exit(1);
+  }
+  if (/\/design-system\//.test(abs.replace(/\\/g, "/"))) {
+    console.error(
+      `Refusing to annotate a design-system file:\n  ${abs}\n` +
+        `annotate targets the prototype. Point it at e.g. spec/ui/<app>-prototype.html.`,
+    );
+    Deno.exit(1);
+  }
+  const proto = makePrototypeAnnotate({ htmlPath: abs });
+  const port = freePort(Number(Deno.env.get("PORT") ?? 8000));
+  const pageURL = `http://localhost:${port}/${basename(abs)}`;
+  console.log(`sprig dev --annotate (prototype) → ${pageURL}`);
+  console.log(
+    `  ⌘/Ctrl+click an element → note → save (inline | json) · ⇧⌘ drag to draw.\n` +
+      `  feedback: ${abs.replace(/\.html?$/i, "")}.feedback.json`,
+  );
+  Deno.serve({ port }, (req: Request) => proto.fetch(req));
+}
+
 async function dev(rawArgs: string[] = []): Promise<void> {
-  const positionals = rawArgs.filter((a) => !a.startsWith("-"));
+  // `--annotate [html]`: with an .html path → PROTOTYPE annotate (serve that file standalone);
+  // without → BUILD annotate (overlay on the full app + the isolate workbench). Plain `sprig dev`
+  // (no flag) is untouched.
+  const ai = rawArgs.indexOf("--annotate");
+  const annotateOn = ai >= 0;
+  let annotateHtml = "";
+  if (ai >= 0 && rawArgs[ai + 1] && /\.html?$/i.test(rawArgs[ai + 1])) annotateHtml = rawArgs[ai + 1];
+  if (annotateHtml) return await devAnnotateHtml(annotateHtml);
+  const positionals = rawArgs.filter((a) => !a.startsWith("-") && a !== annotateHtml);
   const appDir = positionals[0] ?? ".";
   const base = positionals[1] ?? "/ui";
-  const annotateOn = rawArgs.includes("--annotate");
   await withMergedConfig(appDir);
   // State-preserving HMR (no Vite): build the dev bundle (HMR client + AST-fetching
   // island chunks), then wrap the app's production handler with the compiler's dev
@@ -569,7 +606,8 @@ async function install(dev: boolean): Promise<void> {
 const USAGE = `sprig — the framework CLI
 
   sprig init  [dir]              scaffold a minimal, runnable sprig app (default: .)
-  sprig dev   [appDir] [--annotate]  HMR dev server → /ui (--annotate: + click-to-edit overlay + the isolate workbench)
+  sprig dev   [appDir] [--annotate [html]]  HMR dev server → /ui. --annotate: click-to-edit overlay + the isolate
+                                  workbench (full app); --annotate <html>: annotate one prototype HTML file
   sprig build [appDir]           code-split islands + scope CSS + Tailwind → static/ (default: .)
   sprig isolate [appDir]         component/page workbench — develop in isolation (default: .)
   sprig serve [entry]            run the app's host entry under its deno.json (default: serve.ts)

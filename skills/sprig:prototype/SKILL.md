@@ -32,7 +32,7 @@ Figure out which path you're on — they share the build rules but start differe
 0. **Annotate only** — the args are *just a path to an existing `.html` file* with **no
    description and no change request**. There's nothing to build or change — the user
    only wants to mark it up. **Do not** read, edit, or rebuild the file. Skip straight to
-   **launching the annotate wrapper** on it (see **Output** → the `serve.ts` command) and
+   **launching annotate** on it (see **Output** → `sprig dev --annotate <html>`) and
    stop. This is the default for a bare-path invocation like `/prototype foo.html`.
 1. **Create** a new prototype from a description, spec, or Figma URL → do **Create**
    below (find source → build the file → every screen + the unglamorous states).
@@ -40,7 +40,7 @@ Figure out which path you're on — they share the build rules but start differe
    any prototype file) and asks to *change / add a screen / fix / restyle / iterate* →
    do **Improve an existing prototype**.
 3. **Apply click-feedback** — a sibling `<prototype-basename>.feedback.json` sits next
-   to the file (the user marked it up with the **annotate** wrapper). Those notes are
+   to the file (the user marked it up with `sprig dev --annotate <html>`). Those notes are
    the change list → do **Improve**, starting from **Applying click-feedback**.
 
 The distinction between path 0 and path 2 is **whether the prompt carries an
@@ -216,7 +216,7 @@ file, so load it whole and work *with* its existing shape rather than rebuilding
 ### Applying click-feedback
 
 When a sibling `<prototype-basename>.feedback.json` exists, the user marked up the
-prototype with the **annotate** wrapper — apply those notes as the change list before
+prototype with `sprig dev --annotate <html>` — apply those notes as the change list before
 anything else. It's a JSON object; each value carries the `feedback` plus context to
 locate the target. Two kinds of entry:
 
@@ -231,13 +231,11 @@ locate the target. Two kinds of entry:
   field names a PNG next to the prototype (the view + their drawing). **Open it**, read
   the `feedback` note, and make the change it indicates.
 
-Also check for **inline annotations in the prototype HTML itself**: the annotate wrapper's
-`inline` save writes the note onto the element as **`data-note="…"`** (and **`data-note-css="…"`**).
+Also check for **inline annotations in the prototype HTML itself**: annotate's `inline`
+save writes the note onto the element as **`data-note="…"`** (and **`data-note-css="…"`**).
 `grep -n 'data-note' <prototype>.html` — apply each as a change to that element (`data-note` =
 what to change, `data-note-css` = declarations) and **strip the attributes** afterward. These
 can coexist with a `feedback.json`; handle both.
-
-See `annotate/README.md` for the full field schema.
 
 For each entry: locate the target (static HTML *or* the function that renders it),
 apply the feedback, then re-check the flow and states. When done, **clear the file**
@@ -265,19 +263,20 @@ it.
 Output the HTML file (and, if you ran the gut-check, one line on what it flagged). Don't
 explain the code.
 
-Then **launch the annotate wrapper** so the user can give feedback by pointing at the
-screen — the fastest feedback on something you look at is clicking it, so make this the
-default ending for every create/iterate rather than waiting to be asked:
+Then **launch annotate** so the user can give feedback by pointing at the screen — the
+fastest feedback on something you look at is clicking it, so make this the default ending
+for every create/iterate rather than waiting to be asked:
 
 ```
-deno run -A .claude/skills/sprig:prototype/annotate/serve.ts spec/ui/<app>-prototype.html --open
+sprig dev --annotate spec/ui/<app>-prototype.html
 ```
 
-**Point it at the prototype you just wrote — the `spec/ui/*-prototype.html` file — and
-NEVER at an HTML file under `spec/ui/design-system/`.** The design system shares `spec/ui/`
-and ships its own preview specimens (`design-system/preview/showcase.html`, …); those are
-the brand's, not the prototype. (annotate refuses a `design-system/` path outright, so a
-wrong launch fails loudly instead of marking up the wrong file — re-point it at the prototype.)
+`sprig dev --annotate <html>` serves that one file with the click-to-edit overlay (no app
+build, no workbench). **Point it at the prototype you just wrote — the `spec/ui/*-prototype.html`
+file — and NEVER at an HTML file under `spec/ui/design-system/`.** The design system shares
+`spec/ui/` and ships its own preview specimens (`design-system/preview/showcase.html`, …); those
+are the brand's, not the prototype. (annotate refuses a `design-system/` path outright, so a wrong
+launch fails loudly instead of marking up the wrong file — re-point it at the prototype.)
 
 Run it in the background, then tell the user the URL and how to leave feedback:
 

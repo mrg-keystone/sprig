@@ -307,8 +307,8 @@ same loop, so you never debug it buried inside a full page.
 
 The UI-pipeline inputs live under **`spec/ui/`**: the build spec at `spec/ui/breakdown/`, the
 source mock at `spec/ui/<app>-prototype.html` (+ its `.feedback.json` sibling), and the brand at
-`spec/ui/design-system/`. A prototype handed to you may carry **inline annotations** left with the
-`sprig:prototype` annotate tool (its "save: inline" mode writes them straight onto the element):
+`spec/ui/design-system/`. A prototype handed to you may carry **inline annotations** left with
+`sprig dev --annotate <html>` (its "save: inline" mode writes them straight onto the element):
 
 - **`data-note="…"`** — a change/instruction for *that specific element*: what it should do,
   say, or become. Treat it as a per-element requirement from the user.
@@ -352,9 +352,9 @@ sprig dev --annotate
 
 The dev server serves the full app at `/ui` with the click-to-edit overlay folded in (no
 separate proxy), and auto-spawns the isolate workbench alongside; both die together on Ctrl-C.
-Plain `sprig dev` (no flag) is unchanged. (For an app running **elsewhere** — `sprig serve` /
-prod, not `sprig dev` — use the standalone proxy in `annotate/serve.ts` instead; see
-`annotate/README.md`.)
+Plain `sprig dev` (no flag) is unchanged. (`sprig dev --annotate <html>` instead annotates a
+single prototype HTML file — selector-keyed — the same overlay in its prototype mode; see
+`sprig:prototype`.)
 
 ### The loop — annotate (prod) → fix → verify (isolate) → repeat
 
