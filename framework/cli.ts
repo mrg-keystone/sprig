@@ -46,6 +46,19 @@ function freePort(start: number): number {
   return start;
 }
 
+/** True if an annotate server is already answering on `port` — so a second `sprig dev --annotate`
+ *  REUSES it (prints the URL and exits) instead of starting a duplicate on a drifted port. */
+async function annotateRunningAt(port: number): Promise<boolean> {
+  try {
+    const r = await fetch(`http://localhost:${port}/__annotate/ping`, { signal: AbortSignal.timeout(500) });
+    if (!r.ok) return false;
+    const j = await r.json().catch(() => null);
+    return !!(j && j.ok === true);
+  } catch {
+    return false;
+  }
+}
+
 /** A per-project file (in TMPDIR, not the project) where pinLocalSprig stashes the app's
  *  ORIGINAL deno.json, so a `sprig dev` killed mid-session can self-heal on the next run. */
 function sprigBackupPath(appDir: string): string {
@@ -234,8 +247,16 @@ async function devAnnotateHtml(htmlPath: string): Promise<void> {
     );
     Deno.exit(1);
   }
+  const want = Number(Deno.env.get("PORT") ?? 8000);
+  if (await annotateRunningAt(want)) {
+    console.log(
+      `sprig annotate already running → http://localhost:${want}/${basename(abs)}\n` +
+        `  Reusing it — edit the prototype and the open view hot-reloads. (Leave that server running.)`,
+    );
+    return;
+  }
   const proto = makePrototypeAnnotate({ htmlPath: abs });
-  const port = freePort(Number(Deno.env.get("PORT") ?? 8000));
+  const port = freePort(want);
   const pageURL = `http://localhost:${port}/${basename(abs)}`;
   console.log(`sprig dev --annotate (prototype) → ${pageURL}`);
   console.log(
@@ -254,6 +275,19 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   let annotateHtml = "";
   if (ai >= 0 && rawArgs[ai + 1] && /\.html?$/i.test(rawArgs[ai + 1])) annotateHtml = rawArgs[ai + 1];
   if (annotateHtml) return await devAnnotateHtml(annotateHtml);
+  // Reuse a running build-annotate server instead of starting a duplicate on a drifted port —
+  // this is the loop's stability fix: a stray relaunch no-ops onto the live one. (Skipped for
+  // plain `sprig dev`, which is free to start its own.)
+  if (annotateOn) {
+    const want = Number(Deno.env.get("PORT") ?? 8000);
+    if (await annotateRunningAt(want)) {
+      console.log(
+        `sprig annotate already running → http://localhost:${want}/ui\n` +
+          `  Reusing it. Annotate there; I'll read spec/ui/build-notes.json. (Leave that server running.)`,
+      );
+      return;
+    }
+  }
   const positionals = rawArgs.filter((a) => !a.startsWith("-") && a !== annotateHtml);
   const appDir = positionals[0] ?? ".";
   const base = positionals[1] ?? "/ui";
@@ -291,11 +325,18 @@ async function dev(rawArgs: string[] = []): Promise<void> {
     const appAbs = resolve(appDir);
     const isoPort = freePort(port + 1);
     const isoBase = `http://localhost:${isoPort}`;
-    const wb = spawnWorkbench(appAbs, isoPort, false);
+    // The workbench is best-effort: if it can't start, the annotate app must STILL run (the
+    // loop's review surface is the app; isolate is the verify surface). Never let it drop dev.
+    let wb: Deno.ChildProcess | null = null;
+    try {
+      wb = spawnWorkbench(appAbs, isoPort, false);
+    } catch (e) {
+      console.error(`sprig: isolate workbench failed to start (${e instanceof Error ? e.message : e}) — annotate app still running.`);
+    }
     annotate = await makeAnnotate({ appDir: appAbs, srcDir: join(appAbs, "src"), isolateBase: isoBase });
     const onSig = () => {
       try {
-        wb.kill("SIGTERM");
+        wb?.kill("SIGTERM");
       } catch { /* already dead */ }
       Deno.exit(130);
     };

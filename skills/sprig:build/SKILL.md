@@ -29,11 +29,11 @@ A component is a **folder**, not a file: `template.html` (+ optional `logic.ts` 
 ## Where to start (what "build" does when invoked)
 
 - **No args, and the app is already built** (a runnable `src/` tree, nothing pending in
-  `spec/ui/breakdown/` or `spec/ui/build-notes.json`) → there's nothing to build, so just
-  **launch the review loop on the running app: `sprig dev --annotate`** (the full/"prod" app at
-  `/ui` with the click-to-edit overlay + the isolate workbench). That's the default idle action —
-  run it in the background and **tell the user both URLs** (the annotate app + the isolate
-  workbench) so they can start clicking (see **The loop**, below).
+  `spec/ui/breakdown/` or `spec/ui/build-notes.json`) → there's nothing to build, so enter the
+  **annotate review loop**. Check the server with `curl -s localhost:8000/__annotate/ping`; if
+  it's not up, ask the user to run **`PORT=8000 sprig dev --annotate`** in their own terminal
+  (it must outlive your turns — don't background it yourself), then drive the loop autonomously
+  (see **The loop**, below). The app is `:8000/ui`, the workbench `:8001`.
 - **No args, with pending work** — a `spec/ui/breakdown/` to implement, or a
   `spec/ui/build-notes.json` with open entries → do that work (rebuild the spec, or apply the
   notes component-by-component in isolation), then fall back to `sprig dev --annotate`.
@@ -353,53 +353,51 @@ component's scope-id marker, a ⌘/Ctrl+click resolves to the **component folder
 and each note (in `spec/ui/build-notes.json`, component-keyed) carries that component's
 `sprig isolate` deep-link.
 
-### One command — `sprig dev --annotate`
+### The server is the USER's — don't babysit it
 
-`sprig dev --annotate` brings up **both surfaces** of the loop from a single command:
+This is the one thing that makes the loop stable. `sprig dev --annotate` is a **long-lived dev
+server**, and the loop spans many of your turns. If *you* start it as a background task it gets
+torn down between turns — the "server keeps dropping" symptom. So:
 
-```
-sprig dev --annotate
-#   app + annotate → http://localhost:8000/ui    ← the USER reviews + ⌘/Ctrl+clicks here
-#   isolate        → http://localhost:8001/      ← YOU fix + VERIFY each component here
-```
+- **The user owns the server.** Ask them to run it once in their **own terminal** so it persists
+  across the whole session (they can paste it into this chat with a leading `!` to run it here):
 
-The dev server serves the full app at `/ui` with the click-to-edit overlay folded in (no
-separate proxy), and auto-spawns the isolate workbench alongside; both die together on Ctrl-C.
-Plain `sprig dev` (no flag) is unchanged. (`sprig dev --annotate <html>` instead annotates a
-single prototype HTML file — selector-keyed — the same overlay in its prototype mode; see
-`sprig:prototype`.)
+  ```
+  PORT=8000 sprig dev --annotate
+  #   app + annotate → http://localhost:8000/ui    ← the USER reviews + ⌘/Ctrl+clicks here
+  #   isolate        → http://localhost:8001/      ← YOU fix + VERIFY each component here
+  ```
+  Pin `PORT=8000` so the URL is **stable** (no drift) and survives restarts.
 
-**Run it in the background, then tell the user BOTH URLs** — they need them to do their half:
+- **Each turn, REUSE — never relaunch.** Check it's up with a quick
+  `curl -s localhost:8000/__annotate/ping` (returns `{"ok":true,...}`). If up, just use it.
+  Running `sprig dev --annotate` again is safe — it **detects the running one and no-ops** rather
+  than starting a duplicate or drifting the port — but prefer the ping over a relaunch.
+- **If it's down,** ask the user to restart that one command; don't spawn your own background
+  copy (that's what keeps dropping). The workbench is best-effort — if only `:8001` is missing,
+  the app at `:8000/ui` still works; tell the user to re-run for the workbench.
 
-- **annotate app** (review + ⌘/Ctrl+click): `http://localhost:8000/ui`
-- **isolate workbench** (where fixes are verified): `http://localhost:8001/`
+`sprig dev --annotate <html>` is the same deal for a single prototype file (selector-keyed; see
+`sprig:prototype`). Plain `sprig dev` (no flag) is unchanged.
 
-The command prints both on startup; **read the actual ports from its output and relay those** —
-they shift (e.g. `:8002`) if 8000/8001 are taken, and the workbench prints `◆ isolate ready → …`
-once it finishes building (a few seconds after the app is up). Don't make the user hunt for them.
+### The loop — you drive it; the user only clicks
 
-### The loop — annotate (prod) → fix → verify (isolate) → repeat
+Once the server is up (theirs), run this **autonomously** each round — the user shouldn't have to
+tell you the steps, only annotate and say "go" (or you poll `build-notes.json`):
 
-Run as a **cycle with two surfaces**, until the user says they're done:
-
-1. **Annotate (prod).** The user ⌘/Ctrl+clicks elements in the full app (`:8000/ui`); notes
-   land in `spec/ui/build-notes.json`, each keyed to the owning component (the overlay's panel
-   shows each note's component + an "open in isolate ↗" deep-link).
-2. **Fix.** For each entry (keyed by component path like `src/islands/counter`), edit **only
-   that component's folder** (`template.html` / `logic.ts` / `styles.css`) — the optimistic-UI
-   and `data-note` rules above apply; an island fix needs a `logic.ts`, a styling fix goes in
-   the scoped `styles.css`.
+1. **Read** `spec/ui/build-notes.json` (the user ⌘/Ctrl+clicked the app; each entry is keyed to a
+   component, with its `isolateUrl`). Nothing new? Tell them the app is at `:8000/ui` and wait.
+2. **Fix** each entry: edit **only that component's folder** (`template.html` / `logic.ts` /
+   `styles.css`) — optimistic-UI + `data-note` rules apply; an island fix needs a `logic.ts`, a
+   styling fix goes in the scoped `styles.css`.
 3. **Verify in the ISOLATE UI — not prod.** Open the component in the workbench (`:8001`) at the
-   entry's `isolateUrl` and confirm the fix *there*: look at the case(s) the note was about and
-   run the component's `isolate/` cases. Proving a component fix standalone is the whole point —
-   don't verify by hunting the full app. (No `isolate/` folder yet? Add one first — see
-   `breakdown/references/isolate-format.md` — so the fix has a case to prove it.)
-4. **Clear.** Delete that entry from `build-notes.json` once it's verified in isolation.
-   An `unresolved:<selector>` entry means the click didn't map to a component — locate it by
-   selector and fix the owner.
-5. **Back to prod.** `sprig dev` HMR has already pushed your edits into the full app at `:8000/ui`,
-   so it now shows the updated UI. Tell the user to review it and ⌘/Ctrl+click the next round.
-   **Repeat from step 1** until they leave no new notes.
+   entry's `isolateUrl`; confirm the fix there and run its `isolate/` cases. (No `isolate/` yet?
+   Add one — `breakdown/references/isolate-format.md` — so the fix has a case to prove it.)
+4. **Clear** that entry from `build-notes.json`. An `unresolved:<selector>` entry didn't map to a
+   component — locate it by selector and fix the owner.
+5. **Report, don't relaunch.** HMR already pushed your edits into `:8000/ui`, so it shows the new
+   UI live. Tell the user "applied N — review at `:8000/ui` and ⌘/Ctrl+click the next round," and
+   **repeat from step 1**. Don't restart the server; it's still theirs and still up.
 
 ## Decision matrix
 

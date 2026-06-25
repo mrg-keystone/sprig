@@ -180,6 +180,9 @@ export async function makeAnnotate(
     async handle(req: Request): Promise<Response | null> {
       const p = new URL(req.url).pathname;
       if (!p.startsWith("/__annotate/")) return null;
+      // health/identity probe so a launcher (or skill) can detect a running instance and REUSE
+      // it instead of starting a duplicate on a drifted port.
+      if (p === "/__annotate/ping") return json({ ok: true, mode: "build", components: components.size, notes: notesPath });
       if (p === "/__annotate/state") return json(await readNotes());
       if (p === "/__annotate/clear" && req.method === "POST") {
         await writeNotes({});
@@ -413,6 +416,7 @@ export function makePrototypeAnnotate(opts: { htmlPath: string }): { fetch(req: 
         });
         return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-store" } });
       }
+      if (p === "/__annotate/ping") return json({ ok: true, mode: "prototype", file: PROTO_NAME, feedback: FEEDBACK_PATH });
       if (p === "/__annotate/state") return json(await readFeedback());
       if (p === "/__annotate/clear" && req.method === "POST") {
         await writeFeedback({});

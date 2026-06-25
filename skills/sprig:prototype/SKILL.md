@@ -268,18 +268,23 @@ fastest feedback on something you look at is clicking it, so make this the defau
 for every create/iterate rather than waiting to be asked:
 
 ```
-sprig dev --annotate spec/ui/<app>-prototype.html
+PORT=8000 sprig dev --annotate spec/ui/<app>-prototype.html
 ```
 
 `sprig dev --annotate <html>` serves that one file with the click-to-edit overlay (no app
 build, no workbench) and **live-reloads** it — when you rewrite the prototype, the open
-annotate view refreshes itself (its notes persist in `feedback.json`). **Point it at the prototype you just wrote — the `spec/ui/*-prototype.html`
+annotate view refreshes itself (its notes persist in `feedback.json`), so the loop is just:
+they click → you edit the file → their tab refreshes. **It's a long-lived server: have the
+user keep it running in their terminal** (paste it here with a leading `!` to run in-session)
+so it outlives your turns — don't keep relaunching a background copy (that's what drops). Each
+round, **reuse** it (`curl -s localhost:8000/__annotate/ping` → `{"ok":true}`); a re-run safely
+no-ops onto the running one rather than drifting the port. **Point it at the prototype you just wrote — the `spec/ui/*-prototype.html`
 file — and NEVER at an HTML file under `spec/ui/design-system/`.** The design system shares
 `spec/ui/` and ships its own preview specimens (`design-system/preview/showcase.html`, …); those
 are the brand's, not the prototype. (annotate refuses a `design-system/` path outright, so a wrong
 launch fails loudly instead of marking up the wrong file — re-point it at the prototype.)
 
-Run it in the background, then tell the user the URL and how to leave feedback:
+Tell the user the URL and how to leave feedback:
 
 - **⌘/Ctrl + click any element** → type a note → save. The save button is **split:
   `inline | json`**. **inline** writes the note onto the element in the source HTML as
