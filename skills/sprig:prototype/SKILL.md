@@ -210,8 +210,10 @@ file, so load it whole and work *with* its existing shape rather than rebuilding
    reachable from the demo-states panel. If you change the data shape, update every
    screen that reads it so nothing silently breaks.
 4. **Write it back to the same file** (same name) unless the user wants a new one —
-   overwriting in place is what preserves their clicks. Then re-run the optional
-   gut-check below if it's worth it, and re-launch annotate (see **Output**).
+   overwriting in place is what preserves their clicks. **If annotate is already
+   running, do NOT relaunch it** — rewriting the file hot-reloads the open view (and a
+   relaunch would just churn). A re-run is harmless (it reuses the running server), but the
+   hot-reload means you usually don't relaunch at all. Re-run the optional gut-check if worth it.
 
 ### Applying click-feedback
 
@@ -263,22 +265,28 @@ it.
 Output the HTML file (and, if you ran the gut-check, one line on what it flagged). Don't
 explain the code.
 
-Then **launch annotate** so the user can give feedback by pointing at the screen — the
-fastest feedback on something you look at is clicking it, so make this the default ending
-for every create/iterate rather than waiting to be asked:
+Then **make sure annotate is running** so the user can give feedback by pointing at the
+screen — the fastest feedback on something you look at is clicking it, so this is the default
+ending for the **first** create rather than waiting to be asked. On later iterations the
+running server hot-reloads the rewritten file — **don't relaunch it** (a re-run just reuses it):
 
 ```
-PORT=8000 sprig dev --annotate spec/ui/<app>-prototype.html
+sprig dev --annotate spec/ui/<app>-prototype.html
 ```
+
+It auto-picks a **stable port hashed from the prototype's name** (same file → same URL, every
+run — never drifts to `:8001`/`:8002`) and **opens it in the browser** on start. (Set `PORT` to
+override; `--no-open` to suppress the browser.) The command is **idempotent**: re-running it
+detects the live server and just **reprints the URL** instead of starting a duplicate — so you
+never need to know the port up front.
 
 `sprig dev --annotate <html>` serves that one file with the click-to-edit overlay (no app
 build, no workbench) and **live-reloads** it — when you rewrite the prototype, the open
 annotate view refreshes itself (its notes persist in `feedback.json`), so the loop is just:
 they click → you edit the file → their tab refreshes. **It's a long-lived server: have the
 user keep it running in their terminal** (paste it here with a leading `!` to run in-session)
-so it outlives your turns — don't keep relaunching a background copy (that's what drops). Each
-round, **reuse** it (`curl -s localhost:8000/__annotate/ping` → `{"ok":true}`); a re-run safely
-no-ops onto the running one rather than drifting the port. **Point it at the prototype you just wrote — the `spec/ui/*-prototype.html`
+so it outlives your turns — don't keep relaunching a background copy (that's what drops).
+**Point it at the prototype you just wrote — the `spec/ui/*-prototype.html`
 file — and NEVER at an HTML file under `spec/ui/design-system/`.** The design system shares
 `spec/ui/` and ships its own preview specimens (`design-system/preview/showcase.html`, …); those
 are the brand's, not the prototype. (annotate refuses a `design-system/` path outright, so a wrong

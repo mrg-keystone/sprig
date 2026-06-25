@@ -30,10 +30,10 @@ A component is a **folder**, not a file: `template.html` (+ optional `logic.ts` 
 
 - **No args, and the app is already built** (a runnable `src/` tree, nothing pending in
   `spec/ui/breakdown/` or `spec/ui/build-notes.json`) → there's nothing to build, so enter the
-  **annotate review loop**. Check the server with `curl -s localhost:8000/__annotate/ping`; if
-  it's not up, ask the user to run **`PORT=8000 sprig dev --annotate`** in their own terminal
-  (it must outlive your turns — don't background it yourself), then drive the loop autonomously
-  (see **The loop**, below). The app is `:8000/ui`, the workbench `:8001`.
+  **annotate review loop**. If it isn't already up, ask the user to run **`sprig dev --annotate`**
+  in their own terminal (it must outlive your turns — don't background it yourself). It picks a
+  **stable port hashed from the app name**, prints both URLs, and opens them; re-running just
+  reprints them. Then drive the loop off `spec/ui/build-notes.json` (see **The loop**, below).
 - **No args, with pending work** — a `spec/ui/breakdown/` to implement, or a
   `spec/ui/build-notes.json` with open entries → do that work (rebuild the spec, or apply the
   notes component-by-component in isolation), then fall back to `sprig dev --annotate`.
@@ -363,19 +363,20 @@ torn down between turns — the "server keeps dropping" symptom. So:
   across the whole session (they can paste it into this chat with a leading `!` to run it here):
 
   ```
-  PORT=8000 sprig dev --annotate
-  #   app + annotate → http://localhost:8000/ui    ← the USER reviews + ⌘/Ctrl+clicks here
-  #   isolate        → http://localhost:8001/      ← YOU fix + VERIFY each component here
+  sprig dev --annotate
+  #   app + annotate → http://localhost:<auto>/ui    ← the USER reviews + ⌘/Ctrl+clicks here
+  #   isolate        → http://localhost:<auto+1>/    ← YOU fix + VERIFY each component here
   ```
-  Pin `PORT=8000` so the URL is **stable** (no drift) and survives restarts.
+  The port is **auto-derived from the app name** (stable per app — same URL every run, never
+  drifts), printed on start, and the UI **opens in the browser**. (Set `PORT` to override;
+  `--no-open` to suppress.)
 
-- **Each turn, REUSE — never relaunch.** Check it's up with a quick
-  `curl -s localhost:8000/__annotate/ping` (returns `{"ok":true,...}`). If up, just use it.
-  Running `sprig dev --annotate` again is safe — it **detects the running one and no-ops** rather
-  than starting a duplicate or drifting the port — but prefer the ping over a relaunch.
+- **Reuse — never relaunch.** Re-running `sprig dev --annotate` is **idempotent**: it detects the
+  running one and just **reprints the URLs** (it won't start a duplicate or drift the port). You
+  don't even need the port for the loop — you work off `spec/ui/build-notes.json`, a fixed path.
 - **If it's down,** ask the user to restart that one command; don't spawn your own background
-  copy (that's what keeps dropping). The workbench is best-effort — if only `:8001` is missing,
-  the app at `:8000/ui` still works; tell the user to re-run for the workbench.
+  copy (that's what keeps dropping). The workbench is best-effort — if it's missing, the annotate
+  app still works; tell the user to re-run for the workbench.
 
 `sprig dev --annotate <html>` is the same deal for a single prototype file (selector-keyed; see
 `sprig:prototype`). Plain `sprig dev` (no flag) is unchanged.
@@ -386,17 +387,17 @@ Once the server is up (theirs), run this **autonomously** each round — the use
 tell you the steps, only annotate and say "go" (or you poll `build-notes.json`):
 
 1. **Read** `spec/ui/build-notes.json` (the user ⌘/Ctrl+clicked the app; each entry is keyed to a
-   component, with its `isolateUrl`). Nothing new? Tell them the app is at `:8000/ui` and wait.
+   component, with its `isolateUrl`). Nothing new? Tell them the app URL and wait.
 2. **Fix** each entry: edit **only that component's folder** (`template.html` / `logic.ts` /
    `styles.css`) — optimistic-UI + `data-note` rules apply; an island fix needs a `logic.ts`, a
    styling fix goes in the scoped `styles.css`.
-3. **Verify in the ISOLATE UI — not prod.** Open the component in the workbench (`:8001`) at the
-   entry's `isolateUrl`; confirm the fix there and run its `isolate/` cases. (No `isolate/` yet?
-   Add one — `breakdown/references/isolate-format.md` — so the fix has a case to prove it.)
+3. **Verify in the ISOLATE UI — not prod.** Open the component in the workbench at the entry's
+   `isolateUrl`; confirm the fix there and run its `isolate/` cases. (No `isolate/` yet? Add one —
+   `breakdown/references/isolate-format.md` — so the fix has a case to prove it.)
 4. **Clear** that entry from `build-notes.json`. An `unresolved:<selector>` entry didn't map to a
    component — locate it by selector and fix the owner.
-5. **Report, don't relaunch.** HMR already pushed your edits into `:8000/ui`, so it shows the new
-   UI live. Tell the user "applied N — review at `:8000/ui` and ⌘/Ctrl+click the next round," and
+5. **Report, don't relaunch.** HMR already pushed your edits into the running app, so it shows the
+   new UI live. Tell the user "applied N — review the app and ⌘/Ctrl+click the next round," and
    **repeat from step 1**. Don't restart the server; it's still theirs and still up.
 
 ## Decision matrix

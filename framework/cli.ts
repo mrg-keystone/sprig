@@ -46,17 +46,48 @@ function freePort(start: number): number {
   return start;
 }
 
-/** True if an annotate server is already answering on `port` — so a second `sprig dev --annotate`
- *  REUSES it (prints the URL and exits) instead of starting a duplicate on a drifted port. */
-async function annotateRunningAt(port: number): Promise<boolean> {
+/** Identify an annotate server already answering on `port` (its mode + file), or null. Lets a
+ *  relaunch REUSE the running one (same URL) instead of drifting to a new port — the fix for
+ *  "the annotate port keeps switching." */
+async function annotatePing(port: number): Promise<{ ok: true; mode?: string; file?: string } | null> {
   try {
     const r = await fetch(`http://localhost:${port}/__annotate/ping`, { signal: AbortSignal.timeout(500) });
-    if (!r.ok) return false;
+    if (!r.ok) return null;
     const j = await r.json().catch(() => null);
-    return !!(j && j.ok === true);
+    return j && j.ok === true ? j : null;
+  } catch {
+    return null;
+  }
+}
+/** Is `port` bindable right now? (probe-listen, like freePort, but a boolean.) */
+function portIsFree(port: number): boolean {
+  try {
+    Deno.listen({ port }).close();
+    return true;
   } catch {
     return false;
   }
+}
+
+/** A STABLE, uncommon annotate port derived from the app/prototype name (FNV-1a → 20000–28999):
+ *  the same app always lands on the same port (URL never switches), different apps don't collide,
+ *  and the band is clear of common dev ports (3000/5173/8000/8080) and below both macOS and Linux
+ *  ephemeral ranges so binds don't race the OS. PORT env still overrides. */
+function appPort(seed: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return 20000 + ((h >>> 0) % 9000);
+}
+
+/** Open a URL in the default browser (best-effort; silent on headless/CI). */
+function openUrl(url: string): void {
+  const cmd = Deno.build.os === "darwin" ? "open" : Deno.build.os === "windows" ? "explorer" : "xdg-open";
+  try {
+    new Deno.Command(cmd, { args: [url], stdout: "null", stderr: "null" }).spawn();
+  } catch { /* ignore */ }
 }
 
 /** A per-project file (in TMPDIR, not the project) where pinLocalSprig stashes the app's
@@ -232,7 +263,7 @@ async function serve(entry = "serve.ts"): Promise<void> {
 /** `sprig dev --annotate <html>` — PROTOTYPE annotate: serve one throwaway HTML file with the
  *  overlay (keyed to the ELEMENT), no app build, no workbench. The build-mode analog lives in
  *  dev() below. Refuses a design-system specimen (the overlay targets the prototype). */
-async function devAnnotateHtml(htmlPath: string): Promise<void> {
+async function devAnnotateHtml(htmlPath: string, open = true): Promise<void> {
   const abs = resolve(htmlPath);
   try {
     if (!(await Deno.stat(abs)).isFile) throw new Error("not a file");
@@ -247,23 +278,43 @@ async function devAnnotateHtml(htmlPath: string): Promise<void> {
     );
     Deno.exit(1);
   }
-  const want = Number(Deno.env.get("PORT") ?? 8000);
-  if (await annotateRunningAt(want)) {
-    console.log(
-      `sprig annotate already running → http://localhost:${want}/${basename(abs)}\n` +
-        `  Reusing it — edit the prototype and the open view hot-reloads. (Leave that server running.)`,
+  // STABLE port hashed from the prototype name (PORT overrides) — the one annotate URL for this
+  // prototype, every run. Never drifts.
+  const here = basename(abs);
+  const want = Number(Deno.env.get("PORT")) || appPort(here);
+  const running = await annotatePing(want);
+  if (running) {
+    if (running.mode === "prototype" && running.file === here) {
+      console.log(
+        `sprig annotate already running → http://localhost:${want}/${here}\n` +
+          `  Reusing it — rewrite the prototype and the open view hot-reloads. (Leave that server running.)`,
+      );
+      return; // same prototype, same URL — nothing to do
+    }
+    console.error(
+      `sprig dev --annotate: an annotate server is already on port ${want} ` +
+        `(${running.mode === "prototype" ? "serving " + running.file : "the build app"}).\n` +
+        `  Stop it (Ctrl-C in its terminal) to annotate ${here}, or run with a different PORT, ` +
+        `e.g. PORT=8010 sprig dev --annotate ${here}.`,
     );
-    return;
+    Deno.exit(1);
+  }
+  if (!portIsFree(want)) {
+    console.error(
+      `sprig dev --annotate: port ${want} is busy (and isn't an annotate server).\n` +
+        `  Free it, or run with a fixed PORT, e.g. PORT=8010 sprig dev --annotate ${here}.`,
+    );
+    Deno.exit(1);
   }
   const proto = makePrototypeAnnotate({ htmlPath: abs });
-  const port = freePort(want);
-  const pageURL = `http://localhost:${port}/${basename(abs)}`;
+  const pageURL = `http://localhost:${want}/${here}`;
   console.log(`sprig dev --annotate (prototype) → ${pageURL}`);
   console.log(
     `  ⌘/Ctrl+click an element → note → save (inline | json) · ⇧⌘ drag to draw.\n` +
+      `  Rewrite the file to iterate — the open view hot-reloads (no relaunch). Leave this running.\n` +
       `  feedback: ${abs.replace(/\.html?$/i, "")}.feedback.json`,
   );
-  Deno.serve({ port }, (req: Request) => proto.fetch(req));
+  Deno.serve({ port: want, onListen: () => { if (open) openUrl(pageURL); } }, (req: Request) => proto.fetch(req));
 }
 
 async function dev(rawArgs: string[] = []): Promise<void> {
@@ -272,25 +323,41 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   // (no flag) is untouched.
   const ai = rawArgs.indexOf("--annotate");
   const annotateOn = ai >= 0;
+  const open = !rawArgs.includes("--no-open"); // annotate auto-opens the UI; --no-open suppresses
   let annotateHtml = "";
   if (ai >= 0 && rawArgs[ai + 1] && /\.html?$/i.test(rawArgs[ai + 1])) annotateHtml = rawArgs[ai + 1];
-  if (annotateHtml) return await devAnnotateHtml(annotateHtml);
-  // Reuse a running build-annotate server instead of starting a duplicate on a drifted port —
-  // this is the loop's stability fix: a stray relaunch no-ops onto the live one. (Skipped for
-  // plain `sprig dev`, which is free to start its own.)
-  if (annotateOn) {
-    const want = Number(Deno.env.get("PORT") ?? 8000);
-    if (await annotateRunningAt(want)) {
-      console.log(
-        `sprig annotate already running → http://localhost:${want}/ui\n` +
-          `  Reusing it. Annotate there; I'll read spec/ui/build-notes.json. (Leave that server running.)`,
-      );
-      return;
-    }
-  }
+  if (annotateHtml) return await devAnnotateHtml(annotateHtml, open);
   const positionals = rawArgs.filter((a) => !a.startsWith("-") && a !== annotateHtml);
   const appDir = positionals[0] ?? ".";
   const base = positionals[1] ?? "/ui";
+  // Annotate gets a STABLE port hashed from the app folder name (PORT overrides) — same app, same
+  // URL, every run; different apps don't collide. Reuse a same-app server; error on a foreign one
+  // or a busy port — never silently drift. Plain `sprig dev` keeps 8000.
+  const wantPort = annotateOn
+    ? (Number(Deno.env.get("PORT")) || appPort(basename(resolve(appDir))))
+    : Number(Deno.env.get("PORT") ?? 8000);
+  if (annotateOn) {
+    const ping = await annotatePing(wantPort);
+    if (ping) {
+      if (ping.mode !== "prototype") {
+        console.log(
+          `sprig annotate already running → http://localhost:${wantPort}${base}\n` +
+            `  Reusing it. Annotate there; I'll read spec/ui/build-notes.json. (Leave it running.)`,
+        );
+        return;
+      }
+      console.error(
+        `sprig dev --annotate: a prototype annotate server is already on port ${wantPort}. Stop it, or set a different PORT.`,
+      );
+      Deno.exit(1);
+    }
+    if (!portIsFree(wantPort)) {
+      console.error(
+        `sprig dev --annotate: port ${wantPort} is busy (and isn't an annotate server). Free it, or set a fixed PORT.`,
+      );
+      Deno.exit(1);
+    }
+  }
   await withMergedConfig(appDir);
   // State-preserving HMR (no Vite): build the dev bundle (HMR client + AST-fetching
   // island chunks), then wrap the app's production handler with the compiler's dev
@@ -313,7 +380,8 @@ async function dev(rawArgs: string[] = []): Promise<void> {
       ui(req, info).then((r: Response | null) => r ?? new Response("Not Found", { status: 404 })),
   };
   const devSrv = createDevServer({ renderer, base, outDir, handler });
-  const port = freePort(Number(Deno.env.get("PORT") ?? 8000));
+  // annotate uses the hashed/validated stable port (no drift); plain dev keeps the free-port probe.
+  const port = annotateOn ? wantPort : freePort(wantPort);
 
   // --annotate: fold the component-keyed click-to-edit overlay INTO the dev server, and bring
   // up the isolate workbench alongside on a second port (one command, both surfaces). The two
@@ -329,7 +397,7 @@ async function dev(rawArgs: string[] = []): Promise<void> {
     // loop's review surface is the app; isolate is the verify surface). Never let it drop dev.
     let wb: Deno.ChildProcess | null = null;
     try {
-      wb = spawnWorkbench(appAbs, isoPort, false);
+      wb = spawnWorkbench(appAbs, isoPort, open); // workbench opens its own tab when ready
     } catch (e) {
       console.error(`sprig: isolate workbench failed to start (${e instanceof Error ? e.message : e}) — annotate app still running.`);
     }
@@ -345,12 +413,18 @@ async function dev(rawArgs: string[] = []): Promise<void> {
     console.log("sprig dev --annotate:");
     console.log(`  app + annotate → http://localhost:${port}${base}   (⌘/Ctrl+click → spec/ui/build-notes.json)`);
     console.log(`  isolate        → ${isoBase}/   (verify each component here; starting…)`);
-    console.log(`  ${annotate.size} component(s) mapped from src/ · HMR on · build cache: ${outDir}`);
+    console.log(`  ${annotate.size} component(s) mapped from src/ · stable port · HMR on · build cache: ${outDir}`);
   } else {
     console.log(`sprig dev → http://localhost:${port}${base}  (HMR on; build cache: ${outDir})`);
   }
 
-  Deno.serve({ port }, async (req: Request, info: Deno.ServeHandlerInfo) => {
+  Deno.serve({
+    port,
+    onListen: () => {
+      // open all the UI: the annotate app now (workbench opens its own tab when it finishes building)
+      if (annotate && open) openUrl(`http://localhost:${port}${base}`);
+    },
+  }, async (req: Request, info: Deno.ServeHandlerInfo) => {
     if (annotate) {
       const a = await annotate.handle(req);
       if (a) return a;
@@ -647,8 +721,10 @@ async function install(dev: boolean): Promise<void> {
 const USAGE = `sprig — the framework CLI
 
   sprig init  [dir]              scaffold a minimal, runnable sprig app (default: .)
-  sprig dev   [appDir] [--annotate [html]]  HMR dev server → /ui. --annotate: click-to-edit overlay + the isolate
-                                  workbench (full app); --annotate <html>: annotate one prototype HTML file
+  sprig dev   [appDir] [--annotate [html]] [--no-open]  HMR dev server → /ui. --annotate: click-to-edit overlay +
+                                  the isolate workbench (full app); --annotate <html>: annotate one prototype file.
+                                  Annotate picks a STABLE port hashed from the app name (PORT overrides) and opens
+                                  the UI in the browser (--no-open suppresses).
   sprig build [appDir]           code-split islands + scope CSS + Tailwind → static/ (default: .)
   sprig isolate [appDir]         component/page workbench — develop in isolation (default: .)
   sprig serve [entry]            run the app's host entry under its deno.json (default: serve.ts)
