@@ -272,7 +272,8 @@ sprig dev --annotate spec/ui/<app>-prototype.html
 ```
 
 `sprig dev --annotate <html>` serves that one file with the click-to-edit overlay (no app
-build, no workbench). **Point it at the prototype you just wrote — the `spec/ui/*-prototype.html`
+build, no workbench) and **live-reloads** it — when you rewrite the prototype, the open
+annotate view refreshes itself (its notes persist in `feedback.json`). **Point it at the prototype you just wrote — the `spec/ui/*-prototype.html`
 file — and NEVER at an HTML file under `spec/ui/design-system/`.** The design system shares
 `spec/ui/` and ships its own preview specimens (`design-system/preview/showcase.html`, …); those
 are the brand's, not the prototype. (annotate refuses a `design-system/` path outright, so a wrong

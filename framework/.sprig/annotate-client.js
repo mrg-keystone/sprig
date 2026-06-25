@@ -288,6 +288,19 @@
       .then(function (json) { store = json || store; saveLocal(); })
       .catch(function () {});
   }
+  // Editing a component's notes from the list REPLACES them (one note per non-empty line),
+  // vs a fresh ⌘-click which appends. Empty → the server drops the entry.
+  function buildSetNotes(key, text) {
+    var notes = String(text).split("\n").map(function (s) { return s.trim(); }).filter(Boolean);
+    return fetch(API + "/save", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ _set: key, notes: notes }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (json) { store = json || store; saveLocal(); })
+      .catch(function () { serverOK = false; saveLocal(); renderToolbar(); });
+  }
 
   /* ---------- UI (isolated in a shadow root) ---------- */
 
@@ -359,6 +372,7 @@
       barEl.innerHTML =
         '<span class="lbl drawing">✎ drawing — release ⇧⌘ to add a note</span>';
       barEl.classList.add("armed");
+      updateBar();
       return;
     }
     var offline = serverOK
@@ -366,7 +380,7 @@
       : '<span class="warn" title="No annotate server reachable — feedback is kept in this browser. Use Export to download the JSON.">offline</span>';
     barEl.innerHTML =
       '<button class="dot" data-act="toggle" title="⌘/Ctrl+click an element to annotate · ⇧⌘ drag to draw">●</button>' +
-      '<span class="lbl" title="⌘/Ctrl+click an element · in the box: tree / css · ⇧⌘ drag to draw a screenshot note">' + (BUILD ? "components" : "feedback") + ' <b>' + n + "</b></span>" +
+      '<span class="lbl" data-act="list" title="Click to list every note — then click a row to reopen & edit it">' + (BUILD ? "components" : "feedback") + ' <b>' + n + "</b></span>" +
       offline +
       '<button class="mini" data-act="list">list</button>' +
       '<button class="mini" data-act="export">export</button>' +
@@ -374,6 +388,7 @@
     barEl.classList.toggle("armed", armed);
     var dot = barEl.querySelector('[data-act="toggle"]');
     if (dot) dot.classList.toggle("on", armed);
+    updateBar();
   }
 
   function positionFor(el) {
@@ -481,6 +496,7 @@
       saveBtns +
       "</div></div>";
     root.appendChild(popEl);
+    updateBar(); // a note box is open → keep the bar expanded
     dragByHeader(popEl, popEl.querySelector(".pop-h")); // header-drag the note box
 
     var selEl = popEl.querySelector(".pop-sel");
@@ -501,16 +517,22 @@
     ta.value = seedText != null ? seedText : (!BUILD && existing ? existing.feedback : "");
     updateCssDot();
 
-    // position near the element, clamped to viewport
-    var r = positionFor(el);
+    // position near the element (clamped to viewport); if there's no live element — e.g. editing
+    // a note from the list whose element isn't on the current screen/route — center it instead.
     var pw = 280, ph = 178;
-    var left = Math.min(Math.max(8, r.left), window.innerWidth - pw - 8);
-    var top = r.bottom + 8;
-    if (top + ph > window.innerHeight) top = Math.max(8, r.top - ph - 8);
-    popEl.style.left = left + "px";
-    popEl.style.top = top + "px";
-
-    showSel(el); // box the target on the page (persists until dismissed)
+    if (el) {
+      var r = positionFor(el);
+      var left = Math.min(Math.max(8, r.left), window.innerWidth - pw - 8);
+      var top = r.bottom + 8;
+      if (top + ph > window.innerHeight) top = Math.max(8, r.top - ph - 8);
+      popEl.style.left = left + "px";
+      popEl.style.top = top + "px";
+      showSel(el); // box the target on the page (persists until dismissed)
+    } else {
+      popEl.style.left = Math.max(8, (window.innerWidth - pw) / 2) + "px";
+      popEl.style.top = Math.max(8, (window.innerHeight - ph) / 2) + "px";
+      hideSel();
+    }
 
     setTimeout(function () {
       ta.focus();
@@ -527,9 +549,15 @@
       var text = ta.value.trim();
       var css = ctx.css ? String(ctx.css).trim() : "";
       if (BUILD) {
-        if (!text && !css) { dismissAll(); return; }
+        if (!text && !css) {
+          // emptying an edited entry removes it; a fresh empty note just closes
+          if (ctx._editNotes) buildRemove(ctx.key).then(after);
+          else dismissAll();
+          return;
+        }
         var bnote = css ? (text ? text + "\n" : "") + "CSS: " + collapse(css) : text;
-        buildSave(ctx, bnote).then(after);
+        // editing from the list REPLACES the component's notes; a fresh click APPENDS
+        (ctx._editNotes ? buildSetNotes(ctx.key, bnote) : buildSave(ctx, bnote)).then(after);
         return;
       }
       if (mode === "inline") return commitInline(text, css);
@@ -543,6 +571,9 @@
       }
     }
     function commitInline(text, css) {
+      // inline patches the live element's source — needs a live element. When editing a note
+      // from the list whose element isn't on this screen, there's nothing to patch → use json.
+      if (!currentEl) { showMsg("No live element on this screen — use “json” to save this edit."); return; }
       // reflect on the live DOM at once (visual confirmation), then patch the source file
       if (text) currentEl.setAttribute("data-note", text);
       else currentEl.removeAttribute("data-note");
@@ -639,6 +670,7 @@
     hideSel();
     currentEl = null;
     currentCtx = null;
+    updateBar(); // nothing open → collapse the bar back to its peek dot
   }
 
   /* ---------- export / clear ---------- */
@@ -674,15 +706,14 @@
       listEl.remove();
       listEl = null;
     }
-    if (!on) return;
+    if (!on) { updateBar(); return; }
     listEl = document.createElement("div");
     listEl.className = "list";
     var keys = storeKeys();
     var rows = keys
       .map(function (k, i) {
-        var e = store[k];
         return (
-          '<div class="row">' +
+          '<div class="row" data-i="' + i + '" title="Click to reopen and edit">' +
           '<span class="n">' + (i + 1) + "</span>" +
           '<div class="rc"><div class="rk"></div><div class="rf"></div></div>' +
           "</div>"
@@ -691,6 +722,7 @@
       .join("");
     listEl.innerHTML =
       '<div class="list-h">annotations <b>' + keys.length + "</b>" +
+      '<span class="list-hint">click a row to edit</span>' +
       '<button class="pop-x" data-act="closelist">×</button></div>' +
       (rows || '<div class="empty">cmd/ctrl+click an element to add feedback</div>');
     root.appendChild(listEl);
@@ -714,8 +746,37 @@
       rowEls[i].querySelector(".rf").textContent = fb || "(no note)";
     });
     listEl.addEventListener("click", function (e) {
-      if (e.target.getAttribute("data-act") === "closelist") showList(false);
+      if (e.target.getAttribute("data-act") === "closelist") { showList(false); return; }
+      var row = e.target.closest ? e.target.closest(".row") : null;
+      if (row && row.dataset.i != null) editEntry(keys[parseInt(row.dataset.i, 10)]);
     });
+    updateBar(); // list open → keep the bar expanded
+  }
+
+  // Re-open the editor for an already-saved annotation (from the list), so notes can be edited
+  // even after the popover was closed. Re-locates the element (best-effort) and seeds the note.
+  function editEntry(key) {
+    var entry = store[key];
+    if (!entry || typeof entry !== "object") return;
+    showList(false); // focus on editing; the bar reopens the list later
+    var el = locate(entry); // may be null (element not on the current screen/route) → detached edit
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (BUILD) {
+      var ctx = {
+        key: key, selector: entry.selector, label: entry.selector,
+        component: entry.component, kind: entry.kind, isolateUrl: entry.isolateUrl || "",
+        scope: scopeForComponent(entry.component), text: "", _editNotes: true,
+      };
+      openPopover(el, ctx, (entry.notes || []).join("\n"));
+    } else {
+      // the stored entry has its `key` stripped (the server keys by it) — restore it so
+      // existing-detection, delete, and the overwrite-on-save all resolve to this entry.
+      openPopover(el, Object.assign({}, entry, { key: key }), entry.feedback || "");
+    }
+  }
+  function scopeForComponent(comp) {
+    for (var id in COMPS) if (COMPS[id].component === comp) return id;
+    return null;
   }
 
   /* ---------- DevTools-style hover inspector ---------- */
@@ -801,6 +862,16 @@
   var uiHidden = false; // ⌘+Ctrl "clean view": all annotate UI hidden, JSON kept on disk
   var chordUsed = false; // debounce so a held ⌘+Ctrl toggles once, not on every key-repeat
 
+  // "Peek": the bar sits as a faint corner dot so the app shows in full glory, and expands to
+  // the full toolbar only when you HOVER it or HOLD ⌘/Ctrl (the annotate modifier), or while a
+  // feedback surface is open. ⌘+Ctrl clean-view (below) still hides everything for screenshots.
+  var barHover = false, modHeld = false;
+  function updateBar() {
+    if (!barEl) return;
+    var expanded = barHover || modHeld || !!popEl || !!listEl || !!treeEl || !!cssEl || !!drawpopEl || drawing;
+    barEl.classList.toggle("peek", !expanded);
+  }
+
   function isOurs(el) {
     return el && (el === host || (el.closest && el.getRootNode && el.getRootNode() === root));
   }
@@ -846,8 +917,9 @@
       if (uiHidden) return; // clean view armed → no inspect/draw until ⌘+Ctrl restores the UI
       // keys typed inside our boxes must not arm draw/inspect (Escape above still closes)
       if (isOurs(e.target)) return;
-      // ⇧⌘ / ⇧Ctrl → freehand draw mode; plain ⌘/Ctrl → hover inspector
+      // ⇧⌘ / ⇧Ctrl → freehand draw mode; plain ⌘/Ctrl → hover inspector + reveal the bar
       if ((e.metaKey || e.ctrlKey) && e.shiftKey) { enterDraw(); return; }
+      if (e.key === "Meta" || e.key === "Control") { modHeld = true; updateBar(); }
       if ((e.key === "Meta" || e.key === "Control") && !inspecting && !drawing) startInspect();
     },
     true
@@ -866,13 +938,17 @@
       // fighting the tree highlight until the window is re-focused (the "switch Spaces" symptom).
       if (e.key === "Meta" || e.key === "Control" || e.key === "Shift") {
         chordUsed = false;
+        modHeld = false;
         stopInspect();
+        updateBar();
       }
     },
     true
   );
   window.addEventListener("blur", function () {
     stopInspect();
+    modHeld = false; // a held ⌘ never "sticks" after tabbing away
+    updateBar();
     if (drawing) finishDraw();
   });
   // keep the persistent selection box glued to its element through scroll/resize
@@ -909,7 +985,9 @@
   document.addEventListener("DOMContentLoaded", function () {});
 
   function onBarClick(e) {
-    var act = e.target.getAttribute("data-act");
+    // resolve the nearest [data-act] so clicking the label's inner <b> still counts
+    var t = e.target.closest ? e.target.closest("[data-act]") : e.target;
+    var act = t && t.getAttribute("data-act");
     if (!act) return;
     if (act === "toggle") {
       armed = !armed;
@@ -1528,8 +1606,12 @@
     ".inspect-lbl span{color:#9b927c;font-weight:500}" +
     ".outline{position:fixed;border:2px solid #c2410c;border-radius:4px;box-shadow:0 0 0 2px rgba(194,65,12,.18);pointer-events:none}" +
     ".badge{position:fixed;transform:translate(-60%,-60%);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#c2410c;color:#fff;font:600 10px/16px ui-monospace,Menlo,monospace;text-align:center;pointer-events:none}" +
-    ".bar{position:fixed;right:16px;bottom:16px;display:flex;align-items:center;gap:8px;padding:6px 8px;background:#17150f;color:#f3eee2;border-radius:10px;box-shadow:0 8px 30px -8px rgba(0,0,0,.5);font:500 12px/1 ui-monospace,Menlo,monospace;pointer-events:auto}" +
-    ".bar .lbl{opacity:.85}.bar .lbl b{color:#fb923c}" +
+    ".bar{position:fixed;right:16px;bottom:16px;display:flex;align-items:center;gap:8px;padding:6px 8px;background:#17150f;color:#f3eee2;border-radius:10px;box-shadow:0 8px 30px -8px rgba(0,0,0,.5);font:500 12px/1 ui-monospace,Menlo,monospace;pointer-events:auto;transition:opacity .14s ease,padding .14s ease}" +
+    // peek: collapsed to a faint corner dot so the app shows in full glory; hover (or ⌘/Ctrl) expands it
+    ".bar.peek{opacity:.3;padding:5px 6px;gap:0;box-shadow:0 4px 14px -6px rgba(0,0,0,.5)}" +
+    ".bar.peek:hover{opacity:1}" +
+    ".bar.peek .lbl,.bar.peek .mini,.bar.peek .warn{display:none}" +
+    ".bar .lbl{opacity:.85;cursor:pointer}.bar .lbl:hover{opacity:1}.bar .lbl b{color:#fb923c}" +
     ".bar .lbl.drawing{opacity:1;color:#fb923c;font-weight:600}" +
     ".bar .dot{all:unset;cursor:pointer;color:#6b6453;font-size:11px}" +
     ".bar .dot.on{color:#fb923c}" +
@@ -1559,7 +1641,9 @@
     ".list{position:fixed;right:16px;bottom:64px;width:340px;max-height:50vh;overflow:auto;background:#17150f;color:#f3eee2;border-radius:10px;box-shadow:0 16px 50px -12px rgba(0,0,0,.5);padding:8px;pointer-events:auto;font:400 11px/1.4 ui-monospace,Menlo,monospace}" +
     ".list-h{display:flex;align-items:center;gap:6px;justify-content:space-between;padding:4px 4px 8px;border-bottom:1px solid #2a2620;margin-bottom:6px}" +
     ".list-h b{color:#fb923c}" +
-    ".list .row{display:flex;gap:8px;padding:6px 4px;border-bottom:1px solid #221f18}" +
+    ".list-hint{margin-left:auto;margin-right:8px;color:#6b6453;font-size:10px;font-weight:500}" +
+    ".list .row{display:flex;gap:8px;padding:6px 4px;border-bottom:1px solid #221f18;cursor:pointer;border-radius:5px}" +
+    ".list .row:hover{background:#241f17}" +
     ".list .n{color:#fb923c;font-weight:700;min-width:16px}" +
     ".list .rk{color:#9b927c;word-break:break-all}" +
     ".list .rf{color:#f3eee2;margin-top:2px}" +
@@ -1615,6 +1699,11 @@
   function boot() {
     mountUI();
     barEl.addEventListener("click", onBarClick);
+    // peek/expand: hovering the corner dot reveals the full toolbar; leaving collapses it
+    // (unless ⌘/Ctrl is held or a feedback surface is open).
+    barEl.addEventListener("mouseenter", function () { barHover = true; updateBar(); });
+    barEl.addEventListener("mouseleave", function () { barHover = false; updateBar(); });
+    updateBar(); // start collapsed → the app shows in full glory
     window.addEventListener("scroll", scheduleReflow, true);
     window.addEventListener("resize", scheduleReflow, true);
     // Single-file prototypes switch "screens" by toggling DOM / display / hash.

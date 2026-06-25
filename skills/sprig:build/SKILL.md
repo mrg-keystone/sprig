@@ -26,6 +26,19 @@ does; there is no separate runtime install.
 A component is a **folder**, not a file: `template.html` (+ optional `logic.ts` and
 `styles.css`). That one idea drives everything below.
 
+## Where to start (what "build" does when invoked)
+
+- **No args, and the app is already built** (a runnable `src/` tree, nothing pending in
+  `spec/ui/breakdown/` or `spec/ui/build-notes.json`) → there's nothing to build, so just
+  **launch the review loop on the running app: `sprig dev --annotate`** (the full/"prod" app at
+  `/ui` with the click-to-edit overlay + the isolate workbench). That's the default idle action —
+  run it in the background and **tell the user both URLs** (the annotate app + the isolate
+  workbench) so they can start clicking (see **The loop**, below).
+- **No args, with pending work** — a `spec/ui/breakdown/` to implement, or a
+  `spec/ui/build-notes.json` with open entries → do that work (rebuild the spec, or apply the
+  notes component-by-component in isolation), then fall back to `sprig dev --annotate`.
+- **With args** (add a page/component/island, wire data, fix X) → do that, then verify by running it.
+
 > Read the matching `references/` leaf before writing code for an area you're unsure
 > about — the [decision matrix](#decision-matrix) routes you, and `references/INDEX.md` is
 > the full table of contents. **Verify by running it** (`sprig dev`, `sprig isolate`) and
@@ -355,6 +368,15 @@ separate proxy), and auto-spawns the isolate workbench alongside; both die toget
 Plain `sprig dev` (no flag) is unchanged. (`sprig dev --annotate <html>` instead annotates a
 single prototype HTML file — selector-keyed — the same overlay in its prototype mode; see
 `sprig:prototype`.)
+
+**Run it in the background, then tell the user BOTH URLs** — they need them to do their half:
+
+- **annotate app** (review + ⌘/Ctrl+click): `http://localhost:8000/ui`
+- **isolate workbench** (where fixes are verified): `http://localhost:8001/`
+
+The command prints both on startup; **read the actual ports from its output and relay those** —
+they shift (e.g. `:8002`) if 8000/8001 are taken, and the workbench prints `◆ isolate ready → …`
+once it finishes building (a few seconds after the app is up). Don't make the user hunt for them.
 
 ### The loop — annotate (prod) → fix → verify (isolate) → repeat
 

@@ -186,10 +186,19 @@ export async function makeAnnotate(
         return json(await readNotes());
       }
       if (p === "/__annotate/save" && req.method === "POST") {
-        const body = (await req.json()) as { id?: string; selector?: string; note?: string; _delete?: string };
+        const body = (await req.json()) as { id?: string; selector?: string; note?: string; _delete?: string; _set?: string; notes?: string[] };
         const store = await readNotes();
         if (body._delete) {
           delete store[body._delete];
+          await writeNotes(store);
+          return json(await readNotes());
+        }
+        // _set: REPLACE an entry's notes (the list "edit" path). Empty → drop the entry.
+        if (body._set) {
+          const notes = (Array.isArray(body.notes) ? body.notes : []).map((s) => String(s).trim()).filter(Boolean);
+          const e = store[body._set];
+          if (!notes.length) delete store[body._set];
+          else if (e && typeof e === "object") (e as Note).notes = notes;
           await writeNotes(store);
           return json(await readNotes());
         }
@@ -327,6 +336,33 @@ export function makePrototypeAnnotate(opts: { htmlPath: string }): { fetch(req: 
   let clientJs = "";
   const cfg = JSON.stringify({ mode: "prototype", file: PROTO_NAME, feedbackName: FEEDBACK_NAME });
 
+  // ---- live hot-reload: watch the html and push an SSE "reload" on external edits, so the
+  // annotate view refreshes when the prototype is rewritten (the iterate loop). Self-writes
+  // (the inline data-note patch) are suppressed so they don't trigger a reload. ----
+  const reloadClients = new Set<ReadableStreamDefaultController<Uint8Array>>();
+  let suppressUntil = 0;
+  function notifyReload(): void {
+    const msg = new TextEncoder().encode("data: reload\n\n");
+    for (const c of reloadClients) {
+      try {
+        c.enqueue(msg);
+      } catch { /* client gone */ }
+    }
+  }
+  (async () => {
+    let last = 0;
+    try {
+      for await (const ev of Deno.watchFs(ROOT, { recursive: false })) {
+        if (ev.kind !== "modify" && ev.kind !== "create" && ev.kind !== "rename") continue;
+        if (!ev.paths.some((pp) => basename(pp) === PROTO_NAME)) continue; // only the prototype html
+        const now = Date.now();
+        if (now < suppressUntil || now - last < 60) continue; // skip our own writes + debounce
+        last = now;
+        notifyReload();
+      }
+    } catch { /* watchFs unsupported here → no hot reload, the server still serves */ }
+  })();
+
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8" } });
 
@@ -344,7 +380,9 @@ export function makePrototypeAnnotate(opts: { htmlPath: string }): { fetch(req: 
     await Deno.writeTextFile(FEEDBACK_PATH, JSON.stringify(data, null, 2) + "\n");
   }
   function inject(html: string): string {
-    const tag = `\n<script>window.__SPRIG_ANNOTATE__=${cfg};</script>\n<script>\n${clientJs}\n</script>\n`;
+    const tag = `\n<script>window.__SPRIG_ANNOTATE__=${cfg};</script>\n` +
+      `<script>try{new EventSource("/__annotate/reload").onmessage=function(){location.reload()}}catch(e){}</script>\n` +
+      `<script>\n${clientJs}\n</script>\n`;
     const i = html.toLowerCase().lastIndexOf("</body>");
     return i === -1 ? html + tag : html.slice(0, i) + tag + html.slice(i);
   }
@@ -361,6 +399,20 @@ export function makePrototypeAnnotate(opts: { htmlPath: string }): { fetch(req: 
       const url = new URL(req.url);
       const p = url.pathname;
 
+      if (p === "/__annotate/reload") {
+        let ctrl: ReadableStreamDefaultController<Uint8Array> | null = null;
+        const stream = new ReadableStream<Uint8Array>({
+          start(c) {
+            ctrl = c;
+            reloadClients.add(c);
+            c.enqueue(new TextEncoder().encode("retry: 800\n\n"));
+          },
+          cancel() {
+            if (ctrl) reloadClients.delete(ctrl);
+          },
+        });
+        return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-store" } });
+      }
       if (p === "/__annotate/state") return json(await readFeedback());
       if (p === "/__annotate/clear" && req.method === "POST") {
         await writeFeedback({});
@@ -392,7 +444,10 @@ export function makePrototypeAnnotate(opts: { htmlPath: string }): { fetch(req: 
         }
         const r = patchInlineNote(html, o);
         if (!r.patched) return json({ ok: false, reason: "not-in-source" });
-        if (r.src && r.src !== html) await Deno.writeTextFile(protoAbs, r.src);
+        if (r.src && r.src !== html) {
+          suppressUntil = Date.now() + 500; // our own write — don't let the watcher self-reload
+          await Deno.writeTextFile(protoAbs, r.src);
+        }
         return json({ ok: true });
       }
       if (p === "/__annotate/shot" && req.method === "POST") {
