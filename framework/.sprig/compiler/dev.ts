@@ -84,6 +84,7 @@ export function createDevServer(cfg: DevConfig): {
         templates.push(relative(cfg.renderer.srcDir, dirname(p)).replace(/\\/g, "/"));
       }
       else if (p.endsWith("styles.css")) css = true;
+      else if (p.endsWith("css-variables.json")) css = true; // design tokens → rebuild app.css
       else if (p.endsWith(".ts")) reload = true;
     }
     // Each change kind is handled in its own try/catch so a broken/transient

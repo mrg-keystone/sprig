@@ -236,7 +236,13 @@ export async function buildCss(srcDir: string, outDir: string): Promise<void> {
       imports: { "@tailwindcss/cli": "npm:@tailwindcss/cli@^4", "tailwindcss": "npm:tailwindcss@^4" },
     }),
   );
-  const input = `@import "tailwindcss";\n@source "${srcDir}/**/*.html";\n\n${parts.join("\n\n")}\n`;
+  // Design tokens: a src/css-variables.json (if present) compiles to a global @theme
+  // (utility-generating tokens) + :root (the rest) + [data-theme] variant blocks,
+  // spliced in BEFORE the component parts so it bypasses scopeCss and stays document-
+  // global. Opt-in: no file → byte-identical to the previous build.
+  const tokenCss = await cssFromVariables(srcDir);
+  const input = `@import "tailwindcss";\n@source "${srcDir}/**/*.html";\n\n` +
+    `${tokenCss ? tokenCss + "\n" : ""}${parts.join("\n\n")}\n`;
   await Deno.writeTextFile(join(twDir, "input.css"), input);
   const res = await new Deno.Command("deno", {
     args: [
@@ -250,6 +256,108 @@ export async function buildCss(srcDir: string, outDir: string): Promise<void> {
   if (!res.success) {
     throw new Error("tailwind css build failed:\n" + new TextDecoder().decode(res.stderr));
   }
+}
+
+/** Tailwind v4 theme namespaces that generate utilities. A token in one of these,
+ *  with a STATIC value, belongs in @theme (so Tailwind emits both the :root var and
+ *  the matching utilities, e.g. bg-primary / text-step-2 / rounded-box). */
+const TW_THEME_NAMESPACES = [
+  "--color-", "--font-", "--text-", "--font-weight-", "--tracking-", "--leading-",
+  "--spacing-", "--radius-", "--shadow-", "--inset-shadow-", "--drop-shadow-",
+  "--text-shadow-", "--blur-", "--perspective-", "--aspect-", "--ease-", "--animate-",
+  "--breakpoint-", "--container-",
+];
+
+/** A token routes to @theme iff it sits in a utility-generating namespace AND its value
+ *  is static. A value that references another custom property (var(...), e.g. a color-mix
+ *  tint) must stay a plain :root var so it re-resolves live when a [data-theme] swaps the
+ *  property it depends on — exactly how the alfred shell hand-split its tokens. */
+function isUtilityToken(key: string, value: string): boolean {
+  return !value.includes("var(") && TW_THEME_NAMESPACES.some((ns) => key.startsWith(ns));
+}
+
+export interface CssVariables {
+  /** The theme whose values become the document baseline (:root + @theme). Required
+   *  when more than one theme is defined; optional (and implied) for a single theme. */
+  default?: string;
+  /** theme name → { "--token": "value", …, optional "color-scheme": "light"|"dark" }. */
+  themes: Record<string, Record<string, string>>;
+}
+
+/** Compile a css-variables.json config into global CSS: the default theme becomes a
+ *  Tailwind @theme block (utility tokens) + a :root block (everything else), and every
+ *  other theme becomes a [data-theme="name"] override block. Pure + exported for tests.
+ *
+ *  Governance: ONLY custom properties (--*) and the reserved `color-scheme` key are
+ *  allowed — anything else throws, so the global token surface can never accrue stray
+ *  rules. Resets come from Tailwind Preflight; non-token base styles live in a shell. */
+export function emitThemeCss(cfg: CssVariables): string {
+  if (!cfg || typeof cfg !== "object" || !cfg.themes || typeof cfg.themes !== "object") {
+    throw new Error(`css-variables.json: expected an object shaped { "themes": { … } }`);
+  }
+  const names = Object.keys(cfg.themes);
+  if (names.length === 0) throw new Error(`css-variables.json: "themes" has no entries`);
+  const def = cfg.default ?? (names.length === 1 ? names[0] : undefined);
+  if (!def) {
+    throw new Error(
+      `css-variables.json: ${names.length} themes (${names.join(", ")}) but no "default" — ` +
+        `set "default" to the theme that should be the document baseline.`,
+    );
+  }
+  if (!cfg.themes[def]) {
+    throw new Error(`css-variables.json: "default" is "${def}", but no theme has that name`);
+  }
+  for (const name of names) {
+    const t = cfg.themes[name];
+    if (!t || typeof t !== "object") {
+      throw new Error(`css-variables.json: theme "${name}" must be an object of token → value`);
+    }
+    for (const [k, v] of Object.entries(t)) {
+      if (typeof v !== "string") {
+        throw new Error(`css-variables.json: ${name}["${k}"] must be a string, got ${typeof v}`);
+      }
+      if (k !== "color-scheme" && !k.startsWith("--")) {
+        throw new Error(
+          `css-variables.json: "${k}" in theme "${name}" is not allowed — only custom ` +
+            `properties (--*) and the reserved "color-scheme" key may appear here.`,
+        );
+      }
+    }
+  }
+
+  const decl = (k: string, v: string) => `  ${k}: ${v};`;
+  const themeDecls: string[] = [];
+  const rootDecls: string[] = [];
+  for (const [k, v] of Object.entries(cfg.themes[def])) {
+    if (k !== "color-scheme" && isUtilityToken(k, v)) themeDecls.push(decl(k, v));
+    else rootDecls.push(decl(k, v));
+  }
+  let out = "";
+  if (themeDecls.length) out += `@theme {\n${themeDecls.join("\n")}\n}\n`;
+  if (rootDecls.length) out += `:root {\n${rootDecls.join("\n")}\n}\n`;
+  for (const name of names) {
+    if (name === def) continue;
+    const decls = Object.entries(cfg.themes[name]).map(([k, v]) => decl(k, v));
+    out += `[data-theme="${name}"] {\n${decls.join("\n")}\n}\n`;
+  }
+  return out;
+}
+
+/** Read <srcDir>/css-variables.json (opt-in) and compile it to global CSS; "" if absent. */
+async function cssFromVariables(srcDir: string): Promise<string> {
+  let raw: string;
+  try {
+    raw = await Deno.readTextFile(join(srcDir, "css-variables.json"));
+  } catch {
+    return ""; // no token file → unchanged build
+  }
+  let cfg: CssVariables;
+  try {
+    cfg = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`css-variables.json: invalid JSON — ${e instanceof Error ? e.message : e}`);
+  }
+  return emitThemeCss(cfg);
 }
 
 async function fileExists(p: string): Promise<boolean> {
