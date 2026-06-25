@@ -301,6 +301,8 @@ Tell the user the URL and how to leave feedback:
   tree and **`{ } css`** is a live CSS editor (**Apply** attaches the declarations to the note).
 - **⇧⌘ + drag** → draw on the page → save a **screenshot note**.
 - Every window is **draggable by its header**; **⌘+Ctrl** toggles a clean view (hides the UI).
+- **Mobile / Chrome device emulation** has no hover, so the highlight previews on a **⌘/Ctrl-press**
+  (and tracks pointer moves) rather than on hover; ⌘/Ctrl+click still adds the note.
 
 Two persistence targets, same intent: **inline** `data-note` attributes live on the element
 (an LLM rebuilding the file sees them in place — `sprig:build` applies + strips them), while

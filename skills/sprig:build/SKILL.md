@@ -387,10 +387,12 @@ Once the server is up (theirs), run this **autonomously** each round — the use
 tell you the steps, only annotate and say "go" (or you poll `build-notes.json`):
 
 1. **Read** `spec/ui/build-notes.json` (the user ⌘/Ctrl+clicked the app; each entry is keyed to a
-   component, with its `isolateUrl`). Nothing new? Tell them the app URL and wait.
+   **component** + its `isolateUrl`, and each note line is **tagged with the specific element**
+   clicked, e.g. `button#increment — disable at max`). Nothing new? Tell them the app URL and wait.
 2. **Fix** each entry: edit **only that component's folder** (`template.html` / `logic.ts` /
-   `styles.css`) — optimistic-UI + `data-note` rules apply; an island fix needs a `logic.ts`, a
-   styling fix goes in the scoped `styles.css`.
+   `styles.css`), using each note's element tag to target the exact element it's about —
+   optimistic-UI + `data-note` rules apply; an island fix needs a `logic.ts`, a styling fix goes
+   in the scoped `styles.css`.
 3. **Verify in the ISOLATE UI — not prod.** Open the component in the workbench at the entry's
    `isolateUrl`; confirm the fix there and run its `isolate/` cases. (No `isolate/` yet? Add one —
    `breakdown/references/isolate-format.md` — so the fix has a case to prove it.)

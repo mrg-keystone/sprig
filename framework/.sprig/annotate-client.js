@@ -192,13 +192,16 @@
       return {
         key: comp.component, selector: comp.selector, label: comp.selector,
         component: comp.component, kind: comp.kind, isolateUrl: comp.isolateUrl || "",
+        // the SPECIFIC element clicked (so the note says which element within the component,
+        // and isolate can locate it) — distinct from the component selector.
+        elSelector: looseSelectorOf(el),
         scope: id, text: truncate(el.textContent, 140),
       };
     }
     var loose = looseSelectorOf(el);
     return {
       key: "unresolved:" + loose, selector: loose, label: loose, component: "",
-      kind: "unresolved", isolateUrl: "", scope: null, text: truncate(el.textContent, 140), unresolved: true,
+      kind: "unresolved", isolateUrl: "", scope: null, elSelector: loose, text: truncate(el.textContent, 140), unresolved: true,
     };
   }
   function resolveCtx(el) { return BUILD ? buildContextOf(el) : contextOf(el); }
@@ -458,6 +461,7 @@
   // note across a re-target so a stray click on the wrong child isn't lost.
   function openPopover(el, ctx, seedText) {
     closePopover(); // remove only the old box — keep any open tree/css modal
+    raiseHost(); // sit above any app modal before drawing the note box / selection
     currentEl = el;
     currentCtx = ctx;
     var existing = store[ctx.key];
@@ -507,7 +511,8 @@
       if (sub) {
         sub.innerHTML = '<span class="pop-comp"></span>' +
           (ctx.isolateUrl ? ' <a class="pop-iso" target="_blank" rel="noopener">open in isolate ↗</a>' : "");
-        sub.querySelector(".pop-comp").textContent = (ctx.component || "(unmapped)") + " · " + ctx.kind;
+        sub.querySelector(".pop-comp").textContent = (ctx.component || "(unmapped)") + " · " + ctx.kind +
+          (ctx.elSelector && ctx.elSelector !== ctx.selector ? " · on " + ctx.elSelector : "");
         if (ctx.isolateUrl) sub.querySelector(".pop-iso").href = ctx.isolateUrl;
       }
     }
@@ -555,12 +560,20 @@
           else dismissAll();
           return;
         }
-        var bnote = css ? (text ? text + "\n" : "") + "CSS: " + collapse(css) : text;
-        // editing from the list REPLACES the component's notes; a fresh click APPENDS
-        (ctx._editNotes ? buildSetNotes(ctx.key, bnote) : buildSave(ctx, bnote)).then(after);
+        var body = css ? (text ? text + "\n" : "") + "CSS: " + collapse(css) : text;
+        if (ctx._editNotes) {
+          // editing from the list REPLACES the component's notes (lines already carry their element)
+          buildSetNotes(ctx.key, body).then(after);
+        } else {
+          // a fresh click APPENDS, tagged with the SPECIFIC element so the note is precise in isolate
+          buildSave(ctx, ctx.elSelector ? ctx.elSelector + " — " + body : body).then(after);
+        }
         return;
       }
       if (mode === "inline") return commitInline(text, css);
+      commitJson(text, css);
+    }
+    function commitJson(text, css) {
       if (!text && !css) {
         delete store[ctx.key];
         pushEntry(Object.assign({}, ctx, { feedback: "", css: "", _delete: true })).then(after);
@@ -572,8 +585,8 @@
     }
     function commitInline(text, css) {
       // inline patches the live element's source — needs a live element. When editing a note
-      // from the list whose element isn't on this screen, there's nothing to patch → use json.
-      if (!currentEl) { showMsg("No live element on this screen — use “json” to save this edit."); return; }
+      // from the list whose element isn't on this screen, there's nothing to patch → fall back to json.
+      if (!currentEl) { commitJson(text, css); return; }
       // reflect on the live DOM at once (visual confirmation), then patch the source file
       if (text) currentEl.setAttribute("data-note", text);
       else currentEl.removeAttribute("data-note");
@@ -582,8 +595,10 @@
       postInline(Object.assign({}, inlineDescriptor(currentEl), {
         note: text, css: css, remove: !text && !css,
       })).then(function (res) {
-        if (res && res.ok) after();
-        else showMsg("Couldn't find this element in the source HTML — it's rendered by JS. Use “json” instead.");
+        if (res && res.ok) { after(); return; }
+        // JS-rendered element → not in the source HTML. Don't lose the note: save it to feedback.json.
+        showMsg("Element is JS-rendered — saved to feedback.json instead.");
+        setTimeout(function () { commitJson(text, css); }, 900);
       });
     }
     function remove() {
@@ -848,12 +863,24 @@
 
   function startInspect() {
     inspecting = true;
+    raiseHost(); // jump above any open modal the moment annotate activates
     if (lastTarget) showInspect(lastTarget);
   }
 
   function stopInspect() {
     inspecting = false;
     hideInspect();
+  }
+
+  // Keep the overlay above app **modals**. Our host is at the max z-index (2147483647), but a
+  // modal that portals to the end of <body>/<html> AFTER we mounted — and uses that same max —
+  // wins the tie by DOM order and covers the highlight. Re-appending the host so it's the LAST
+  // child of <html> wins the tie back. No-op when already last (so it never churns the DOM, and
+  // never re-parents while a focused popover is open elsewhere in the tree).
+  function raiseHost() {
+    if (host && document.documentElement.lastElementChild !== host) {
+      document.documentElement.appendChild(host);
+    }
   }
 
   /* ---------- events ---------- */
@@ -889,15 +916,32 @@
     if (host) host.style.display = uiHidden ? "none" : "";
   }
 
+  // Track the pointer for the ⌘/Ctrl-held inspector. We listen on BOTH mousemove and pointermove
+  // because Chrome's device/mobile emulation simulates touch and won't dispatch mousemove —
+  // pointermove still fires for the emulated mouse, keeping the highlight alive.
+  function onHover(e) {
+    lastTarget = e.target;
+    // The page-hover inspector must not run while a popover / tree / css panel is open —
+    // otherwise it clobbers the tree's own row-hover highlight on every move.
+    if (inspecting && !treeEl && !popEl && !cssEl) showInspect(e.target);
+  }
+  document.addEventListener("mousemove", onHover, true);
+  document.addEventListener("pointermove", onHover, true);
+
+  // Touch / mobile emulation has NO hover, so a finger (or emulated tap) never produces a move
+  // until it presses. Preview the inspect box on pointerdown while ⌘/Ctrl is held — so the
+  // highlight DOES appear in device mode; the click that follows still opens the note.
   document.addEventListener(
-    "mousemove",
+    "pointerdown",
     function (e) {
+      if (uiHidden || drawing || popEl || cssEl || treeEl) return;
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
+      if (isOurs(e.target)) return;
+      raiseHost(); // a ⌘-press on a modal's element → make sure our highlight sits above it
       lastTarget = e.target;
-      // The page-hover inspector must not run while a popover / tree / css panel is open —
-      // otherwise it clobbers the tree's own row-hover highlight on every mouse move.
-      if (inspecting && !treeEl && !popEl && !cssEl) showInspect(e.target);
+      drawInspect(e.target);
     },
-    true
+    true,
   );
 
   document.addEventListener(
@@ -1502,7 +1546,10 @@
   var _h2c = null;
   function loadH2C() {
     if (_h2c) return Promise.resolve(_h2c);
-    return import("https://esm.sh/html2canvas@1.4.1").then(function (m) {
+    // html2canvas-PRO: a maintained fork with the same API that supports modern CSS color
+    // functions — `oklch()` / `lab()` / `color-mix()`. Plain html2canvas@1.4.1 THROWS on oklch,
+    // which sprig/daisyUI design systems use by default → the "(screenshot unavailable)" bug.
+    return import("https://esm.sh/html2canvas-pro@1").then(function (m) {
       _h2c = m.default || m;
       return _h2c;
     });
@@ -1543,39 +1590,51 @@
     a.click();
   }
 
+  // Persist a captured drawing (PNG data URL) as a feedback entry via /shot (offline → download).
+  function persistDrawing(note, dataUrl) {
+    var key = "draw:" + nextDrawId();
+    var meta = {
+      key: key,
+      kind: "drawing",
+      feedback: note || "",
+      viewport: {
+        w: window.innerWidth, h: window.innerHeight,
+        scrollX: window.scrollX, scrollY: window.scrollY,
+      },
+    };
+    if (serverOK && dataUrl) {
+      fetch(API + "/shot", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(Object.assign({}, meta, { image: dataUrl })),
+      })
+        .then(function (r) { if (!r.ok) throw new Error("bad"); return r.json(); })
+        .then(function (json) { store = json || store; saveLocal(); afterDraw(); })
+        .catch(function () { serverOK = false; offlineDraw(key, meta, dataUrl); });
+    } else {
+      offlineDraw(key, meta, dataUrl);
+    }
+  }
+
   function saveDrawing(note) {
-    captureScreenshot().then(function (dataUrl) {
-      var key = "draw:" + nextDrawId();
-      var meta = {
-        key: key,
-        kind: "drawing",
-        feedback: note || "",
-        viewport: {
-          w: window.innerWidth, h: window.innerHeight,
-          scrollX: window.scrollX, scrollY: window.scrollY,
-        },
-      };
-      if (serverOK && dataUrl) {
-        fetch(API + "/shot", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(Object.assign({}, meta, { image: dataUrl })),
-        })
-          .then(function (r) { if (!r.ok) throw new Error("bad"); return r.json(); })
-          .then(function (json) { store = json || store; saveLocal(); afterDraw(); })
-          .catch(function () { serverOK = false; offlineDraw(key, meta, dataUrl); });
-      } else {
-        offlineDraw(key, meta, dataUrl);
-      }
-    }).catch(function () {
-      // screenshot failed (often a CORS-tainted canvas) — keep the note anyway
-      var key = "draw:" + nextDrawId();
-      var entry = { kind: "drawing", feedback: (note || "") + "  (screenshot unavailable)", image: "" };
-      store[key] = entry;
-      saveLocal();
-      if (serverOK) pushEntry(Object.assign({ key: key }, entry));
-      afterDraw();
-    });
+    captureScreenshot()
+      .then(function (dataUrl) { persistDrawing(note, dataUrl); })
+      .catch(function () {
+        // page raster failed (a style the rasterizer can't handle, or a CORS-tainted canvas).
+        // Still save the SKETCH itself so the drawing is NEVER lost — the user did draw it.
+        var url = "";
+        try { url = drawCanvas ? drawCanvas.toDataURL("image/png") : ""; } catch (_) { url = ""; }
+        if (url) {
+          persistDrawing((note || "") + "  (sketch only — page capture failed)", url);
+        } else {
+          var key = "draw:" + nextDrawId();
+          var entry = { kind: "drawing", feedback: (note || "") + "  (screenshot unavailable)", image: "" };
+          store[key] = entry;
+          saveLocal();
+          if (serverOK) pushEntry(Object.assign({ key: key }, entry));
+          afterDraw();
+        }
+      });
   }
 
   function offlineDraw(key, meta, dataUrl) {
@@ -1722,6 +1781,13 @@
       renderToolbar();
       renderBadges();
     });
+    // Re-check the persistent badges against the json every second: pullState refreshes `store`
+    // from the source of truth, and renderBadges only draws entries still present — so a square
+    // whose entry was removed from the feedback json (by the LLM, a build pass, or a hand edit)
+    // disappears within ~1s instead of lingering.
+    setInterval(function () {
+      pullState().then(renderBadges);
+    }, 1000);
   }
 
   if (document.readyState === "loading") {
