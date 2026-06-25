@@ -19,7 +19,7 @@ spec/ui/breakdown/
 │   ├── isolate/          # real fixture.json + cases/<state>/<state>.json
 │   └── screenshots/      # the diff target (+ filmstrip.png/jank.md if animated)
 └── pages/<page>/
-    ├── <page>.md, screenshots/
+    ├── <page>.md, isolate/, screenshots/   # pages isolate too: real fixture.json + cases/
     └── components/<name>/   # page-local components (same shape)
 ```
 
@@ -32,11 +32,14 @@ spec/ui/breakdown/
   the interaction tier (static / island; server writes are **optimistic UI**, realtime where
   needed); anatomy; a props table (1:1 with `fixture.json` controls, `signal: true` for island
   state); states→cases; **Events** as `capture(page)` predicate sketches; **Motion extracted**
-  (real keyframes/easing + jank fixes — reproduce, don't reinvent); responsive; a11y.
+  (real keyframes/easing + jank fixes — reproduce, don't reinvent); responsive; a11y; and an
+  **Isolate build plan** — the build-in-isolation recipe (folder + selector, the preview route(s),
+  per case the screenshot to diff against, the Events→`tests/` mapping, and the `sprig isolate` →
+  diff → test → iterate loop) so the build session can stand the thing up alone from the spec.
 - **`isolate/` proposals are real and runnable** (`fixture.json` + `cases/<state>/<state>.json`),
-  discoverable by `sprig isolate`; a component is a **folder** (`template.html` + optional
-  `logic.ts`), its **basename the selector** — no `.tsx`. Case JSON carries the **real captured
-  values** the screenshot shows.
+  discoverable by `sprig isolate`, for **every component AND every page** (pages isolate too); a
+  component is a **folder** (`template.html` + optional `logic.ts`), its **basename the selector**
+  — no `.tsx`. Case JSON carries the **real captured values** the screenshot shows.
 - **`index.md` carries the build order** (tokens → shared components → page-local → page
   compositions), the interaction-tier summary, and an **Unassigned list that ships even empty**.
 
@@ -48,5 +51,7 @@ spec/ui/breakdown/
   `references/isolate-format.md`.
 
 ## Validation
-`sprig isolate` discovers every proposal; each component diffs clean vs its `screenshots/` and its
-`isolate/` cases are green before anything builds on it; `index.md` Unassigned is empty.
+`sprig isolate` discovers every proposal; each component **and page** diffs clean vs its
+`screenshots/` and its `isolate/` cases are green before anything builds on it; every component/page
+carries an **Isolate build plan** the builder can follow without the source; `index.md` Unassigned
+is empty.

@@ -7,7 +7,8 @@ Copy-adaptable recipes for the capture passes. They are plain Node scripts
 
 Don't install anything until you've checked what's already there, in order:
 
-1. **isolate's runner** (present on any machine that has run `isolate dev`/`test`):
+1. **the isolate runner** (present on any machine that has run `sprig isolate` and its
+   case tests — it provisions `~/.isolate-runner`):
 
    ```js
    const os = require('os');

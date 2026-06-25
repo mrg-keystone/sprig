@@ -185,7 +185,7 @@ branch so the whole audit is one reviewable diff.
 Restart a **fresh** server (FIX edited code; the old server is stale), then spawn
 **one** agent with **`agents/validator.md`** plus `fixes.md`. It re-runs **every**
 issue's "Verify fixed" check (a `curl -i` status, a Playwright interaction via the
-MCP, `isolate test`, a perf re-measure) and — importantly — re-checks a few
+MCP, the component's `sprig isolate` cases, a perf re-measure) and — importantly — re-checks a few
 *unrelated* stories to catch regressions the fixes introduced. It reports each issue
 green or still-failing.
 

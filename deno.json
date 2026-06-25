@@ -38,6 +38,8 @@
     "include": [
       "LICENSE",
       "deno.json",
+      "framework/.sprig/annotate.ts",
+      "framework/.sprig/annotate-client.js",
       "framework/.sprig/compiler/build.ts",
       "framework/.sprig/compiler/dev.ts",
       "framework/.sprig/compiler/expr.ts",

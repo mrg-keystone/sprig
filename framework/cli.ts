@@ -3,7 +3,7 @@
  * `sprig` — the framework CLI.
  *
  *   sprig init [dir]            scaffold a minimal, runnable sprig app
- *   sprig dev  [appDir]         state-preserving HMR dev server (no Vite)
+ *   sprig dev  [appDir] [--annotate]  HMR dev server (no Vite); --annotate adds the click-to-edit overlay + isolate workbench
  *   sprig build [appDir]        code-split islands + scope CSS + Tailwind → static/
  *   sprig serve [entry]         run the app's host entry (e.g. bootstrap/serve.ts)
  *   sprig help
@@ -17,6 +17,7 @@ import { buildClient } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
 import { sprigUi } from "../packages/keep/mod.ts";
 import { assertWorkbench, installRuntimeFromDeployment, installRuntimeFromWorkingTree, latestRuntimeVersion } from "./.sprig/install.ts";
+import { makeAnnotate } from "./.sprig/annotate.ts";
 
 // the published-package version range a scaffolded app pins (core + its /keep + /cli
 // sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
@@ -214,7 +215,11 @@ async function serve(entry = "serve.ts"): Promise<void> {
   Deno.exit(code);
 }
 
-async function dev(appDir = ".", base = "/ui"): Promise<void> {
+async function dev(rawArgs: string[] = []): Promise<void> {
+  const positionals = rawArgs.filter((a) => !a.startsWith("-"));
+  const appDir = positionals[0] ?? ".";
+  const base = positionals[1] ?? "/ui";
+  const annotateOn = rawArgs.includes("--annotate");
   await withMergedConfig(appDir);
   // State-preserving HMR (no Vite): build the dev bundle (HMR client + AST-fetching
   // island chunks), then wrap the app's production handler with the compiler's dev
@@ -238,8 +243,43 @@ async function dev(appDir = ".", base = "/ui"): Promise<void> {
   };
   const devSrv = createDevServer({ renderer, base, outDir, handler });
   const port = freePort(Number(Deno.env.get("PORT") ?? 8000));
-  console.log(`sprig dev → http://localhost:${port}${base}  (HMR on; build cache: ${outDir})`);
-  Deno.serve({ port }, (req: Request, info: Deno.ServeHandlerInfo) => devSrv.fetch(req, info));
+
+  // --annotate: fold the component-keyed click-to-edit overlay INTO the dev server, and bring
+  // up the isolate workbench alongside on a second port (one command, both surfaces). The two
+  // die together on Ctrl-C. Default `sprig dev` (no flag) is byte-for-byte unchanged.
+  let annotate: Awaited<ReturnType<typeof makeAnnotate>> | null = null;
+  if (annotateOn) {
+    const root = join(dirname(fromFileUrl(import.meta.url)), "..");
+    await assertWorkbench(root); // clear "run `sprig update`" error if the workbench is missing
+    const appAbs = resolve(appDir);
+    const isoPort = freePort(port + 1);
+    const isoBase = `http://localhost:${isoPort}`;
+    const wb = spawnWorkbench(appAbs, isoPort, false);
+    annotate = await makeAnnotate({ appDir: appAbs, srcDir: join(appAbs, "src"), isolateBase: isoBase });
+    const onSig = () => {
+      try {
+        wb.kill("SIGTERM");
+      } catch { /* already dead */ }
+      Deno.exit(130);
+    };
+    Deno.addSignalListener("SIGINT", onSig);
+    Deno.addSignalListener("SIGTERM", onSig);
+    console.log("sprig dev --annotate:");
+    console.log(`  app + annotate → http://localhost:${port}${base}   (⌘/Ctrl+click → spec/ui/build-notes.json)`);
+    console.log(`  isolate        → ${isoBase}/   (verify each component here; starting…)`);
+    console.log(`  ${annotate.size} component(s) mapped from src/ · HMR on · build cache: ${outDir}`);
+  } else {
+    console.log(`sprig dev → http://localhost:${port}${base}  (HMR on; build cache: ${outDir})`);
+  }
+
+  Deno.serve({ port }, async (req: Request, info: Deno.ServeHandlerInfo) => {
+    if (annotate) {
+      const a = await annotate.handle(req);
+      if (a) return a;
+    }
+    const res = await devSrv.fetch(req, info);
+    return annotate ? await annotate.inject(res) : res;
+  });
 }
 
 async function init(dir = "."): Promise<void> {
@@ -438,16 +478,13 @@ async function init(dir = "."): Promise<void> {
  *  backend (server/), the orchestrator (cli/), and the composition root (serve.ts) are
  *  installed next to the framework by `sprig install`/`sprig update`; this delegates to the
  *  workbench's own dev runner. */
-async function isolate(appDir = ".", open = true): Promise<void> {
-  // the dir that holds framework/ — a repo checkout or ~/.sprig (both carry the workbench).
+/** Spawn the workbench dev runner (cli/main.ts dev): discover → generate a preview per case →
+ *  build the app → serve serve.ts (UI + keep backend) under ISOLATE_PROJECT, on `port`. Used by
+ *  `sprig isolate` (which awaits it) and `sprig dev --annotate` (which runs it alongside the dev
+ *  server). The same flow that powers the live workbench; we just point it at `appAbs`. */
+function spawnWorkbench(appAbs: string, port: number, open: boolean): Deno.ChildProcess {
   const root = join(dirname(fromFileUrl(import.meta.url)), "..");
-  await assertWorkbench(root); // clear "run `sprig update`" error if an old slim install lacks it
-  const appAbs = resolve(appDir);
-  const port = freePort(Number(Deno.env.get("PORT") ?? 8000));
-  // hand off to the workbench dev runner: discover → generate a preview per case → build the
-  // app → serve serve.ts (UI + keep backend) under ISOLATE_PROJECT. The same flow that powers
-  // the live workbench; we just point it at `appAbs` on a free port.
-  const { code } = await new Deno.Command(Deno.execPath(), {
+  return new Deno.Command(Deno.execPath(), {
     args: [
       "run", "-A", "--config", join(root, "deno.json"), join(root, "cli", "main.ts"),
       "dev", "--root", appAbs, ...(open ? [] : ["--no-open"]),
@@ -457,7 +494,15 @@ async function isolate(appDir = ".", open = true): Promise<void> {
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
-  }).output();
+  }).spawn();
+}
+
+async function isolate(appDir = ".", open = true): Promise<void> {
+  // the dir that holds framework/ — a repo checkout or ~/.sprig (both carry the workbench).
+  const root = join(dirname(fromFileUrl(import.meta.url)), "..");
+  await assertWorkbench(root); // clear "run `sprig update`" error if an old slim install lacks it
+  const port = freePort(Number(Deno.env.get("PORT") ?? 8000));
+  const { code } = await spawnWorkbench(resolve(appDir), port, open).status;
   Deno.exit(code);
 }
 
@@ -524,7 +569,7 @@ async function install(dev: boolean): Promise<void> {
 const USAGE = `sprig — the framework CLI
 
   sprig init  [dir]              scaffold a minimal, runnable sprig app (default: .)
-  sprig dev   [appDir]           state-preserving HMR dev server → /ui (default: .)
+  sprig dev   [appDir] [--annotate]  HMR dev server → /ui (--annotate: + click-to-edit overlay + the isolate workbench)
   sprig build [appDir]           code-split islands + scope CSS + Tailwind → static/ (default: .)
   sprig isolate [appDir]         component/page workbench — develop in isolation (default: .)
   sprig serve [entry]            run the app's host entry under its deno.json (default: serve.ts)
@@ -543,7 +588,7 @@ switch (cmd) {
     await build(rest[0], rest.includes("--dev"));
     break;
   case "dev":
-    await dev(rest[0], rest[1]);
+    await dev(rest);
     break;
   case "serve":
     await serve(rest[0]);

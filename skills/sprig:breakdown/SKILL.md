@@ -23,8 +23,8 @@ description: >-
 
 Read the source mock and produce a `spec/ui/breakdown/` directory that a later build
 session can work through **mechanically**: scaffold a component, drop in its
-proposed `isolate/` folder, run `isolate dev`, diff against the screenshots,
-write tests from the Events section, run `isolate test`, repeat. Every artifact
+proposed `isolate/` folder, run `sprig isolate`, diff against the screenshots,
+write tests from the Events section, run the case tests, repeat. Every artifact
 below exists to make that loop dumber and safer — judge every formatting
 decision by that standard. The spec must be detailed enough that someone could
 rebuild each page and component from the spec alone, **without opening the
@@ -65,7 +65,8 @@ spec/ui/breakdown/
 │       └── css/                # extracted source CSS (reference, not deliverable)
 └── pages/
     └── <page-name>/
-        ├── <page-name>.md      # page purpose, layout, sections, composition order
+        ├── <page-name>.md      # page purpose, layout, sections, composition order, isolate build plan
+        ├── isolate/            # PROPOSED fixture.json + cases/<state>/<state>.json — pages isolate too
         ├── screenshots/
         ├── js/
         ├── css/
@@ -265,17 +266,28 @@ Write each `<component-name>.md` with the anatomy below. Extract the
 component's actual JS/CSS from the source into its `js/`/`css/` dirs rather
 than only describing it.
 
-### 6 · isolate proposals
+### 6 · isolate proposals + per-component build plan
 
-For every `static`/`island` component, write a **real, executable**
-`isolate/` folder — `fixture.json` plus one `cases/<state>/<state>.json` per
-row of the States table. Real files, not JSON blocks in markdown: they
-hypothesize the component's API, and the build session starts from something
-it can run, adjusting as needed. **Follow `references/isolate-format.md`** —
-the format has non-obvious rules (route built from `category`/`folder`, the
-folder-basename-is-the-selector rule, `signal: true` for island state,
-`_signals`/`_mocks`/`_innerHtml` specials) and an invalid proposal is worse
-than none, because `sprig isolate` fails fast on malformed fixtures.
+For every `static`/`island` component **and every page**, write a **real,
+executable** `isolate/` folder — `fixture.json` plus one
+`cases/<state>/<state>.json` per row of the States table. Real files, not JSON
+blocks in markdown: they hypothesize the component's API, and the build session
+starts from something it can run, adjusting as needed. **Follow
+`references/isolate-format.md`** — the format has non-obvious rules (route built
+from `category`/`folder`, the folder-basename-is-the-selector rule, `signal:
+true` for island state, `_signals`/`_mocks`/`_innerHtml` specials) and an
+invalid proposal is worse than none, because `sprig isolate` fails fast on
+malformed fixtures. **Pages isolate too** — a page is a `page-composition` that
+the workbench discovers under `pages/`; give each page its `isolate/` proposal
+(a `default` case, plus any data-state cases — empty/error/loaded) so the build
+session can stand the page up alone before wiring real routes.
+
+Then write the component/page's **Isolate build plan** (anatomy item 10) right
+into its `.md`. The `isolate/` folder is the *files*; the build plan is the
+**instructions** that let the build session build the thing in isolation **from
+the spec alone** — the folder + selector, the preview route(s), per case the
+screenshot to diff against, the Events→`tests/` mapping, and the `sprig isolate`
+→ diff → test → iterate loop — without rederiving the loop from the intro.
 
 **Case values must be the real captured data, never invented stand-ins.**
 The build session's core check is *render the case → diff against your
@@ -309,13 +321,18 @@ some component's Events or Motion section. Also check every **interaction has a
 tier** (static / pure-client island / optimistic-write island / realtime island),
 every **`island` is justified** by a genuine need for client JS (no whole-page
 islands, nothing `location.reload()`-ing server state), and every live panel is
-marked request-response vs pushed and has an honest-empty note. Anything unmapped goes
-in an **"Unassigned"** list at the bottom of `index.md` — an empty list is the
-goal, a populated one is honest; silence is the only failure.
+marked request-response vs pushed and has an honest-empty note. Also check every
+**component and page** has both a runnable `isolate/` proposal and an **Isolate
+build plan** (anatomy item 10) — a component/page the builder can't stand up
+alone is a hole in the spec. Anything unmapped goes in an **"Unassigned"** list
+at the bottom of `index.md` — an empty list is the goal, a populated one is
+honest; silence is the only failure.
 
 ## Component .md anatomy
 
-Every component markdown contains, in order:
+Every component markdown contains, in order (a **page** `.md` keeps its own
+purpose/layout/composition sections, and **also** carries item 10, the **Isolate
+build plan** — pages isolate too):
 
 1. **Classification & behavior** — the folder bucket (`static` | `island` |
    `page-composition`) **plus the interaction tier and data contract**: for each
@@ -355,6 +372,28 @@ Every component markdown contains, in order:
 8. **A11y** — roles, labels, focus order/trapping, keyboard interactions,
    reduced-motion behavior.
 9. **Used on** — list of pages (the shared vs page-local evidence).
+10. **Isolate build plan** — the build-in-isolation recipe for *this*
+    component/page, so the build session never has to reconstruct it. State, concretely:
+    - **Where it lands & its selector** — `components/` (static) | `islands/`
+      (has `logic.ts`) | `pages/<name>/` (page-composition); the **selector** is
+      the folder basename (the custom tag, e.g. `command-palette/` →
+      `<command-palette>`).
+    - **Preview route(s)** — `/<components|pages>/<category>/<folder>/<case>`,
+      built from the proposed `fixture.json` (NOT the source path).
+    - **Per case** — the one-line state it demonstrates and the `screenshots/`
+      still the build session **diffs it clean against** (every row of item 4
+      becomes one `cases/<state>/<state>.json` → one route → one diff target).
+    - **Tests** — which **Events** rows (item 5) become which
+      `cases/<case>/tests/*.spec.ts`, lifting the `capture(page)` predicates
+      verbatim.
+    - **The loop** — scaffold the folder → drop in the proposed `isolate/` →
+      `sprig isolate` → open each case's route → diff vs its screenshot → lift
+      the Events predicates into `tests/` → run the case's tests → iterate until
+      green, **before** composing it into a page.
+
+    This is the per-component instance of the build loop in the intro; write it
+    concretely enough that `sprig isolate` is the only tool the builder needs to
+    finish the component/page alone.
 
 ## Source-type fallbacks
 
@@ -386,8 +425,8 @@ Every component markdown contains, in order:
   (the "Used on" list).
 - Extract over describe, everywhere the source is readable: real keyframes,
   real CSS, real event wiring. Reserve prose for what extraction can't reach.
-- Proposed `isolate/` folders are real files that would pass `isolate list`
-  discovery, not documentation.
+- Proposed `isolate/` folders are real files that `sprig isolate` discovers,
+  not documentation.
 - Schema, never data rows, in `data-model.md` and spec prose. Case JSON is
   the deliberate exception: it carries the real captured values its
   screenshot shows.

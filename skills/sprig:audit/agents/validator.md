@@ -25,7 +25,7 @@ USER STORIES: <paste user-stories.md, or the derived list>
 
 PER ISSUE (every section, ☑ and ☐ alike):
 - Run its "Verify fixed" check exactly as written — a `curl -i` status, a Playwright
-  interaction via the MCP (interact → assert the DOM/route reacted), `isolate test`,
+  interaction via the MCP (interact → assert the DOM/route reacted), the component's `sprig isolate` cases,
   or a perf re-measure under the same trigger/conditions. Recipes:
   references/fixes-format.md (Verification recipes) and
   references/playwright-mcp-recipes.md.
