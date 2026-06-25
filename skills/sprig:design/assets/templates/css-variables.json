@@ -1,0 +1,69 @@
+{
+  "_generated": true,
+  "_source": "theme.css",
+  "_note": "DERIVED from theme.css — the plain token map a SPRIG app consumes (copy to its src/css-variables.json). sprig's build compiles this to a global @theme (utility tokens) + :root (the rest) + [data-theme] (variants) with NO daisyUI. RULES: keys are custom properties (--*) or the reserved color-scheme ONLY (the build rejects anything else); DROP daisyUI-plugin params --size-*/--border/--depth/--noise; the default theme carries EVERY token, other themes carry only what changes; `default` is the theme rendered with no data-theme attribute. List every applicable token from theme.css — entries below are illustrative.",
+  "default": "brand-dark",
+  "themes": {
+    "brand-dark": {
+      "color-scheme": "dark",
+
+      "--color-base-100": "{{dark-surface}}",
+      "--color-base-200": "{{dark-surface-2}}",
+      "--color-base-300": "{{dark-surface-3}}",
+      "--color-base-content": "{{dark-ink}}",
+      "--color-primary": "{{dark-primary}}",
+      "--color-primary-content": "{{dark-on-primary}}",
+      "--color-secondary": "{{dark-secondary}}",
+      "--color-accent": "{{dark-accent}}",
+      "--color-neutral": "{{dark-neutral}}",
+      "--color-info": "{{dark-info}}",
+      "--color-success": "{{dark-success}}",
+      "--color-warning": "{{dark-warning}}",
+      "--color-error": "{{dark-error}}",
+
+      "--radius-selector": "{{radius-pill}}",
+      "--radius-field": "{{radius-field}}",
+      "--radius-box": "{{radius-box}}",
+
+      "--font-display": "'{{DisplayFont}}', system-ui, sans-serif",
+      "--font-body": "'{{BodyFont}}', system-ui, sans-serif",
+      "--font-mono": "ui-monospace, 'SF Mono', Menlo, monospace",
+
+      "--step--2": "0.75rem",
+      "--step--1": "0.875rem",
+      "--step-0": "1rem",
+      "--step-1": "1.25rem",
+      "--step-2": "1.5rem",
+      "--step-3": "2rem",
+      "--step-4": "2.5rem",
+      "--step-5": "3.5rem",
+
+      "--ease-bounce": "cubic-bezier(0.34, 1.56, 0.64, 1)",
+      "--ease-standard": "cubic-bezier(0.2, 0, 0, 1)",
+      "--dur-micro": "120ms",
+      "--dur-fast": "200ms",
+      "--dur-base": "320ms",
+
+      "--color-base-content-30": "color-mix(in oklch, var(--color-base-content) 30%, transparent)",
+      "--color-base-content-50": "color-mix(in oklch, var(--color-base-content) 50%, transparent)"
+    },
+
+    "brand": {
+      "color-scheme": "light",
+
+      "--color-base-100": "{{surface}}",
+      "--color-base-200": "{{surface-2}}",
+      "--color-base-300": "{{surface-3}}",
+      "--color-base-content": "{{ink}}",
+      "--color-primary": "{{primary}}",
+      "--color-primary-content": "{{on-primary}}",
+      "--color-secondary": "{{secondary}}",
+      "--color-accent": "{{accent}}",
+      "--color-neutral": "{{neutral}}",
+      "--color-info": "{{info}}",
+      "--color-success": "{{success}}",
+      "--color-warning": "{{warning}}",
+      "--color-error": "{{error}}"
+    }
+  }
+}

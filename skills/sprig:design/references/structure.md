@@ -8,6 +8,7 @@ spec/ui/design-system/
   theme.css                 ★ CANONICAL — the only source of truth
   theme.cdn.css             derived — flattened [data-theme] twin for the prototype skill
   manifest.json             derived — token + card index
+  css-variables.json        derived — plain token map a SPRIG app consumes (→ src/css-variables.json)
   adherence.oxlintrc.json   derived — token allow-list + lint rules
   design-tokens.md          doc — human token tables (token handoff reference)
   components.md             doc — daisyUI semantic-class recipes (MCP-verified)
@@ -43,6 +44,38 @@ colorScheme / default|prefersdark), `brandFonts[]`, `tokens[]`, `cards[]`. Each 
 `{ name, light?, dark?, value?, kind }` where `kind ∈ color|radius|border|texture|font|easing|
 duration|shade`. Each `cards[]` entry is `{ path, group, viewport, name, subtitle }` and must list
 every file in `preview/`.
+
+### `css-variables.json` — the sprig token map
+`prototype` speaks daisyUI; **sprig** (`sprig:build`) does not — its build has no daisyUI plugin, so
+it consumes a **plain** `src/css-variables.json` and compiles it into a global `@theme` (utility
+tokens) + `:root` (the rest) + `[data-theme]` (variants). Derive this twin from `theme.css` so a sprig
+app gets the brand with zero translation. Shape:
+
+```json
+{
+  "default": "brand-dark",
+  "themes": {
+    "brand-dark": { "color-scheme": "dark",  "--color-primary": "…", "--radius-box": "…", "--step-0": "…", "--color-base-content-30": "color-mix(…)" },
+    "brand":      { "color-scheme": "light", "--color-primary": "…" }
+  }
+}
+```
+
+Derivation rules:
+- **Default theme = every token** — the daisyUI theme-block colors/radii AND the whole `:root`
+  non-color layer (fonts, the `--step-*` scale, `--ease-*`, `--dur-*`, the `color-mix` tints) +
+  `color-scheme`. **Each other theme = only what differs** (the colors) + `color-scheme`; the rest
+  cascades from the default.
+- **`default`** is the theme that renders with **no `data-theme` attribute**. For sprig SSR (the
+  document `<html>` can't carry the attribute) a dark-first app sets it to `brand-dark` to avoid a
+  light flash — this may differ from `theme.css`'s daisyUI `default: true`, and that's fine (different
+  consumers).
+- **Variables only.** Keys must be custom properties (`--*`) or the reserved `color-scheme` — the sprig
+  build **rejects** anything else. So **drop** `--size-*`, `--border`, `--depth`, `--noise` (daisyUI
+  plugin params the plain sprig build can't use).
+- Tokens in a Tailwind utility namespace (`--color-*`, `--font-*`, `--text-*`, `--radius-*`, `--ease-*`)
+  also generate utilities (`bg-primary`, `text-step-2`, `rounded-box`). Keep values byte-identical to
+  `theme.css`.
 
 ### `adherence.oxlintrc.json` — token allow-list + lint
 An oxlint config that forbids raw hex / raw px / off-system fonts in code (so consumers use tokens),

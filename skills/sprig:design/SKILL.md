@@ -93,8 +93,10 @@ theme with a missing variable or a removed class.
    [`references/components-and-charts.md`](references/components-and-charts.md).
 
 6. **Derive the machine files from `theme.css`.** Generate `theme.cdn.css` (flattened `[data-theme]`
-   twin), `manifest.json` (token + card index), `adherence.oxlintrc.json` (token allow-list + lint
-   rules). Same source → identical output. See [`references/structure.md`](references/structure.md).
+   twin for `prototype`), `css-variables.json` (the plain token map a **sprig** app consumes — it
+   compiles to a global `@theme`/`:root`/`[data-theme]`, no daisyUI), `manifest.json` (token + card
+   index), and `adherence.oxlintrc.json` (token allow-list + lint rules). Same source → identical
+   output. See [`references/structure.md`](references/structure.md).
 
 7. **Write the consume recipe + skill manifest.** `consume/prototype.md`, `README.md` (brand bible),
    `SKILL.md` (so the artifact is invokable). Templates in

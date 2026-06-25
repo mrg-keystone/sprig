@@ -232,6 +232,41 @@ into any host. The scaffold uses a Danet host (`app.use(ui)`); `serveSprig` is t
 all-in-one alternative. The host owns every other route; sprig owns `/ui`. Details:
 **`references/serving.md`**.
 
+## Design tokens (`src/css-variables.json`)
+
+Define design tokens once, globally, in an optional **`src/css-variables.json`** at the source
+root. CSS custom properties cross view-encapsulation **by design** — they inherit through the
+cascade and the build never scopes them — so this is how a scoped-CSS app shares a palette,
+type scale, radii, etc. The build compiles the file into the bundled `app.css`:
+
+```jsonc
+{
+  "default": "brand-dark",                 // the theme rendered with NO data-theme attribute
+  "themes": {
+    "brand-dark": { "color-scheme": "dark",  "--color-primary": "#6366F1", "--radius-box": "0.5rem", "--step-0": "0.9375rem" },
+    "brand":      { "color-scheme": "light", "--color-primary": "#5048E5" }   // only what differs
+  }
+}
+```
+
+- **The default theme** splits by token: utility-namespace tokens with static values
+  (`--color-*`, `--font-*`, `--text-*`, `--radius-*`, `--ease-*`, …) → a Tailwind **`@theme`**
+  block (so you also get `bg-primary` / `text-step-2` / `rounded-box` utilities); everything
+  else (`color-scheme`, scale aliases, durations, `var()`-referencing `color-mix` tints) → a
+  plain **`:root`** block. **Each other theme** → a **`[data-theme="name"]`** override block.
+- **Variables only — enforced.** Keys must be custom properties (`--*`) or the reserved
+  `color-scheme`; the build **fails** on anything else. The global token surface can never
+  accrue stray rules. Browser **resets come from Tailwind Preflight** (shipped by
+  `@import "tailwindcss"`); non-token base CSS (document `html`/`body`, headings, helpers) lives
+  in the **shell's `styles.css`** as `:global(...)`, NOT here.
+- **Consume** tokens in any component's scoped `styles.css` with `var(--token)`, or via the
+  generated utilities in templates. A runtime theme swap re-resolves every token *and* utility,
+  no rebuild: `document.documentElement.dataset.theme = "brand"`.
+- **From a design system:** `sprig:design` emits a ready-made `css-variables.json` in
+  `spec/ui/design-system/` (variables only, no daisyUI) — copy it to `src/css-variables.json`.
+- Opt-in and back-compatible: no file → no token CSS. Editing it rebuilds `app.css` under
+  `sprig dev`.
+
 ## Preview & test one component in isolation (`sprig isolate`)
 
 `sprig isolate` is a Storybook-style **workbench**: it discovers every folder-component that
@@ -246,6 +281,16 @@ sprig isolate          # from the app dir → http://localhost:8000/ : pick a ca
 A component shows **only if it has an `isolate/` folder** (no `isolate/` → *"Nothing to
 isolate"*). Author cases per **`breakdown/references/isolate-format.md`**; the workbench + its
 internals are in **`references/isolate.md`**.
+
+**Build every component AND page in isolation first.** When you have a breakdown spec, each
+component/page `.md` carries an **Isolate build plan** — follow it: drop in its proposed
+`isolate/` folder, run `sprig isolate`, open each case's route, **diff it against the case's
+`screenshots/` still**, lift the **Events** predicates into the case's `tests/*.spec.ts`, and
+get the cases green **before** composing it into a page. Pages isolate too (a page is a
+`page-composition` the workbench discovers under `pages/`) — stand a page up alone in `sprig
+isolate` before wiring its real route in `main.ts`. Without a breakdown spec, give each
+component/page its own `isolate/` folder (a `default` case + its data-state cases) and run the
+same loop, so you never debug it buried inside a full page.
 
 ## The dev loop
 
@@ -287,6 +332,53 @@ How to consume them when translating the mock into sprig components:
 (The other annotate mode writes a sibling `spec/ui/<app>-prototype.feedback.json` instead — same
 intent, keyed by CSS selector; see `sprig:prototype`. Inline `data-note` lives on the element itself.)
 
+## Click-to-edit the running app (build annotate)
+
+Once the app runs, you collect feedback **on the real app** the same way the prototype does —
+but keyed to **components**, not selectors. Because sprig stamps every SSR element with its
+component's scope-id marker, a ⌘/Ctrl+click resolves to the **component folder that owns it**,
+and each note (in `spec/ui/build-notes.json`, component-keyed) carries that component's
+`sprig isolate` deep-link.
+
+### One command — `sprig dev --annotate`
+
+`sprig dev --annotate` brings up **both surfaces** of the loop from a single command:
+
+```
+sprig dev --annotate
+#   app + annotate → http://localhost:8000/ui    ← the USER reviews + ⌘/Ctrl+clicks here
+#   isolate        → http://localhost:8001/      ← YOU fix + VERIFY each component here
+```
+
+The dev server serves the full app at `/ui` with the click-to-edit overlay folded in (no
+separate proxy), and auto-spawns the isolate workbench alongside; both die together on Ctrl-C.
+Plain `sprig dev` (no flag) is unchanged. (For an app running **elsewhere** — `sprig serve` /
+prod, not `sprig dev` — use the standalone proxy in `annotate/serve.ts` instead; see
+`annotate/README.md`.)
+
+### The loop — annotate (prod) → fix → verify (isolate) → repeat
+
+Run as a **cycle with two surfaces**, until the user says they're done:
+
+1. **Annotate (prod).** The user ⌘/Ctrl+clicks elements in the full app (`:8000/ui`); notes
+   land in `spec/ui/build-notes.json`, each keyed to the owning component (the overlay's panel
+   shows each note's component + an "open in isolate ↗" deep-link).
+2. **Fix.** For each entry (keyed by component path like `src/islands/counter`), edit **only
+   that component's folder** (`template.html` / `logic.ts` / `styles.css`) — the optimistic-UI
+   and `data-note` rules above apply; an island fix needs a `logic.ts`, a styling fix goes in
+   the scoped `styles.css`.
+3. **Verify in the ISOLATE UI — not prod.** Open the component in the workbench (`:8001`) at the
+   entry's `isolateUrl` and confirm the fix *there*: look at the case(s) the note was about and
+   run the component's `isolate/` cases. Proving a component fix standalone is the whole point —
+   don't verify by hunting the full app. (No `isolate/` folder yet? Add one first — see
+   `breakdown/references/isolate-format.md` — so the fix has a case to prove it.)
+4. **Clear.** Delete that entry from `build-notes.json` once it's verified in isolation.
+   An `unresolved:<selector>` entry means the click didn't map to a component — locate it by
+   selector and fix the owner.
+5. **Back to prod.** `sprig dev` HMR has already pushed your edits into the full app at `:8000/ui`,
+   so it now shows the updated UI. Tell the user to review it and ⌘/Ctrl+click the next round.
+   **Repeat from step 1** until they leave no new notes.
+
 ## Decision matrix
 
 | Task                                                                       | Read                                           |
@@ -298,6 +390,7 @@ intent, keyed by CSS selector; see `sprig:prototype`. Inline `data-note` lives o
 | Routes & data loading                                                      | `references/routing.md`                        |
 | Persisted state                                                            | `references/component-model.md` (StateService) |
 | Serve / mount the UI / Danet host                                          | `references/serving.md`                        |
+| Design tokens / theming (`src/css-variables.json`)                         | this file (Design tokens)                      |
 | Preview / test a component alone                                           | `references/isolate.md`                        |
 
 ## Top gotchas
@@ -314,6 +407,10 @@ intent, keyed by CSS selector; see `sprig:prototype`. Inline `data-note` lives o
   no functions or class instances as inputs; methods live inside the component.
 - **Set a `static key` on a `StateService`** — class names are minified in production, so
   the default `constructor.name` key isn't stable across builds.
+- **Design tokens go in `src/css-variables.json`, variables only.** `--*` / `color-scheme`
+  keys only (the build rejects anything else); they compile to a global `@theme`/`:root`/
+  `[data-theme]` that crosses view-encapsulation. Resets come from Tailwind Preflight;
+  non-token base CSS stays in the shell's `styles.css` as `:global(...)`.
 - **Run it in a browser, and run the production build.** `sprig dev` passing ≠ production
   working: `deno task build` → `deno task start` → hit a real URL.
 - **`sprig` feels stale after an update?** The global install pins a version in a lockfile;
