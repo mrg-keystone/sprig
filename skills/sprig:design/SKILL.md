@@ -111,7 +111,8 @@ theme with a missing variable or a removed class.
 
 ## Output location & naming
 
-Write the artifact to **`spec/ui/design-system/`** (relative to the project root; create `spec/ui/`
+Write the artifact to **`spec/ui/design-system/`** (relative to the **git root** — the dir
+containing `.git`, falling back to the project dir outside a git repo; create `spec/ui/`
 if it doesn't exist) — the shared home for every UI-pipeline artifact (`spec/ui/design-system/`,
 `spec/ui/<app>-prototype.html`, `spec/ui/breakdown/`), so the downstream skills find it at one
 known path. Use a generic theme name (`brand` / `brand-dark`) inside `theme.css` so the artifact

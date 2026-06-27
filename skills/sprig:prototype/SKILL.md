@@ -76,8 +76,8 @@ flow is genuinely unknowable.
 ### Build the one file
 
 Produce exactly one `.html` file. Write it with the Write tool to
-**`spec/ui/<app>-prototype.html`** (relative to the project root; create `spec/ui/` if it
-doesn't exist) — the shared UI-pipeline home alongside `spec/ui/design-system/` and
+**`spec/ui/<app>-prototype.html`** (relative to the **git root** — the dir containing `.git`,
+falling back to the project dir outside a git repo; create `spec/ui/` if it doesn't exist) — the shared UI-pipeline home alongside `spec/ui/design-system/` and
 `spec/ui/breakdown/`, so `breakdown` finds it at one known path. Its `.feedback.json` and
 screenshot siblings land in `spec/ui/` too.
 

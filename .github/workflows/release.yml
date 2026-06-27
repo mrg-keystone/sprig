@@ -48,10 +48,23 @@ jobs:
           cp serve.ts bundle/serve.ts
           cp serve-dev.ts bundle/serve-dev.ts
           cp deno.json bundle/deno.json
+          # Stamp version + publish time into a sidecar inside the bundle so `sprig -v` can report
+          # WHEN the installed version shipped — read locally, offline, authoritative for the exact
+          # version on disk (the rolling runtime-latest GitHub timestamp can't say that). A sidecar,
+          # NOT a deno.json key, because the launcher passes --config deno.json on every command and
+          # an unknown key there could print a warning each run.
+          published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          jq -n \
+            --arg v "${{ steps.ver.outputs.version }}" \
+            --arg ts "$published_at" \
+            --arg sha "${{ steps.ver.outputs.sha }}" \
+            '{version:$v, publishedAt:$ts, commit:$sha}' > bundle/framework/.sprig/build-info.json
+          echo "Stamped build-info.json: version=${{ steps.ver.outputs.version }} publishedAt=$published_at"
           tar -czf sprig-runtime.tar.gz -C bundle .
-          echo "Bundle sanity (grammar.wasm + deno.json + serve.ts + app/ + server/, NOT node_modules):"
-          tar -tzf sprig-runtime.tar.gz | grep -E 'grammar\.wasm|^\./deno\.json$|^\./serve\.ts$|^\./app/src/|^\./server/src/' | head
+          echo "Bundle sanity (grammar.wasm + deno.json + serve.ts + app/ + server/ + build-info, NOT node_modules):"
+          tar -tzf sprig-runtime.tar.gz | grep -E 'grammar\.wasm|^\./deno\.json$|^\./serve\.ts$|^\./app/src/|^\./server/src/|build-info\.json' | head
           if tar -tzf sprig-runtime.tar.gz | grep -q node_modules; then echo "ERROR: node_modules in bundle" >&2; exit 1; fi
+          if ! tar -tzf sprig-runtime.tar.gz | grep -q 'framework/\.sprig/build-info\.json'; then echo "ERROR: build-info.json missing from bundle" >&2; exit 1; fi
       - name: Refresh the runtime-latest release with the bundle
         env:
           GH_TOKEN: ${{ github.token }}

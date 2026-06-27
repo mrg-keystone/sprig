@@ -20,7 +20,8 @@ Strictly **linear** — each stage consumes **only** its immediate predecessor's
 | [`ui-breakdown`](ui-breakdown.md) | breakdown | build | `spec/ui/breakdown/` — the build spec |
 | [`sprig-app`](sprig-app.md) | build | audit | a running sprig app |
 
-The first three artifacts share one home — **`spec/ui/`** at the project root — so each stage
+The first three artifacts share one home — **`spec/ui/`** at the **git root** (the dir
+containing `.git`; falls back to the project dir outside a git repo) — so each stage
 finds its input at a known path (`design-system/`, `<app>-prototype.html`, `breakdown/`). The
 `build` stage reads `spec/ui/breakdown/` and emits the app; `audit` exercises the running app.
 

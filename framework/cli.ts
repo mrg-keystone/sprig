@@ -11,18 +11,39 @@
  *
  * The framework runtime lives next to this file at ./.sprig (core + compiler).
  */
-import { basename, dirname, fromFileUrl, join, resolve, toFileUrl } from "@std/path";
+import { basename, dirname, join, resolve, toFileUrl } from "@std/path";
 // static relative imports of the package's own modules (computed-path dynamic imports
 // are unanalyzable + don't resolve once this is published to JSR).
 import { buildClient } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
 import { sprigUi } from "../packages/keep/mod.ts";
-import { assertWorkbench, installRuntimeFromDeployment, installRuntimeFromWorkingTree, latestRuntimeVersion } from "./.sprig/install.ts";
-import { makeAnnotate, makePrototypeAnnotate } from "./.sprig/annotate.ts";
+import { assertWorkbench, installRuntimeFromDeployment, installRuntimeFromWorkingTree, latestRuntimeRelease } from "./.sprig/install.ts";
+import { specRootOf } from "./.sprig/spec-root.ts";
+// NOTE: `./.sprig/annotate.ts` is imported LAZILY (a dynamic `import(...)` inside the `dev`
+// handlers), never statically — so `build` / `--help` / `isolate` don't pull the annotate overlay
+// machinery onto their load path, and a future top-level hazard in it can't poison every command.
 
 // the published-package version range a scaffolded app pins (core + its /keep + /cli
 // sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
-const SPRIG_RANGE = "^0.2.0";
+const SPRIG_RANGE = "^0.12.0";
+
+/** This CLI's on-disk install root — the dir holding `framework/` (a repo checkout or `~/.sprig`).
+ *  `import.meta.dirname` is `<install>/framework` for a `file://` module and `undefined` for a
+ *  remote (`jsr:`/`https:`) one — it NEVER throws, unlike `fromFileUrl(import.meta.url)`. The
+ *  compiler/install machinery needs files on disk, so a remote module URL means "running straight
+ *  from jsr: with nothing set up yet": exit with a clear, actionable message instead of a cryptic
+ *  `URL must be a file URL` deep in the call stack. */
+function installRoot(): string {
+  const fwDir = import.meta.dirname;
+  if (!fwDir) {
+    console.error(
+      "sprig: this command needs the on-disk runtime — it can't run straight from jsr:.\n" +
+        "  Run `sprig install` (or `sprig update`) to set up ~/.sprig, then re-run `sprig`.",
+    );
+    Deno.exit(1);
+  }
+  return join(fwDir, "..");
+}
 
 async function fileExists(p: string): Promise<boolean> {
   try {
@@ -132,7 +153,7 @@ async function pinLocalSprig(appDir: string): Promise<{ active: boolean; restore
     return inactive;
   }
   if (!cfg.imports) return inactive;
-  const installDir = join(dirname(fromFileUrl(import.meta.url)), "..");
+  const installDir = installRoot();
   const locals: Record<string, string> = {
     "@sprig/core": join(installDir, "framework", ".sprig", "core.ts"),
     "@sprig/keep": join(installDir, "packages", "keep", "mod.ts"),
@@ -175,7 +196,7 @@ async function withMergedConfig(appDir: string): Promise<void> {
   if (!import.meta.url.startsWith("file:")) return; // only a local install runs the compiler
   const appAbs = resolve(appDir);
   const appCfgPath = join(appAbs, "deno.json");
-  const installDir = join(dirname(fromFileUrl(import.meta.url)), ".."); // framework/ → install root
+  const installDir = installRoot(); // framework/ → install root (file:// guaranteed by the guard above)
   const rtCfgPath = join(installDir, "deno.json");
   if (!(await fileExists(appCfgPath)) || !(await fileExists(rtCfgPath))) return;
   await healLocalSprig(appDir); // recover the app's deno.json if a prior `sprig dev` was killed
@@ -213,7 +234,9 @@ async function withMergedConfig(appDir: string): Promise<void> {
   }
   try {
     const { code } = await new Deno.Command(Deno.execPath(), {
-      args: ["run", "-A", "--config", mergedPath, fromFileUrl(import.meta.url), ...Deno.args],
+      // import.meta.filename is the file:// path of THIS module — defined here because the early
+      // `!import.meta.url.startsWith("file:")` guard already returned for a remote module.
+      args: ["run", "-A", "--config", mergedPath, import.meta.filename!, ...Deno.args],
       env: { ...Deno.env.toObject(), SPRIG_MERGED: "1" },
       stdin: "inherit",
       stdout: "inherit",
@@ -306,6 +329,7 @@ async function devAnnotateHtml(htmlPath: string, open = true): Promise<void> {
     );
     Deno.exit(1);
   }
+  const { makePrototypeAnnotate } = await import("./.sprig/annotate.ts");
   const proto = makePrototypeAnnotate({ htmlPath: abs });
   const pageURL = `http://localhost:${want}/${here}`;
   console.log(`sprig dev --annotate (prototype) → ${pageURL}`);
@@ -382,7 +406,7 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   // Always-on annotate: fold the component-keyed click-to-edit overlay INTO the dev server, and
   // bring up the isolate workbench alongside on a second port (one command, both surfaces). They
   // die together on Ctrl-C.
-  const root = join(dirname(fromFileUrl(import.meta.url)), "..");
+  const root = installRoot();
   const appAbs = resolve(appDir);
   const isoPort = freePort(port + 1);
   const isoBase = `http://localhost:${isoPort}`;
@@ -396,7 +420,12 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   } catch (e) {
     console.error(`sprig: isolate workbench unavailable (${e instanceof Error ? e.message : e}) — annotate overlay still running.`);
   }
-  const annotate = await makeAnnotate({ appDir: appAbs, srcDir: join(appAbs, "src"), isolateBase: isoBase });
+  // `spec/ui` is the SHARED contract — anchor it on the git root (sibling of `.git`) so a
+  // monorepo's frontend writes to <gitRoot>/spec/ui, not <gitRoot>/frontend/spec/ui. Falls back
+  // to appAbs outside a git repo. `srcDir` stays per-app (component discovery is NOT a spec concern).
+  const specRoot = specRootOf(appAbs);
+  const { makeAnnotate } = await import("./.sprig/annotate.ts");
+  const annotate = await makeAnnotate({ specRoot, srcDir: join(appAbs, "src"), isolateBase: isoBase });
   const onSig = () => {
     try {
       wb?.kill("SIGTERM");
@@ -467,40 +496,44 @@ async function init(dir = "."): Promise<void> {
     "$.services/": "./src/services/",
     "@sprig/core": "jsr:@sprig/core@${SPRIG_RANGE}",
     "@sprig/keep": "jsr:@sprig/core@${SPRIG_RANGE}/keep",
-    "@danet/core": "jsr:@danet/core@^2",
+    "@mrg-keystone/rune": "jsr:@mrg-keystone/rune@^1",
+    "reflect-metadata": "npm:reflect-metadata@0.1.13",
     "@std/path": "jsr:@std/path@^1",
     "@std/assert": "jsr:@std/assert@^1"
   },
   "tasks": {
     "dev": "sprig dev .",
     "build": "sprig build .",
-    "start": "sprig serve bootstrap/mod.ts"
+    "start": "deno serve -A --unstable-kv serve.ts"
   }
 }
 `,
 
-    "bootstrap/mod.ts": [
-      `// Your host backend is Danet (jsr:@danet/core). The sprig UI mounts as MIDDLEWARE`,
-      `// at /ui via app.use(ui): /ui/** → sprig (assets + SSR), everything else → your`,
-      `// Danet controllers. Build first (\`deno task build\`), then \`deno task start\`.`,
-      `import { DanetApplication, Module } from "@danet/core";`,
-      `import { sprigUi } from "@sprig/keep";`,
+    "serve.ts": [
+      `// Single-origin composition root: serveSprig folds the keep backend + the sprig UI`,
+      `// into ONE { fetch } that \`deno serve\` drives — no Deno.serve()/app.listen() of your`,
+      `// own:  deno serve -A --unstable-kv serve.ts`,
+      `//   /api/* + /docs*  → the keep backend (token-gated; the channel browser islands use).`,
+      `//   everything else  → the SSR app, with keep's in-process client bound to the Backend`,
+      `//                      DI token — pages read data via inject(Backend), no TCP, no token.`,
+      `import { serveSprig } from "@sprig/keep";`,
+      `import { api } from "./bootstrap/mod.ts";`,
       `import { sprigApp } from "$";`,
       ``,
-      `// Your Danet app — add @Controller()s / providers here; they own every route but /ui.`,
-      `@Module({})`,
-      `class AppModule {}`,
+      `export default serveSprig({ keep: api, app: sprigApp, base: "/ui" });`,
       ``,
-      `const ui = sprigUi({ app: sprigApp, base: "/ui" });`,
+    ].join("\n"),
+
+    "bootstrap/mod.ts": [
+      `// Your keep backend (jsr:@mrg-keystone/rune). serve.ts mounts it through serveSprig:`,
+      `// the in-process client is bound to the Backend DI token for SSR, and the network`,
+      `// handler serves /api/* (token-gated) + /docs. It is imported, never listened on —`,
+      `// \`deno serve serve.ts\` owns the socket. Add endpoints by generating rune modules`,
+      `// (or hand-writing Danet controllers) and listing them in the array below.`,
+      `import "reflect-metadata";`,
+      `import { bootstrapServer } from "@mrg-keystone/rune";`,
       ``,
-      `const app = new DanetApplication();`,
-      `app.use(async (ctx, next) => {`,
-      `  const res = await ui(ctx.req.raw); // the raw Request`,
-      `  if (res) return res; //              /ui → sprig`,
-      `  await next(); //                     else → Danet`,
-      `});`,
-      `await app.init(AppModule);`,
-      `await app.listen(Number(Deno.env.get("PORT") ?? 3000));`,
+      `export const api = await bootstrapServer("${name}", [], {});`,
       ``,
     ].join("\n"),
 
@@ -531,15 +564,16 @@ async function init(dir = "."): Promise<void> {
       ``,
     ].join("\n"),
 
-    "bootstrap/template.html": [
-      `<!-- Root layout. The matched page renders into the outlet. -->`,
+    "src/shell/template.html": [
+      `<!-- App shell — the folder MUST be named \`shell\`; the renderer discovers it by name`,
+      `     under src/ and renders the matched page into the outlet. -->`,
       `<div class="app-root">`,
       `  <router-outlet></router-outlet>`,
       `</div>`,
       ``,
     ].join("\n"),
 
-    "bootstrap/styles.css": [
+    "src/shell/styles.css": [
       `:global(body) {`,
       `  margin: 0;`,
       `  font-family: ui-sans-serif, system-ui, sans-serif;`,
@@ -610,7 +644,10 @@ async function init(dir = "."): Promise<void> {
   // the `$.shared-components/` alias points here — create it (empty) so the dir exists.
   await Deno.mkdir(join(appAbs, "src", "shared-components"), { recursive: true });
   console.log(
-    `Scaffolded a sprig app at ${appAbs}\n\n  cd ${dir}\n  deno task dev      # → http://localhost:8000/ui\n`,
+    `Scaffolded a sprig app at ${appAbs}\n\n` +
+      `  cd ${dir}\n` +
+      `  deno task dev                       # sprig HMR dev → http://localhost:8000/ui\n` +
+      `  deno task build && deno task start  # production: serveSprig on the keep backend (UI /ui, API /api, docs /docs)\n`,
   );
 }
 
@@ -625,7 +662,7 @@ async function init(dir = "."): Promise<void> {
  *  `sprig isolate` (which awaits it) and `sprig dev --annotate` (which runs it alongside the dev
  *  server). The same flow that powers the live workbench; we just point it at `appAbs`. */
 function spawnWorkbench(appAbs: string, port: number, open: boolean): Deno.ChildProcess {
-  const root = join(dirname(fromFileUrl(import.meta.url)), "..");
+  const root = installRoot();
   return new Deno.Command(Deno.execPath(), {
     args: [
       "run", "-A", "--config", join(root, "deno.json"), join(root, "cli", "main.ts"),
@@ -641,23 +678,57 @@ function spawnWorkbench(appAbs: string, port: number, open: boolean): Deno.Child
 
 async function isolate(appDir = ".", open = true): Promise<void> {
   // the dir that holds framework/ — a repo checkout or ~/.sprig (both carry the workbench).
-  const root = join(dirname(fromFileUrl(import.meta.url)), "..");
+  const root = installRoot();
   await assertWorkbench(root); // clear "run `sprig update`" error if an old slim install lacks it
   const port = freePort(Number(Deno.env.get("PORT") ?? 8000));
   const { code } = await spawnWorkbench(resolve(appDir), port, open).status;
   Deno.exit(code);
 }
 
-/** Read this install's own version from its package deno.json (`..` from framework/cli.ts —
- *  the install root, both in a checkout and in ~/.sprig). Returns "?" if it can't be read. */
-async function localVersion(): Promise<string> {
+/** Read this install's own version (from the package deno.json) and publish time (from the
+ *  runtime bundle's `framework/.sprig/build-info.json` stamp). `..` from framework/cli.ts is the
+ *  install root, both in a checkout and in ~/.sprig. `publishedAt` is null on a dev/checkout
+ *  install (no bundle stamp) or an older runtime that predates the stamp. `version` is "?" if it
+ *  can't be read. The local stamp is authoritative for "when was THE version I'm running shipped"
+ *  — unlike the rolling `runtime-latest` GitHub timestamp, which only matches when up to date. */
+async function localMeta(): Promise<{ version: string; publishedAt: string | null }> {
+  // `sprig -v` can legitimately run straight from `jsr:` (before `sprig install` sets up ~/.sprig),
+  // where there's no on-disk bundle — `import.meta.dirname` is `undefined` then (never throws), so
+  // report an unknown version rather than crashing.
+  const fwDir = import.meta.dirname; // <install root>/framework, or undefined when loaded remotely
+  if (!fwDir) return { version: "?", publishedAt: null };
+  let version = "?";
   try {
-    const cfgPath = join(dirname(fromFileUrl(import.meta.url)), "..", "deno.json");
-    const cfg = JSON.parse(await Deno.readTextFile(cfgPath));
-    return typeof cfg.version === "string" ? cfg.version : "?";
-  } catch {
-    return "?";
-  }
+    const cfg = JSON.parse(await Deno.readTextFile(join(fwDir, "..", "deno.json")));
+    if (typeof cfg.version === "string") version = cfg.version;
+  } catch { /* unreadable → "?" */ }
+  let publishedAt: string | null = null;
+  try {
+    const info = JSON.parse(await Deno.readTextFile(join(fwDir, ".sprig", "build-info.json")));
+    if (typeof info.publishedAt === "string") publishedAt = info.publishedAt;
+  } catch { /* dev install / pre-stamp runtime → no sidecar */ }
+  return { version, publishedAt };
+}
+
+/** Format an ISO-8601 instant in US Eastern time as a compact `YYYY-MM-DD HH:MM EST` — the zone
+ *  abbrev auto-resolves to EST (winter) or EDT (summer) by date. Echoes the raw string if it
+ *  doesn't parse. The publish time is STORED in UTC (`build-info.json`) and converted here only
+ *  for display. */
+function fmtPublished(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "short",
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")} ${get("timeZoneName")}`;
 }
 
 /** Compare two semver-ish `a.b.c` strings. Returns >0 if `a` is newer than `b`. */
@@ -671,17 +742,25 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** `sprig -v` / `--version`: print this install's version, then check the GitHub runtime
- *  release (the SAME source `sprig update` installs from) and, if a newer release exists,
- *  print a colored upgrade notice with the `sprig update` hint. */
+/** `sprig -v` / `--version`: print this install's version AND when that version was published,
+ *  then check the GitHub runtime release (the SAME source `sprig update` installs from) and, if a
+ *  newer release exists, print a colored upgrade notice with the `sprig update` hint.
+ *
+ *  Publish time is taken from the LOCAL bundle stamp (exact for the running version, works
+ *  offline). When that's absent (dev/checkout install, or a runtime older than the stamp), fall
+ *  back to the GitHub release's publish time — but ONLY when local === latest, since the rolling
+ *  `runtime-latest` timestamp otherwise belongs to a different version than the one installed. */
 async function version(): Promise<void> {
-  const local = await localVersion();
-  console.log(`sprig ${local}`);
-  const latest = await latestRuntimeVersion();
-  if (latest && local !== "?" && compareVersions(latest, local) > 0) {
+  const { version: local, publishedAt: localPub } = await localMeta();
+  const rel = await latestRuntimeRelease();
+  const published = localPub ??
+    (rel && rel.version === local ? rel.publishedAt : null);
+  const when = published ? `  (published ${fmtPublished(published)})` : "";
+  console.log(`sprig ${local}${when}`);
+  if (rel?.version && local !== "?" && compareVersions(rel.version, local) > 0) {
     const G = "\x1b[32m", B = "\x1b[1m", C = "\x1b[36m", R = "\x1b[0m";
     console.log(
-      `\n${G}${B}A new version of sprig is available: ${local} → ${latest}${R}\n` +
+      `\n${G}${B}A new version of sprig is available: ${local} → ${rel.version}${R}\n` +
         `${G}Run ${C}sprig update${G} to upgrade.${R}`,
     );
   }
@@ -700,7 +779,7 @@ async function update(): Promise<void> {
  *  deployment. Both install the Claude Code skills into ${CLAUDE_SKILLS_DIR:-~/.claude/skills}. */
 async function install(dev: boolean): Promise<void> {
   if (dev) {
-    const repoRoot = join(dirname(fromFileUrl(import.meta.url)), ".."); // framework/ -> repo root
+    const repoRoot = installRoot(); // framework/ -> repo root (--dev runs from a file:// checkout)
     await installRuntimeFromWorkingTree(repoRoot);
   } else {
     await installRuntimeFromDeployment();

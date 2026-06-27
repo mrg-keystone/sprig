@@ -381,7 +381,9 @@ function q(s: string): string {
 }
 
 if (import.meta.main) {
-  const here = dirname(fromFileUrl(import.meta.url));
+  // import.meta.dirname is undefined for a remote module (never throws); this direct-run entry
+  // only makes sense from a working tree, so fall back to the file:// path form when present.
+  const here = import.meta.dirname ?? dirname(fromFileUrl(import.meta.url));
   const srcDir = join(here, "../../src"); // ui/src
   const outDir = join(Deno.cwd(), "static");
   const dev = Deno.args.includes("--dev");

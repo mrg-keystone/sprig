@@ -239,11 +239,13 @@ round out the runtime — see `references/component-model.md`.
 ## Serving the app
 
 `sprig dev` serves the app with HMR (no host file needed). For production, the scaffold's
-`serve.ts` mounts the UI as **middleware** at `/ui` via `sprigUi({ app, base: "/ui" })`,
-which returns a `Response` for anything under `/ui` or `null` to pass through — so it drops
-into any host. The scaffold uses a Danet host (`app.use(ui)`); `serveSprig` is the
-all-in-one alternative. The host owns every other route; sprig owns `/ui`. Details:
-**`references/serving.md`**.
+`serve.ts` is the **single-origin composition root**: `serveSprig({ keep: api, app })` folds
+the keep backend and the sprig UI into ONE `{ fetch }` that **`deno serve serve.ts`** drives
+(no `Deno.serve()`/`app.listen()` of your own). `/api/*`+`/docs*` → the keep backend
+(token-gated); everything else → the SSR app with keep's **in-process client bound to the
+`Backend` DI token** — so pages read data via `inject(Backend)` with no TCP and no token; only
+browser islands use `/api/*`. To mount the UI inside a host you already own, `sprigUi({ app,
+base })` is the pass-through middleware alternative. Details: **`references/serving.md`**.
 
 ## Design tokens (`src/css-variables.json`)
 
@@ -318,7 +320,8 @@ same loop, so you never debug it buried inside a full page.
 
 ## Building from an annotated prototype (`data-note`)
 
-The UI-pipeline inputs live under **`spec/ui/`**: the build spec at `spec/ui/breakdown/`, the
+The UI-pipeline inputs live under **`spec/ui/`** (at the **git root** — the dir containing `.git`,
+falling back to the project dir outside a git repo): the build spec at `spec/ui/breakdown/`, the
 source mock at `spec/ui/<app>-prototype.html` (+ its `.feedback.json` sibling), and the brand at
 `spec/ui/design-system/`. A prototype handed to you may carry **inline annotations** left with
 `sprig dev --annotate <html>` (its "save: inline" mode writes them straight onto the element):

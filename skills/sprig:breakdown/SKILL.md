@@ -35,7 +35,8 @@ source**.
 `spec/ui/*-prototype.html`). If the user points at a different mock (any
 HTML/screenshot/PDF path), use that instead.
 
-**Output** always goes to **`spec/ui/breakdown/`** (relative to the project root;
+**Output** always goes to **`spec/ui/breakdown/`** (relative to the **git root** — the dir
+containing `.git`, falling back to the project dir outside a git repo;
 create `spec/ui/` if it doesn't exist) — the shared UI-pipeline home alongside
 `spec/ui/design-system/` and `spec/ui/<app>-prototype.html`. Derive the output
 path automatically; never ask for it.

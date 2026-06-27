@@ -8,14 +8,14 @@
     "jsr:@cliffy/internal@1.2.1": "1.2.1",
     "jsr:@cliffy/table@1.2.1": "1.2.1",
     "jsr:@cliffy/table@^1.0.0-rc.7": "1.2.1",
-    "jsr:@danet/core@2": "2.11.0",
-    "jsr:@danet/core@^2.5.1": "2.11.0",
+    "jsr:@danet/core@2": "2.11.1",
+    "jsr:@danet/core@^2.5.1": "2.11.1",
     "jsr:@danet/swagger@^2.1.1": "2.3.2",
     "jsr:@danet/validatte@0.7.4": "0.7.4",
     "jsr:@danet/zod@0.0.7": "0.0.7",
     "jsr:@dx/reflect@0.2.14": "0.2.14",
     "jsr:@hono/hono@4.6.3": "4.6.3",
-    "jsr:@mrg-keystone/keep@1": "1.22.0",
+    "jsr:@mrg-keystone/rune@1": "1.22.2",
     "jsr:@std/assert@*": "1.0.19",
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/encoding@^1.0.10": "1.0.10",
@@ -85,8 +85,8 @@
         "jsr:@std/fmt@^1.0.10"
       ]
     },
-    "@danet/core@2.11.0": {
-      "integrity": "667ad239c8b48a7b388aa8cfea99dcc399456e257bce6f02c59cdf9f472b670a",
+    "@danet/core@2.11.1": {
+      "integrity": "bf8d8cf031cbbed8253670cc4b2481803926eee140a5bc5668746d388fcb9e3d",
       "dependencies": [
         "jsr:@danet/validatte",
         "jsr:@dx/reflect",
@@ -124,8 +124,8 @@
     "@hono/hono@4.6.3": {
       "integrity": "a1f5a18cd12a0db54755b0461dd5a4e2d93a6f85403073eb710103eacc42daf3"
     },
-    "@mrg-keystone/keep@1.22.0": {
-      "integrity": "11913c7e74515c0a3da38459847a2f20a5153a549f8543f47a8b0acb8e7e0c1c",
+    "@mrg-keystone/rune@1.22.2": {
+      "integrity": "b4c629affe05dd431c1ff74b035ebc3a5987047f3b1472e449aed36058ad7bf9",
       "dependencies": [
         "jsr:@danet/core@2",
         "jsr:@danet/swagger",
@@ -219,8 +219,8 @@
     "jose@5.10.0": {
       "integrity": "sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg=="
     },
-    "libphonenumber-js@1.13.6": {
-      "integrity": "sha512-NdB6O6QvlGMCoG003m0YIKG2+Xw7DjmCZhmc1RH+K6HncADUbRf8TZeLegxBBN1VFyPHcNpPTKpIhYLXzJVy1Q=="
+    "libphonenumber-js@1.13.7": {
+      "integrity": "sha512-rvr3HIMdOgzhz1RFGjftji+wjoAFlzhqCNqJOU/MKTZQ8d9NZxAR/tI+0weDicyoucqVR0U1GCniqHJ0f8aM2A=="
     },
     "openapi3-ts@4.6.0": {
       "integrity": "sha512-a4sfn6L2sIShhtzJqmjGrARvxAW/3F2BJDdyRVvNF9VhAsZSh5hSyI3a9TNvmzBxXmq66nY5LNT5bQcBxYAZZg==",
@@ -298,7 +298,7 @@
       "server": {
         "dependencies": [
           "jsr:@danet/swagger@^2.1.1",
-          "jsr:@mrg-keystone/keep@1",
+          "jsr:@mrg-keystone/rune@1",
           "jsr:@std/assert@*",
           "jsr:@std/path@*",
           "npm:class-transformer@0.5",

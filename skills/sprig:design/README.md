@@ -14,5 +14,6 @@ ApexCharts, and ends by rendering a showcase to verify.
 - **`references/`** — structure (canonical vs derived), theme authoring, components & charts, consume & verify.
 - **`assets/templates/`** — fill-in starter files for every artifact file.
 
-Output location: **`spec/ui/design-system/`** (relative to the project root). The folder is brand-generic
+Output location: **`spec/ui/design-system/`** (relative to the **git root** — the dir containing
+`.git`, falling back to the project dir outside a git repo). The folder is brand-generic
 (`brand` / `brand-dark`) so it can be lifted out and reused as a standalone design-system skill.

@@ -8,10 +8,17 @@
 //
 // Parity is structural: we resolve markers with the SAME componentScopeId the renderer
 // stamps with — imported, not copied.
-import { basename, dirname, extname, fromFileUrl, join, relative, resolve } from "@std/path";
+import { basename, dirname, extname, join, relative, resolve } from "@std/path";
 import { componentScopeId } from "./compiler/scope.ts";
 
-const HERE = dirname(fromFileUrl(import.meta.url));
+// Resolve the sibling overlay asset RELATIVE TO THIS MODULE'S URL — this works whether sprig runs
+// from a working tree (a `file://` module URL) or straight from `jsr:` (an `https://` one).
+// `new URL(...)` never throws; `fetch` reads both `file://` and `https://`. Do NOT compute a
+// filesystem path here (e.g. `fromFileUrl(import.meta.url)`) — that throws on an `https://` module
+// URL, and because `cli.ts` imports this module, it would kill EVERY command's load (`--help`,
+// `build`, …), not just the annotate path. (See compiler/build.ts:33 for the same hazard noted.)
+const CLIENT_JS_URL = new URL("./annotate-client.js", import.meta.url);
+const readClientJs = async (): Promise<string> => await (await fetch(CLIENT_JS_URL)).text();
 
 /** Decode a `data:image/png;base64,…` URL into raw bytes (shared by both modes' /shot). */
 function decodePngDataUrl(dataUrl: string): Uint8Array | null {
@@ -145,11 +152,13 @@ export interface Annotate {
 }
 
 export async function makeAnnotate(
-  opts: { appDir: string; srcDir: string; isolateBase?: string },
+  // `specRoot` is the git root (sibling of `.git`) — the home of the SHARED `spec/` contract;
+  // `srcDir` stays per-app for component discovery. See spec-root.ts / coordinate.md.
+  opts: { specRoot: string; srcDir: string; isolateBase?: string },
 ): Promise<Annotate> {
   const components = await scanComponents(opts.srcDir, opts.isolateBase ?? "");
-  const notesPath = join(opts.appDir, "spec", "ui", "build-notes.json");
-  const clientJs = await Deno.readTextFile(join(HERE, "annotate-client.js"));
+  const notesPath = join(opts.specRoot, "spec", "ui", "build-notes.json");
+  const clientJs = await readClientJs();
 
   // The client only needs id → {selector, component, kind, isolateUrl} to label + deep-link.
   const lite: Record<string, { selector: string; component: string; kind: string; isolateUrl: string }> = {};
@@ -398,7 +407,7 @@ export function makePrototypeAnnotate(opts: { htmlPath: string }): { fetch(req: 
 
   return {
     async fetch(req: Request): Promise<Response> {
-      if (!clientJs) clientJs = await Deno.readTextFile(join(HERE, "annotate-client.js"));
+      if (!clientJs) clientJs = await readClientJs();
       const url = new URL(req.url);
       const p = url.pathname;
 
