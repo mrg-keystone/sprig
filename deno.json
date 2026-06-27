@@ -58,6 +58,7 @@
       "framework/.sprig/core.ts",
       "framework/.sprig/install.ts",
       "framework/.sprig/skills.ts",
+      "framework/.sprig/spec-root.ts",
       "framework/cli.ts",
       "packages/keep/mod.ts"
     ]
