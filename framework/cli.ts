@@ -693,10 +693,15 @@ async function isolate(appDir = ".", open = true): Promise<void> {
  *  — unlike the rolling `runtime-latest` GitHub timestamp, which only matches when up to date. */
 async function localMeta(): Promise<{ version: string; publishedAt: string | null }> {
   // `sprig -v` can legitimately run straight from `jsr:` (before `sprig install` sets up ~/.sprig),
-  // where there's no on-disk bundle — `import.meta.dirname` is `undefined` then (never throws), so
-  // report an unknown version rather than crashing.
+  // where there's no on-disk bundle — `import.meta.dirname` is `undefined` then (never throws).
+  // The version is embedded in the module URL (https://jsr.io/@scope/name/<version>/…/cli.ts), so
+  // read it from there rather than reporting "?". Publish time isn't in the URL → stays null, and
+  // version() falls back to the GitHub release timestamp when local === latest.
   const fwDir = import.meta.dirname; // <install root>/framework, or undefined when loaded remotely
-  if (!fwDir) return { version: "?", publishedAt: null };
+  if (!fwDir) {
+    const v = import.meta.url.match(/\/@[^/]+\/[^/]+\/(\d+\.\d+\.\d+[^/]*)\//)?.[1];
+    return { version: v ?? "?", publishedAt: null };
+  }
   let version = "?";
   try {
     const cfg = JSON.parse(await Deno.readTextFile(join(fwDir, "..", "deno.json")));
