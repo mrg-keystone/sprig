@@ -43,7 +43,7 @@
       "framework/.sprig/compiler/build.ts",
       "framework/.sprig/compiler/dev.ts",
       "framework/.sprig/compiler/expr.ts",
-      "framework/.sprig/compiler/grammar.wasm",
+      "framework/.sprig/compiler/grammar.bin",
       "framework/.sprig/compiler/hash.ts",
       "framework/.sprig/compiler/hmr.ts",
       "framework/.sprig/compiler/hydrate.ts",

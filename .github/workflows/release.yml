@@ -1,5 +1,5 @@
 # Build the "runtime-latest" GitHub release whose `sprig-runtime.tar.gz` asset is the SOURCE
-# bundle the CLI runs from locally: framework/ (incl. the tree-sitter grammar.wasm) + packages/
+# bundle the CLI runs from locally: framework/ (incl. the tree-sitter grammar.bin) + packages/
 # + skills/ + the isolate workbench (app/ + server/ + cli/ + serve.ts) + the workspace deno.json
 # — but NO node_modules. `sprig install` / `sprig update` (framework/.sprig/install.ts) download
 # it, extract to ~/.sprig, run `deno install` THERE to build every workspace member's
@@ -61,8 +61,8 @@ jobs:
             '{version:$v, publishedAt:$ts, commit:$sha}' > bundle/framework/.sprig/build-info.json
           echo "Stamped build-info.json: version=${{ steps.ver.outputs.version }} publishedAt=$published_at"
           tar -czf sprig-runtime.tar.gz -C bundle .
-          echo "Bundle sanity (grammar.wasm + deno.json + serve.ts + app/ + server/ + build-info, NOT node_modules):"
-          tar -tzf sprig-runtime.tar.gz | grep -E 'grammar\.wasm|^\./deno\.json$|^\./serve\.ts$|^\./app/src/|^\./server/src/|build-info\.json' | head
+          echo "Bundle sanity (grammar.bin + deno.json + serve.ts + app/ + server/ + build-info, NOT node_modules):"
+          tar -tzf sprig-runtime.tar.gz | grep -E 'grammar\.bin|^\./deno\.json$|^\./serve\.ts$|^\./app/src/|^\./server/src/|build-info\.json' | head
           if tar -tzf sprig-runtime.tar.gz | grep -q node_modules; then echo "ERROR: node_modules in bundle" >&2; exit 1; fi
           if ! tar -tzf sprig-runtime.tar.gz | grep -q 'framework/\.sprig/build-info\.json'; then echo "ERROR: build-info.json missing from bundle" >&2; exit 1; fi
       - name: Refresh the runtime-latest release with the bundle
@@ -83,4 +83,4 @@ jobs:
             --title "sprig runtime $VERSION" \
             --notes "version: $VERSION
 
-          Source runtime bundle (framework + packages + skills + grammar.wasm + isolate workbench: app/server/cli/serve.ts) from $SHA. Installed by 'sprig install' / 'sprig update' → ~/.sprig (deno install runs on the machine). Lockstepped with the @sprig/core $VERSION release on JSR."
+          Source runtime bundle (framework + packages + skills + grammar.bin + isolate workbench: app/server/cli/serve.ts) from $SHA. Installed by 'sprig install' / 'sprig update' → ~/.sprig (deno install runs on the machine). Lockstepped with the @sprig/core $VERSION release on JSR."

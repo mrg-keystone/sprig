@@ -40,7 +40,7 @@ framework/
   .sprig/
     core.ts               # signals, DI (Injector/inject), routing, bootstrap().fetch SSR
     compiler/             # the template compiler (parse → render → serialize → hydrate)
-      parse.ts            #   tree-sitter template parsing (loads grammar.wasm)
+      parse.ts            #   tree-sitter template parsing (loads grammar.bin — wasm bytes)
       expr.ts / node.ts   #   expression + pipe interpreter, AST helpers
       render.ts           #   SSR render: bindings, events, escaping, @let scoping
       serialize.ts        #   AST (de)serialization for client hydration
@@ -53,7 +53,7 @@ framework/
       compiler.test.ts    #   framework unit tests
 packages/keep/mod.ts      # @sprig/keep — serveSprig(): the one-origin composition root
 app/                      # the isolate workbench, an example app built ON sprig
-tree-sitter-angular-template/  # grammar source (regenerate grammar.wasm from here)
+tree-sitter-angular-template/  # grammar source → build the wasm, store it as grammar.bin (NOT .wasm: JSR rewrites .wasm imports; see parse.ts)
 ```
 
 > The `cli/`, `server/`, and `skills/` directories are the **isolate** project — a

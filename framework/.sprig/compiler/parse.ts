@@ -14,10 +14,18 @@ let parserPromise: Promise<Parser> | null = null;
 function loadParser(): Promise<Parser> {
   return (parserPromise ??= (async () => {
     await Parser.init();
-    // grammar.wasm sits next to this module. Read it directly when local (file://),
-    // and fetch only when this module is served remotely (https:// — i.e. published on
-    // JSR), so a local run never goes through fetch.
-    const wasmUrl = new URL("./grammar.wasm", import.meta.url);
+    // The tree-sitter grammar wasm sits next to this module. Read it directly when local
+    // (file://), and fetch only when this module is served remotely (https:// — i.e. published
+    // on JSR), so a local run never goes through fetch.
+    //
+    // ⚠️ It is named `grammar.bin`, NOT `grammar.wasm`, ON PURPOSE — do NOT rename it back.
+    // JSR/`deno publish` treats any `.wasm` file as a Wasm ES module and rewrites its single
+    // import module `env` → `./env` (the wasm-ESM ABI) on ingest. web-tree-sitter's
+    // `Language.load(bytes)` instantiates the raw bytes with an `env` import and throws on the
+    // rewritten `./env` form ("Import #0 \"./env\": module is not an object or function"), so a
+    // `.wasm` name ships a grammar that can't load from JSR. A non-`.wasm` name is served as
+    // opaque bytes, byte-identical to the repo. (web-tree-sitter ignores the extension entirely.)
+    const wasmUrl = new URL("./grammar.bin", import.meta.url);
     const bytes = wasmUrl.protocol === "file:"
       ? await Deno.readFile(fromFileUrl(wasmUrl))
       : new Uint8Array(await (await fetch(wasmUrl)).arrayBuffer());
