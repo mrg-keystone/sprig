@@ -776,12 +776,13 @@ async function version(): Promise<void> {
  *  launcher — NOT from any local checkout. */
 async function update(): Promise<void> {
   await installRuntimeFromDeployment();
-  console.log("✓ sprig is up to date (runtime + skills). Run 'sprig --help'.");
+  console.log("✓ sprig is up to date (runtime + skills + agents). Run 'sprig --help'.");
 }
 
 /** First-time install. `--dev` wires the launcher to THIS checkout (for repo devs, e.g.
  *  `deno task install:dev`); otherwise download + set up the runtime at ~/.sprig from the
- *  deployment. Both install the Claude Code skills into ${CLAUDE_SKILLS_DIR:-~/.claude/skills}. */
+ *  deployment. Both install the Claude Code skills into ${CLAUDE_SKILLS_DIR:-~/.claude/skills}
+ *  and agents into ${CLAUDE_AGENTS_DIR:-~/.claude/agents}. */
 async function install(dev: boolean): Promise<void> {
   if (dev) {
     const repoRoot = installRoot(); // framework/ -> repo root (--dev runs from a file:// checkout)
@@ -789,7 +790,7 @@ async function install(dev: boolean): Promise<void> {
   } else {
     await installRuntimeFromDeployment();
   }
-  console.log("✓ sprig installed (runtime + skills). Run 'sprig --help'.");
+  console.log("✓ sprig installed (runtime + skills + agents). Run 'sprig --help'.");
 }
 
 const USAGE = `sprig — the framework CLI
@@ -802,8 +803,8 @@ const USAGE = `sprig — the framework CLI
   sprig build [appDir]           code-split islands + scope CSS + Tailwind → static/ (default: .; never annotate)
   sprig isolate [appDir]         component/page workbench — develop in isolation (default: .)
   sprig serve [entry]            run the app's host entry under its deno.json (default: serve.ts)
-  sprig install [--dev]          install the global sprig CLI + Claude Code skills (--dev: from this checkout)
-  sprig update                   re-install the global sprig CLI + skills from the latest release
+  sprig install [--dev]          install the global sprig CLI + Claude Code skills + agents (--dev: from this checkout)
+  sprig update                   re-install the global sprig CLI + skills + agents from the latest release
   sprig -v, --version            print the installed version + check JSR for a newer release
   sprig help
 `;

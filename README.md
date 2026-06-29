@@ -56,11 +56,16 @@ app/                      # the isolate workbench, an example app built ON sprig
 tree-sitter-angular-template/  # grammar source → build the wasm, store it as grammar.bin (NOT .wasm: JSR rewrites .wasm imports; see parse.ts)
 ```
 
-> The `cli/`, `server/`, and `skills/` directories are the **isolate** project — a
+> The `cli/`, `server/`, and `app/` directories are the **isolate** project — a
 > sprig component testing workbench (`app/` is its UI). It discovers a sprig project's
 > folder-components, generates an isolated preview per case, and serves them under one
 > origin (no Vite, no Fresh): `deno run -A cli/main.ts dev -r fixtures/sprig-app`. See
 > [`docs/guide.md`](docs/guide.md) for the full framework guide.
+>
+> The `claude/` directory holds the Claude Code assets sprig deploys on `sprig install` /
+> `sprig update`: `claude/skills/` → `~/.claude/skills` (one folder per skill) and
+> `claude/agents/` → `~/.claude/agents` (one `.md` file per subagent). See
+> [`claude/README.md`](claude/README.md).
 
 ## Documentation
 

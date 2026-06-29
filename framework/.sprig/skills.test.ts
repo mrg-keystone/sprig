@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "@std/assert";
 import { dirname, join } from "@std/path";
-import { installSkills } from "./skills.ts";
+import { installAgents, installSkills } from "./skills.ts";
 
 async function exists(p: string): Promise<boolean> {
   try {
@@ -58,6 +58,42 @@ Deno.test("installSkills: base-level whole-folder replace into user scope", asyn
   } finally {
     if (prev === undefined) Deno.env.delete("CLAUDE_SKILLS_DIR");
     else Deno.env.set("CLAUDE_SKILLS_DIR", prev);
+    await Deno.remove(dest, { recursive: true }).catch(() => {});
+    await Deno.remove(src, { recursive: true }).catch(() => {});
+  }
+});
+
+// Acceptance: agents are flat `.md` files installed by base-level replace into a SANDBOX
+// user-scope agents dir. Same merge-by-name as skills: a same-named agent is replaced, an
+// unrelated agent is left untouched, a new agent is created, and a `.gitkeep` dotfile is skipped.
+Deno.test("installAgents: base-level replace of flat .md files into user scope", async () => {
+  const dest = await Deno.makeTempDir({ prefix: "sprig-agents-dest-" });
+  const src = await Deno.makeTempDir({ prefix: "sprig-agents-src-" });
+  const prev = Deno.env.get("CLAUDE_AGENTS_DIR");
+  Deno.env.set("CLAUDE_AGENTS_DIR", dest); // sandbox — never the real ~/.claude/agents
+  try {
+    // --- seed the destination (a prior install) ---
+    await writeFile(join(dest, "hunter.md"), "OLD HUNTER");
+    await writeFile(join(dest, "mine.md"), "untouched");
+
+    // --- the source agents/ to install ---
+    await writeFile(join(src, "hunter.md"), "NEW HUNTER");
+    await writeFile(join(src, "fresh.md"), "a brand new agent");
+    await writeFile(join(src, ".gitkeep"), ""); // dotfile — must be skipped
+
+    await installAgents(src);
+
+    // same-named agent is UPDATED ...
+    assertEquals(await Deno.readTextFile(join(dest, "hunter.md")), "NEW HUNTER");
+    // ... the new agent is INSTALLED ...
+    assertEquals(await Deno.readTextFile(join(dest, "fresh.md")), "a brand new agent");
+    // ... the unrelated existing agent is UNTOUCHED ...
+    assertEquals(await Deno.readTextFile(join(dest, "mine.md")), "untouched");
+    // ... and the dotfile is NOT copied.
+    assertEquals(await exists(join(dest, ".gitkeep")), false);
+  } finally {
+    if (prev === undefined) Deno.env.delete("CLAUDE_AGENTS_DIR");
+    else Deno.env.set("CLAUDE_AGENTS_DIR", prev);
     await Deno.remove(dest, { recursive: true }).catch(() => {});
     await Deno.remove(src, { recursive: true }).catch(() => {});
   }

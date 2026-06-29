@@ -1,9 +1,10 @@
 # Build the "runtime-latest" GitHub release whose `sprig-runtime.tar.gz` asset is the SOURCE
 # bundle the CLI runs from locally: framework/ (incl. the tree-sitter grammar.bin) + packages/
-# + skills/ + the isolate workbench (app/ + server/ + cli/ + serve.ts) + the workspace deno.json
-# — but NO node_modules. `sprig install` / `sprig update` (framework/.sprig/install.ts) download
-# it, extract to ~/.sprig, run `deno install` THERE to build every workspace member's
-# node_modules on the machine, install the skills, and write the `sprig` launcher.
+# + claude/ (skills + agents) + the isolate workbench (app/ + server/ + cli/ + serve.ts) + the
+# workspace deno.json — but NO node_modules. `sprig install` / `sprig update`
+# (framework/.sprig/install.ts) download it, extract to ~/.sprig, run `deno install` THERE to
+# build every workspace member's node_modules on the machine, install the skills + agents, and
+# write the `sprig` launcher.
 #
 # LOCKSTEP WITH JSR: this runs on `workflow_run` AFTER publish.yml succeeds — NOT on `push`.
 # publish.yml computes the next version from JSR, bumps deno.json, publishes to JSR, and commits
@@ -40,11 +41,11 @@ jobs:
         run: |
           set -eu
           rm -rf bundle && mkdir -p bundle
-          # framework + packages + skills, PLUS the isolate workbench (app/server/cli/serve.ts)
-          # so `sprig isolate` runs entirely from ~/.sprig. KEEP the workspace in deno.json so
-          # `deno install` on the machine builds every member's (framework/cli/server/app)
-          # node_modules — the members are present now, so the workspace resolves.
-          cp -R framework packages skills app server cli bundle/
+          # framework + packages + claude/ (skills + agents), PLUS the isolate workbench
+          # (app/server/cli/serve.ts) so `sprig isolate` runs entirely from ~/.sprig. KEEP the
+          # workspace in deno.json so `deno install` on the machine builds every member's
+          # (framework/cli/server/app) node_modules — the members are present now, so it resolves.
+          cp -R framework packages claude app server cli bundle/
           cp serve.ts bundle/serve.ts
           cp serve-dev.ts bundle/serve-dev.ts
           cp deno.json bundle/deno.json
@@ -83,4 +84,4 @@ jobs:
             --title "sprig runtime $VERSION" \
             --notes "version: $VERSION
 
-          Source runtime bundle (framework + packages + skills + grammar.bin + isolate workbench: app/server/cli/serve.ts) from $SHA. Installed by 'sprig install' / 'sprig update' → ~/.sprig (deno install runs on the machine). Lockstepped with the @sprig/core $VERSION release on JSR."
+          Source runtime bundle (framework + packages + claude/ [skills + agents] + grammar.bin + isolate workbench: app/server/cli/serve.ts) from $SHA. Installed by 'sprig install' / 'sprig update' → ~/.sprig (deno install runs on the machine). Lockstepped with the @sprig/core $VERSION release on JSR."

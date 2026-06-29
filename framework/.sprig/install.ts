@@ -8,7 +8,7 @@
 // deps present.
 import { dirname, join } from "@std/path";
 import { copy } from "@std/fs";
-import { installSkills } from "./skills.ts";
+import { installAgents, installSkills } from "./skills.ts";
 
 const REPO = "theTechGoose/sprig";
 const RUNTIME_TAG = "runtime-latest"; // the rolling release tag release.yml maintains
@@ -38,7 +38,7 @@ async function pathExists(p: string): Promise<boolean> {
 
 /** The deployment's source bundle: a `sprig-runtime*.tar.gz` release asset (preferred),
  *  else the default-branch source archive. `strip` is how many leading path components
- *  `tar` drops to surface the bundle root (framework/, packages/, deno.json, skills/). */
+ *  `tar` drops to surface the bundle root (framework/, packages/, deno.json, claude/). */
 async function bundleUrl(): Promise<{ url: string; strip: number }> {
   try {
     const res = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/${RUNTIME_TAG}`, {
@@ -134,7 +134,8 @@ export async function installRuntimeFromDeployment(): Promise<void> {
   console.log(`✓ runtime → ${dest}`);
   console.log("Installing node_modules on this machine (deno install)…");
   await denoInstall(dest);
-  await installSkills(join(dest, "skills"));
+  await installSkills(join(dest, "claude", "skills"));
+  await installAgents(join(dest, "claude", "agents"));
   await installLauncher(dest);
 }
 
@@ -188,7 +189,8 @@ export async function latestRuntimeVersion(): Promise<string | null> {
  *  wasm) and install its skills — for repo devs (`deno task install:dev`). */
 export async function installRuntimeFromWorkingTree(repoRoot: string): Promise<void> {
   await denoInstall(repoRoot);
-  await installSkills(join(repoRoot, "skills"));
+  await installSkills(join(repoRoot, "claude", "skills"));
+  await installAgents(join(repoRoot, "claude", "agents"));
   await installLauncher(repoRoot);
 }
 

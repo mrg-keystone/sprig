@@ -1,15 +1,14 @@
-// Claude Code skill deployment. Installs every skill in a `skills/` dir into the
-// USER-SCOPE skills dir — ${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills} — using
-// BASE-LEVEL (whole-folder) replace: the base unit is the skill NAME (its top-level
-// folder), so a colliding skill is replaced OUTRIGHT (user files added inside that
-// folder do not survive). Skills with other names are left untouched; new names are
-// created. The merge is `skillFolder = { ...skillFolder, ...toInstall }` keyed by
-// folder name.
+// Claude Code asset deployment. Installs the two `claude/` siblings into the
+// USER-SCOPE Claude dirs using BASE-LEVEL (whole-entry) replace keyed by NAME:
+//   claude/skills/ → ${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills} (one FOLDER per skill)
+//   claude/agents/ → ${CLAUDE_AGENTS_DIR:-$HOME/.claude/agents} (one .md FILE per agent)
+// A colliding entry is replaced OUTRIGHT (user files inside it do not survive); entries
+// with other names are left untouched; new names are created. The merge is
+// `dir = { ...dir, ...toInstall }` keyed by entry name — the SAME for skills and agents.
 //
-// Used by `sprig install` (dev: the working-tree skills/) and `sprig update`
-// (installSkillsFromDeployment: the skills/ packaged into the GitHub release, with
-// the default branch as a fallback — so it always lands the LATEST skills regardless
-// of which installed CLI version is doing the update).
+// Used by `sprig install`/`sprig update` (the claude/ packaged into the runtime bundle)
+// and `deno task install:dev` (the working-tree claude/). A destination holding a `.git`
+// checkout is never clobbered, so a dev symlink survives.
 import { basename, join } from "@std/path";
 import { copy } from "@std/fs";
 
@@ -29,9 +28,14 @@ async function pathExists(p: string): Promise<boolean> {
   }
 }
 
-/** Destination = user scope. NEVER a project/checkout path. Honors CLAUDE_SKILLS_DIR. */
+/** Skill destination = user scope. NEVER a project/checkout path. Honors CLAUDE_SKILLS_DIR. */
 export function skillsDest(): string {
   return Deno.env.get("CLAUDE_SKILLS_DIR") ?? join(home(), ".claude", "skills");
+}
+
+/** Agent destination = user scope. NEVER a project/checkout path. Honors CLAUDE_AGENTS_DIR. */
+export function agentsDest(): string {
+  return Deno.env.get("CLAUDE_AGENTS_DIR") ?? join(home(), ".claude", "agents");
 }
 
 /** Skip cleanly when Claude Code is absent (no ~/.claude AND no explicit override) so
@@ -42,8 +46,9 @@ async function claudeAbsent(): Promise<boolean> {
   return !(await pathExists(join(home(), ".claude")));
 }
 
-/** Base-level replace: unlink a symlink first, `rm -rf "$dst"`, then `cp -R "$src" "$dst"`. */
-async function replaceFolder(src: string, dst: string): Promise<void> {
+/** Base-level replace of one entry (file OR folder): unlink a symlink first,
+ *  `rm -rf "$dst"`, then `cp -R "$src" "$dst"`. Used for both skills and agents. */
+async function replaceEntry(src: string, dst: string): Promise<void> {
   try {
     if ((await Deno.lstat(dst)).isSymlink) await Deno.remove(dst);
   } catch { /* dst absent */ }
@@ -69,8 +74,24 @@ export async function installSkill(src: string, destRoot: string): Promise<void>
     console.warn(`sprig: skip '${name}' — ${dst} holds a git checkout (use a dev symlink).`);
     return;
   }
-  await replaceFolder(src, dst);
+  await replaceEntry(src, dst);
   console.log(`Installed the ${name} skill -> ${dst}/`);
+}
+
+/**
+ * Install/update ONE agent by base-level replace. Agents are flat markdown files
+ * (Claude Code discovers `~/.claude/agents/<name>.md`), so there is no `SKILL.md`
+ * manifest to guard on — the `.md` file IS the agent. Never clobbers a dev git checkout.
+ */
+export async function installAgent(src: string, destRoot: string): Promise<void> {
+  const name = basename(src);
+  const dst = join(destRoot, name);
+  if (await pathExists(join(dst, ".git"))) {
+    console.warn(`sprig: skip '${name}' — ${dst} holds a git checkout (use a dev symlink).`);
+    return;
+  }
+  await replaceEntry(src, dst);
+  console.log(`Installed the ${name} agent -> ${dst}`);
 }
 
 /** Install/update EVERY skill under `skillsDir` into the user-scope skills dir. */
@@ -86,8 +107,27 @@ export async function installSkills(skillsDir: string): Promise<void> {
   const dest = skillsDest();
   await Deno.mkdir(dest, { recursive: true });
   for await (const e of Deno.readDir(skillsDir)) {
-    if (!e.isDirectory) continue;
+    if (e.name.startsWith(".")) continue; // skip .gitkeep et al
+    if (!e.isDirectory) continue; // a skill is a folder
     await installSkill(join(skillsDir, e.name), dest);
+  }
+}
+
+/** Install/update EVERY agent under `agentsDir` into the user-scope agents dir. */
+export async function installAgents(agentsDir: string): Promise<void> {
+  if (await claudeAbsent()) {
+    console.log("sprig: ~/.claude not found — skipping Claude Code agents.");
+    return;
+  }
+  if (!(await pathExists(agentsDir))) {
+    console.warn(`sprig: no agents dir at ${agentsDir} — skipping agent install.`);
+    return;
+  }
+  const dest = agentsDest();
+  await Deno.mkdir(dest, { recursive: true });
+  for await (const e of Deno.readDir(agentsDir)) {
+    if (e.name.startsWith(".")) continue; // skip .gitkeep et al
+    await installAgent(join(agentsDir, e.name), dest); // an agent is a flat .md file
   }
 }
 
