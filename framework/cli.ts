@@ -287,6 +287,36 @@ async function readJson(p: string): Promise<Record<string, unknown> | null> {
   }
 }
 
+/** Where to place serve.ts + the workspace. Prefers the nearest `.git` ancestor (a normal
+ *  dev / CI checkout). With NO `.git` anywhere above — e.g. a DEPLOY build unpacked from a
+ *  tarball — it falls back to the convention: the sprig UI package is a literal `./ui`, so its
+ *  parent is the project root. Errors only when there is neither a `.git` ancestor NOR a `./ui`
+ *  to anchor on (never errors just because `.git` is missing). */
+function findProjectRoot(uiAbs: string): string {
+  // 1. nearest `.git` ancestor — a real clone has a `.git` dir, a worktree a `.git` FILE, so
+  //    test for existence, not type (mirrors specRootOf, but it's fine if there is none).
+  let d = uiAbs;
+  while (true) {
+    try {
+      Deno.statSync(join(d, ".git"));
+      return d;
+    } catch { /* no `.git` here — keep walking up */ }
+    const parent = dirname(d);
+    if (parent === d) break; // reached the filesystem root with no `.git`
+    d = parent;
+  }
+  // 2. no `.git` at all (deploy env): the parent of a `./ui` package is the project root.
+  if (basename(uiAbs) === "ui") return dirname(uiAbs);
+  // 3. nothing to anchor on — this is the only case that errors.
+  console.error(
+    `sprig build --rune: cannot locate the project root for\n  ${uiAbs}\n` +
+      `  No .git ancestor, and the sprig UI package is not a ./ui. In an environment without\n` +
+      `  git, place the sprig UI in a ./ui directly under the project root so --rune can put\n` +
+      `  serve.ts + the workspace there.`,
+  );
+  Deno.exit(1);
+}
+
 /** `--rune`: after building the client assets, fold the sibling rune/keep backend and this
  *  sprig UI into ONE deployable composition AT THE GIT ROOT — a generated `serve.ts`
  *  (the serveSprig { fetch } default export) plus a Deno workspace in the root deno.json so
@@ -294,12 +324,12 @@ async function readJson(p: string): Promise<Record<string, unknown> | null> {
  *  UI's resolve.ts reads data with no TCP and no token. Idempotent: safe after every build. */
 async function emitRuneComposition(appDir: string, outDir: string): Promise<void> {
   const uiAbs = resolve(appDir);
-  const gitRoot = specRootOf(uiAbs);
+  const gitRoot = findProjectRoot(uiAbs);
   if (gitRoot === uiAbs) {
     console.error(
-      `sprig build --rune: the app dir IS the git root (${gitRoot}). --rune hoists the\n` +
-        `composition to the git root ABOVE the UI package — run it from the ui/ package of a\n` +
-        `monorepo whose frontend (sprig) and backend (rune/keep) are siblings under one .git.`,
+      `sprig build --rune: ${uiAbs} has no project root ABOVE it (it is its own .git root and is\n` +
+        `not a ./ui under a parent). --rune composes a monorepo whose sprig UI + rune backend are\n` +
+        `siblings — run it from such a repo, or place the sprig UI in a ./ui under the project root.`,
     );
     Deno.exit(1);
   }
