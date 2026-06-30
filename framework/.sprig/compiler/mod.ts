@@ -167,7 +167,12 @@ export async function createRenderer(
   // The ?v= asset cache-bust is the content hash of the built static/ dir, computed on
   // demand — so there is NO separate manifest file beside the build. In dev we recompute
   // each render so a background rebuild's new hash is picked up.
-  const staticDir = join(Deno.cwd(), "static");
+  // PROD serves assets from <cwd>/static. DEV serves them from a temp cache dir (NOT
+  // <cwd>/static), which `sprig dev` exports as SPRIG_ASSETS_DIR — hash THAT so ?v= reflects
+  // the bundle actually served. Without this, a dev render run from a dir whose own `static/`
+  // never changes (e.g. the repo root) yields a frozen ?v=, so a returning browser keeps a
+  // stale cached client.js even after a rebuild.
+  const staticDir = Deno.env.get("SPRIG_ASSETS_DIR") || join(Deno.cwd(), "static");
   const readVersion = async () => {
     try {
       const files: string[] = [];

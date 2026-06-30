@@ -6,306 +6,78 @@ user-invocable: true
 argument-hint: "[app description or change to make] [source: spec, Figma URL, or existing -prototype.html]"
 license: Apache 2.0
 allowed-tools:
+  - Task
   - Read
-  - Write
-  - Bash(node *)
-  - Bash(deno *)
-  - mcp__daisyui-blueprint__daisyUI-Snippets
-  - mcp__daisyui-blueprint__Figma-to-daisyUI
+  - Glob
+  - Grep
+  - Bash
 ---
+
+# prototype — orchestrate a throwaway clickable mock
 
 > **Pipeline stage — prototype.** Consumes `design-system` (`../interfaces/design-system.md`);
 > produces the `prototype` contract (`../interfaces/prototype.md`), consumed by `breakdown`.
 > Full chain: design → prototype → breakdown → build → audit.
 
-Build — or iterate on — a single, self-contained HTML file that demos how an app
-works: the complete clickable look-and-feel, not a production build.
+A **THROWAWAY** prototype answers "what are we building" — read once, then deleted. There is
+**one specialist** that does all the building/iterating:
 
-This is a **THROWAWAY prototype**. Its only job is to answer "what are we
-building." It will be read once and deleted. Optimize for how fast the user can
-change it, not for code quality.
+- **`sprig-prototype-builder`** — create or surgically change the single self-contained
+  `spec/ui/<app>-prototype.html`: CDN-only, hardcoded data, fake in-memory interactions,
+  every screen + the unglamorous states; applies a brand design-system if present and any
+  click-feedback. It owns the whole build procedure.
 
-## Four ways in
+**You are the orchestrator: pick the entry path, delegate the build to the builder, and
+manage the annotate server. You never author or edit the HTML inline.**
 
-Figure out which path you're on — they share the build rules but start differently:
+## Four ways in — route the request
 
-0. **Annotate only** — the args are *just a path to an existing `.html` file* with **no
-   description and no change request**. There's nothing to build or change — the user
-   only wants to mark it up. **Do not** read, edit, or rebuild the file. Skip straight to
-   **launching annotate** on it (see **Output** → `sprig dev --annotate <html>`) and
-   stop. This is the default for a bare-path invocation like `/prototype foo.html`.
-1. **Create** a new prototype from a description, spec, or Figma URL → do **Create**
-   below (find source → build the file → every screen + the unglamorous states).
-2. **Improve** an existing prototype — the user points at a `*-prototype.html` (or
-   any prototype file) and asks to *change / add a screen / fix / restyle / iterate* →
-   do **Improve an existing prototype**.
-3. **Apply click-feedback** — a sibling `<prototype-basename>.feedback.json` sits next
-   to the file (the user marked it up with `sprig dev --annotate <html>`). Those notes are
-   the change list → do **Improve**, starting from **Applying click-feedback**.
+Disambiguate on **whether the prompt carries an instruction**:
 
-The distinction between path 0 and path 2 is **whether the prompt carries an
-instruction**: a bare `.html` path alone → annotate only; a path *plus* a change ("add a
-screen", "fix the nav", "restyle") → improve. If both a spec *and* an existing prototype
-are in play, improve the existing file rather than starting over — the user has already
-invested clicks in it.
+0. **Annotate only** — the args are *just a path to an existing `.html`* with **no
+   description and no change request** (e.g. `/prototype foo.html`). There's nothing to
+   build. **Do NOT invoke the builder** and do not read/edit/rebuild the file — skip
+   straight to **launching annotate** on it (below) and stop.
+1. **Create** — a description, spec, or Figma URL → delegate to **`sprig-prototype-builder`**
+   (Create) with the request, source, output path, and whether `spec/ui/design-system/` exists.
+2. **Improve** — the user points at a `*-prototype.html` *and* asks to change/add/fix/restyle
+   → delegate to **`sprig-prototype-builder`** (Improve) with the file + the change.
+3. **Apply click-feedback** — a sibling `<basename>.feedback.json` exists (and/or inline
+   `data-note`s) → delegate to **`sprig-prototype-builder`** (Improve, feedback-first),
+   telling it the feedback artifacts to apply.
 
-## Create
+If both a spec *and* an existing prototype are in play, improve the existing file (the user
+already invested clicks). The builder owns the how — don't restate its rules here.
 
-### Find the source of truth
+## Output & annotate (you manage the server; the user clicks)
 
-The user gives an app description and optionally a source (`source: <path>`, any
-file they point at, or a Figma URL).
-
-- **If a path is given**, read it and treat it as the source of truth — spec, notes,
-  rough draft, whatever it is. Pull the **screens**, **flows**, and **data shape**
-  from it; the file wins over your assumptions.
-- **If it's a Figma URL**, call the `Figma-to-daisyUI` MCP tool on it. It returns the
-  design's structure (frames, layout, text, colors); follow its workflow — read the
-  structure, pull the matching daisyUI snippets (see **Style with daisyUI**), and
-  recreate the screens as daisyUI markup. Figma is the source of truth for *look*; you
-  still add the flow, fake data, and unglamorous states.
-- **If it's blank**, work from the app description in the prompt.
-
-Spend your reading budget here, not exploring the repo. You are not integrating with
-their codebase — you are dramatizing an idea. Extract the **main flow** (the sequence
-of screens a user moves through), every **screen** and its key UI, and the **data
-shape** (the entities and fields the screens display). If the source is thin, make
-reasonable, concrete choices and move on — don't stop to interview unless the core
-flow is genuinely unknowable.
-
-### Build the one file
-
-Produce exactly one `.html` file. Write it with the Write tool to
-**`spec/ui/<app>-prototype.html`** (relative to the **git root** — the dir containing `.git`,
-falling back to the project dir outside a git repo; create `spec/ui/` if it doesn't exist) — the shared UI-pipeline home alongside `spec/ui/design-system/` and
-`spec/ui/breakdown/`, so `breakdown` finds it at one known path. Its `.feedback.json` and
-screenshot siblings land in `spec/ui/` too.
-
-**Hard rules — non-negotiable:**
-
-- **ONE `.html` file.** No build step, no bundler, no separate CSS/JS files. CDN
-  `<script>` tags are fine (Tailwind, Alpine, React UMD — whatever gets you there
-  fastest). It must open by double-clicking in a browser.
-- **All data hardcoded** as a single object/array at the **top** of the file. No real
-  backend, no `fetch()`, no API calls. **Fake every interaction in memory** — mutate
-  the in-memory data and re-render.
-- **Copy-paste over abstraction.** Don't build reusable components or helpers. This
-  code dies. Repetition is fine and preferred — it's faster to read and change one
-  screen when each screen is spelled out inline.
-- **Not production-grade.** No real error handling, no auth, no accessibility audit,
-  no tests, no responsive perfection. Skip all of it.
-
-**Default look — daisyUI + Lucide.** Not a hard rule, just the fastest way to look
-designed instead of unstyled: a full themeable component library plus a clean icon
-set, zero build, pure CSS/JS (so they compose with vanilla, Alpine, or React UMD).
-Drop these in `<head>` (the single source for these tags):
-
-```html
-<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
-<link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css" />
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
-```
-
-Set the palette with `data-theme` on `<html>` (e.g. `<html data-theme="corporate">`),
-build screens from daisyUI components (`btn`, `card`, `modal`, `navbar`, `table`,
-`badge`, `alert`…) plus Tailwind utilities for layout, and add icons with Lucide. Swap
-the whole stack if a prototype genuinely needs something else.
-
-**Apply the brand design-system if one exists.** Check for **`spec/ui/design-system/`** (this
-skill's pipeline input). If it's there, follow its `consume/prototype.md`: paste
-`theme.cdn.css` inline and set `<html data-theme="brand">` instead of a stock theme — that's
-the brand, zero translation. If there's no design-system folder, fall back to a stock
-`data-theme` (below).
-
-### Style with daisyUI
-
-With the tags above in place, don't write daisyUI's classes from memory — pull the
-real markup from the **`daisyUI-Snippets`** MCP tool. It returns up-to-date class
-lists, syntax, and copy-paste examples, so you don't guess or hallucinate class names.
-
-- **Call it with nested objects, not arrays** — request everything a screen needs in
-  one call:
-
-  ```
-  daisyUI-Snippets({ "components": { "card": true, "modal": true, "navbar": true } })
-  ```
-
-  Top-level keys are categories (`components`, `layouts`, `templates`, `themes`,
-  `component-examples`); set each snippet to `true`. Pull `component-examples` (keyed
-  `<component>.<example>`) when the bare class list isn't enough, and
-  `layouts`/`templates` for whole page shells.
-- **Pick a stock `data-theme` that fits the vibe** and set it once on `<html>`:
-  `corporate`/`winter`/`nord` (clean SaaS), `business`/`dim`/`night` (dark tools),
-  `cupcake`/`pastel` (soft/consumer), `synthwave`/`cyberpunk` (bold). Stock themes are
-  exactly right here *because* this is throwaway — there's no custom-theme build to set
-  up. `themes.css` enables all 35; ask `daisyUI-Snippets` for the `themes` category for
-  the full list.
-- **Use daisyUI's semantic colors** (`primary`, `accent`, `base-100/200/300`,
-  `base-content`, `info`/`success`/`warning`/`error`) rather than raw Tailwind palette
-  colors (`bg-blue-500`) — they retheme together and keep contrast and hierarchy clean
-  for free.
-- **CDN caveat:** the drawer classes `is-drawer-open` / `is-drawer-close` aren't in the
-  CDN build — toggle drawers with a checkbox or a little JS instead.
-
-### Icons (Lucide)
-
-Lucide is loaded by the CDN tag above; it swaps any `<i data-lucide="…">` placeholder
-for an inline SVG when you call `lucide.createIcons()`:
-
-```html
-<i data-lucide="shopping-cart" class="w-5 h-5"></i>
-<script>lucide.createIcons()</script>
-```
-
-- **Call `lucide.createIcons()` after every render, not just on load.** Prototypes
-  mutate data and re-render, and a freshly-injected `<i data-lucide>` stays an empty
-  `<i>` until `createIcons()` runs again — so call it at the end of each render
-  function.
-- **Use the explicit `/dist/umd/lucide.min.js` path** (as in the `<head>`) — the bare
-  `npm/lucide` URL serves a non-browser build that won't define `lucide`.
-- **Size with `w-_ h-_`, color with daisyUI `text-*`.** Lucide strokes with
-  `currentColor`, so `text-primary` / `text-error` theme the icon for free. Icon names
-  are the kebab-case slug (`circle-alert`, `arrow-right`, `trash-2`), browsable at
-  <https://lucide.dev/icons/>.
-
-### Every screen AND the unglamorous states
-
-Make the **entire main flow fully clickable** — every screen and step, wired with fake
-state so the user can walk the whole thing.
-
-Then show the states that usually get skipped, **on purpose** — this is where the real
-requirements hide:
-
-- **Empty state** — a list/screen with no data yet (daisyUI: a muted `card` or `hero`
-  with an icon + call to action).
-- **Loading state** — a fake spinner/skeleton via `setTimeout` (daisyUI: `skeleton`
-  blocks, or `loading loading-spinner`).
-- **Error toast** — a visible failure the user can trigger (daisyUI: `alert
-  alert-error` inside a `toast`).
-- **Overflow** — at least one spot with too-long content (a long title, a huge number,
-  a wall of text) shown overflowing or handled, so the user sees the seam (Tailwind
-  `truncate` / `line-clamp-*`).
-
-Give the prototype a way to reach these — a small floating "demo states" panel,
-buttons, or seeded variants — so they're all reachable by clicking.
-
-## Improve an existing prototype
-
-The file was built to be changed fast — this is that moment. It's one self-contained
-file, so load it whole and work *with* its existing shape rather than rebuilding.
-
-1. **Read the whole file first.** Find the hardcoded data block at the top, the
-   screens, the fake-interaction wiring, and the demo-states panel. Match what's
-   already there — its stack (daisyUI / Lucide / Tailwind / Alpine / React-UMD /
-   vanilla), its `data-theme`, its naming, its structure. If it uses daisyUI, stay in
-   daisyUI and pull any new components from `daisyUI-Snippets`. Don't reformat or "clean
-   up" code you weren't asked to touch; a giant diff on a throwaway file just slows the
-   next change.
-2. **Make the change surgically, keeping the ethos.** Still ONE file, still hardcoded
-   data at the top, still fake-in-memory interactions, still copy-paste over
-   abstraction. Adding one screen is not a reason to refactor into reusable components.
-3. **Keep the flow and the unglamorous states whole.** If you add a screen, wire it
-   into the main flow *and* give it the empty / loading / error / overflow variants,
-   reachable from the demo-states panel. If you change the data shape, update every
-   screen that reads it so nothing silently breaks.
-4. **Write it back to the same file** (same name) unless the user wants a new one —
-   overwriting in place is what preserves their clicks. **If annotate is already
-   running, do NOT relaunch it** — rewriting the file hot-reloads the open view (and a
-   relaunch would just churn). A re-run is harmless (it reuses the running server), but the
-   hot-reload means you usually don't relaunch at all. Re-run the optional gut-check if worth it.
-
-### Applying click-feedback
-
-When a sibling `<prototype-basename>.feedback.json` exists, the user marked up the
-prototype with `sprig dev --annotate <html>` — apply those notes as the change list before
-anything else. It's a JSON object; each value carries the `feedback` plus context to
-locate the target. Two kinds of entry:
-
-- **Element entries** (keyed by a unique CSS selector). The one heuristic that matters:
-  **grep the `text` field first.** Prototypes hardcode their data at the top and render
-  with JS, so the visible text the user clicked is **guaranteed to exist in source** —
-  whereas a positional `selector` / `xpath` points at a runtime-only node and usually is
-  *not* in source. Disambiguate with `label` / `classes` / `tag` / `trail`. If the entry
-  has a **`css`** field, the user edited styles in the live editor — apply those
-  declarations to the element (inline, a class, or the render template, as fits).
-- **Drawing entries** (`kind: "drawing"`). The user sketched on the screen; the **`image`**
-  field names a PNG next to the prototype (the view + their drawing). **Open it**, read
-  the `feedback` note, and make the change it indicates.
-
-Also check for **inline annotations in the prototype HTML itself**: annotate's `inline`
-save writes the note onto the element as **`data-note="…"`** (and **`data-note-css="…"`**).
-`grep -n 'data-note' <prototype>.html` — apply each as a change to that element (`data-note` =
-what to change, `data-note-css` = declarations) and **strip the attributes** afterward. These
-can coexist with a `feedback.json`; handle both.
-
-For each entry: locate the target (static HTML *or* the function that renders it),
-apply the feedback, then re-check the flow and states. When done, **clear the file**
-(write `{}` or delete it, and remove the `*.png` shots) so stale notes aren't re-applied
-next round.
-
-## Optional: visual gut-check (design-lint)
-
-This skill grew out of a visual-design linter, which still ships alongside as
-**design-lint**. For a fast sanity check on the look-and-feel, statically scan the
-file:
-
-```
-node .claude/skills/sprig:prototype/scripts/detect.mjs --json spec/ui/<app>-prototype.html
-```
-
-It flags visual slop (low contrast, flat type hierarchy, etc.). Treat it as a
-**non-blocking gut-check only** — glance at it, fix anything embarrassing in ten
-seconds, and ship. Never run an a11y pass, never add tests, never block delivery on it;
-that would violate the throwaway ethos. Skip it entirely if it isn't obviously worth
-it.
-
-## Output
-
-Output the HTML file (and, if you ran the gut-check, one line on what it flagged). Don't
-explain the code.
-
-Then **make sure annotate is running** so the user can give feedback by pointing at the
-screen — the fastest feedback on something you look at is clicking it, so this is the default
-ending for the **first** create rather than waiting to be asked. On later iterations the
-running server hot-reloads the rewritten file — **don't relaunch it** (a re-run just reuses it):
+After a **Create**, the builder returns the written `spec/ui/<app>-prototype.html` (and one
+line if it ran the gut-check). Then **make sure annotate is running** so the user can give
+feedback by pointing at the screen — the default ending for the first create:
 
 ```
 sprig dev --annotate spec/ui/<app>-prototype.html
 ```
 
-It auto-picks a **stable port hashed from the prototype's name** (same file → same URL, every
-run — never drifts to `:8001`/`:8002`) and **opens it in the browser** on start. (Set `PORT` to
-override; `--no-open` to suppress the browser.) The command is **idempotent**: re-running it
-detects the live server and just **reprints the URL** instead of starting a duplicate — so you
-never need to know the port up front.
+- It auto-picks a **stable port hashed from the file name** (same file → same URL every run)
+  and **opens the browser**. (`PORT` overrides; `--no-open` suppresses.) It is **idempotent**
+  — re-running detects the live server and just **reprints the URL**.
+- **It's a long-lived server: have the user keep it running in their terminal** (they can
+  paste it here with a leading `!`) so it outlives your turns — **don't keep relaunching a
+  background copy** (that's what drops). On **Improve** iterations the running server
+  **hot-reloads** the rewritten file — **don't relaunch**.
+- **Point it at the `spec/ui/*-prototype.html` only — NEVER at an HTML file under
+  `spec/ui/design-system/`** (annotate refuses a `design-system/` path outright).
+- Skip launching only if the user opted out or `deno` isn't available; then just name the command.
 
-`sprig dev --annotate <html>` serves that one file with the click-to-edit overlay (no app
-build, no workbench) and **live-reloads** it — when you rewrite the prototype, the open
-annotate view refreshes itself (its notes persist in `feedback.json`), so the loop is just:
-they click → you edit the file → their tab refreshes. **It's a long-lived server: have the
-user keep it running in their terminal** (paste it here with a leading `!` to run in-session)
-so it outlives your turns — don't keep relaunching a background copy (that's what drops).
-**Point it at the prototype you just wrote — the `spec/ui/*-prototype.html`
-file — and NEVER at an HTML file under `spec/ui/design-system/`.** The design system shares
-`spec/ui/` and ships its own preview specimens (`design-system/preview/showcase.html`, …); those
-are the brand's, not the prototype. (annotate refuses a `design-system/` path outright, so a wrong
-launch fails loudly instead of marking up the wrong file — re-point it at the prototype.)
+Tell the user how to leave feedback: **⌘/Ctrl+click any element** → type a note → save
+(split button **`inline | json`**: *inline* writes `data-note=`/`data-note-css=` onto the
+element; *json* writes the sibling `<prototype>.feedback.json`); **⇧⌘+drag** → draw → save a
+screenshot note; windows drag by their header; **⌘+Ctrl** toggles a clean view. On the next
+run the builder applies either kind (path 3).
 
-Tell the user the URL and how to leave feedback:
+## Hard rule
 
-- **⌘/Ctrl + click any element** → type a note → save. The save button is **split:
-  `inline | json`**. **inline** writes the note onto the element in the source HTML as
-  `data-note="…"` (+ `data-note-css="…"` from the CSS editor); **json** writes the sibling
-  `<prototype>.feedback.json`. Inside the box, **`⌗ tree`** picks any element from the HTML
-  tree and **`{ } css`** is a live CSS editor (**Apply** attaches the declarations to the note).
-- **⇧⌘ + drag** → draw on the page → save a **screenshot note**.
-- Every window is **draggable by its header**; **⌘+Ctrl** toggles a clean view (hides the UI).
-- **Mobile / Chrome device emulation** has no hover, so the highlight previews on a **⌘/Ctrl-press**
-  (and tracks pointer moves) rather than on hover; ⌘/Ctrl+click still adds the note.
-
-Two persistence targets, same intent: **inline** `data-note` attributes live on the element
-(an LLM rebuilding the file sees them in place — `sprig:build` applies + strips them), while
-**json** notes land in `<prototype>.feedback.json` (selector-keyed, works for JS-rendered
-elements). On the next run you apply either (see **Applying click-feedback**). Skip launching
-only if the user opted out or `deno` isn't available; then just name the command.
+The build/iterate work — finding the source, writing the one HTML file, applying feedback,
+the optional design-lint gut-check — is **`sprig-prototype-builder`**'s. The main session
+only routes, launches/announces annotate, and relays the result.

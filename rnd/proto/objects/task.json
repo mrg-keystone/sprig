@@ -1,0 +1,10 @@
+[
+  { "id": "t1", "project": "p1", "title": "Audit current signup funnel",        "status": "done",        "assignee": "u1", "points": 3 },
+  { "id": "t2", "project": "p1", "title": "Design the welcome checklist",        "status": "in_progress", "assignee": "u2", "points": 5 },
+  { "id": "t3", "project": "p1", "title": "Wire empty-state illustrations",      "status": "todo",        "assignee": "u4", "points": 2 },
+  { "id": "t4", "project": "p1", "title": "A/B test the first-run tooltip",      "status": "todo",        "assignee": "u3", "points": 8 },
+
+  { "id": "t5", "project": "p2", "title": "Model the invoice object",            "status": "in_progress", "assignee": "u3", "points": 5 },
+  { "id": "t6", "project": "p2", "title": "Proration edge cases",                "status": "todo",        "assignee": "u4", "points": 13 },
+  { "id": "t7", "project": "p2", "title": "Dunning email copy",                  "status": "todo",        "assignee": "u2", "points": 2 }
+]

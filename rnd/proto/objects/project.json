@@ -1,0 +1,5 @@
+[
+  { "id": "p1", "name": "Onboarding revamp", "icon": "🌱", "owner": "u1" },
+  { "id": "p2", "name": "Billing v2",        "icon": "💳", "owner": "u3" },
+  { "id": "p3", "name": "Mobile beta",       "icon": "📱", "owner": "u2" }
+]

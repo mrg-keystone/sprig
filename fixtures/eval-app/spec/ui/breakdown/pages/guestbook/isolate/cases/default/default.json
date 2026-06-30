@@ -1,0 +1,13 @@
+{
+  "_name": "Normal — 6 seed cards",
+  "signedCount": 53,
+  "loading": false,
+  "messages": [
+    { "id": 1, "name": "Marisol Vega", "avatar": "https://i.pravatar.cc/96?img=47", "message": "So glad I found this little corner of the internet. It feels like a kitchen with the lights on. Thank you for having me.", "minutesAgo": 8 },
+    { "id": 2, "name": "Dev Okafor", "avatar": "https://i.pravatar.cc/96?img=15", "message": "Stopping by from the other side of the world. Sending warmth to whoever reads this next. 🌍", "minutesAgo": 41 },
+    { "id": 3, "name": "Pilar", "avatar": null, "message": "First time signing a guestbook since I was a kid at my grandmother's lake house. Lovely to do it again.", "minutesAgo": 95 },
+    { "id": 4, "name": "The Whitman House", "avatar": null, "message": "We read these out loud at dinner. Keep them coming — they make the table a little brighter.", "minutesAgo": 180 },
+    { "id": 5, "name": "Quinn Adeyemi", "avatar": "https://i.pravatar.cc/96?img=8", "message": "Just passing through. Lovely place. I'll be back.", "minutesAgo": 420 },
+    { "id": 6, "name": "Sam", "avatar": null, "message": "Hello from a rainy Tuesday. This made it a little less grey.", "minutesAgo": 1500 }
+  ]
+}

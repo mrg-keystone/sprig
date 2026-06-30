@@ -1,0 +1,4 @@
+/* SKELETON PLACEHOLDER styles — component work owns the real page chrome/grid. */
+.guestbook { padding: 2rem; max-width: var(--measure, 65ch); margin-inline: auto; }
+.guestbook h1 { font-family: var(--font-display, ui-sans-serif); margin: 0 0 0.5rem; }
+.guestbook p { opacity: 0.7; }

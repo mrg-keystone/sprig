@@ -1,0 +1,6 @@
+[
+  { "id": "u1", "name": "Ada Okonjo",   "initials": "AO", "role": "Lead",     "color": "#6366f1" },
+  { "id": "u2", "name": "Bruno Salas",  "initials": "BS", "role": "Designer", "color": "#ec4899" },
+  { "id": "u3", "name": "Mei Tanaka",   "initials": "MT", "role": "Engineer", "color": "#10b981" },
+  { "id": "u4", "name": "Omar Haddad",  "initials": "OH", "role": "Engineer", "color": "#f59e0b" }
+]

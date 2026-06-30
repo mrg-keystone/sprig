@@ -1,0 +1,10 @@
+{
+  "category": "guestbook",
+  "folder": "message-composer",
+  "background": "#FBF7F0",
+  "controls": {
+    "name": { "type": "text", "value": "", "signal": true },
+    "message": { "type": "text", "value": "", "signal": true },
+    "maxLength": { "type": "number", "value": 240 }
+  }
+}

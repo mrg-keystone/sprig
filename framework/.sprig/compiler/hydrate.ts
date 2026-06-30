@@ -648,7 +648,7 @@ export function patchInnerHtml(el: HTMLElement, html: string): void {
   // deno-lint-ignore no-explicit-any
   const tmpl = (document as any).createElement("template") as HTMLTemplateElement;
   tmpl.innerHTML = html;
-  morphChildren(el, tmpl.content);
+  morphChildren(el, tmpl.content, /* hostLevel */ true);
 }
 
 /** Is `el` a live child-island host — a <sprig-island> carrying a data-sel? Such a host owns
@@ -682,9 +682,58 @@ function sameNode(a: Node, b: Node): boolean {
   return true; // text/comment: reuse and sync value
 }
 
-function morphChildren(parent: Node, source: Node): void {
-  const olds = Array.from(parent.childNodes);
-  const news = Array.from(source.childNodes);
+/** The island host's own hydration bridge: a <script class="sprig-props"> carrying the
+ *  server snapshot. It's the host's FIRST child in the SSR DOM but is never part of the
+ *  body the client re-render emits — so it must be excluded from the host-level morph
+ *  alignment (see morphChildren `hostLevel`). */
+function isPropsBridge(n: Node): boolean {
+  return n.nodeType === 1 && (n as Element).tagName === "SCRIPT" &&
+    ((n as Element).getAttribute("class") ?? "").split(/\s+/).includes("sprig-props");
+}
+/** A whitespace-only text node (insignificant formatting — e.g. the separator the SSR host
+ *  emits between its props-script and the body). Dropped from both sides of the host-level
+ *  alignment so it can't reintroduce a position skew. */
+function isBlankText(n: Node): boolean {
+  return n.nodeType === 3 && !(n.nodeValue ?? "").trim();
+}
+
+/** Morph `parent`'s children to match `source`'s. `hostLevel` is set ONLY for the top-level
+ *  morph of an island host (patchInnerHtml): there the live DOM still carries the host's
+ *  wrapper cruft — its <script class="sprig-props"> bridge plus a whitespace separator —
+ *  that the body-only re-render never re-emits. Left in the alignment, that one/two-node
+ *  prefix skews every position, so the live body element (which holds nested <sprig-island>
+ *  hosts) lands opposite the wrong re-render node and is replaceChild'd away — destroying
+ *  every nested island (bug B3). Excluding the bridge + blank text realigns body-to-body so
+ *  correspondsToIslandHost can protect each nested host. The lingering bridge/whitespace
+ *  nodes stay in the DOM untouched (inert). Recursion into inner elements passes hostLevel
+ *  false — only a host carries the bridge. */
+function morphChildren(parent: Node, source: Node, hostLevel = false): void {
+  let olds = Array.from(parent.childNodes);
+  let news = Array.from(source.childNodes);
+  if (hostLevel) {
+    olds = olds.filter((n) => !isPropsBridge(n) && !isBlankText(n));
+    news = news.filter((n) => !isBlankText(n));
+  }
+  // KEYED island-host pre-pass (bug B3). A live <sprig-island data-sel=X> owns a hydrated
+  // subtree (its effect/listeners/state live below it) and MUST be matched to the re-render's
+  // corresponding node by KEY (its data-sel), never by raw position. Any structural skew
+  // between the SSR body and the body-only client re-render — interleaved whitespace, the
+  // host's props-bridge, an @if-toggled sibling — would otherwise shift the host opposite a
+  // NON-island node, so correspondsToIslandHost (a positional check) misses and the host is
+  // replaceChild'd away, destroying every nested island. So: find each live host's re-render
+  // counterpart by key, pin the host in place (untouched), and drop BOTH from the positional
+  // lists. The remaining (non-island) nodes morph positionally as before — a mispositioned
+  // STATIC node just re-renders, but no hydrated island is ever lost.
+  const liveHosts = olds.filter((o) => islandHostSel(o) != null);
+  if (liveHosts.length) {
+    const consumed = new Set<Node>();
+    for (const host of liveHosts) {
+      const match = news.find((n) => !consumed.has(n) && correspondsToIslandHost(host, n));
+      if (match) consumed.add(match); // host stays as-is; its re-render counterpart is absorbed
+    }
+    olds = olds.filter((o) => islandHostSel(o) == null); // pinned hosts: left in the DOM, untouched
+    news = news.filter((n) => !consumed.has(n));
+  }
   const max = Math.max(olds.length, news.length);
   for (let i = 0; i < max; i++) {
     const o = olds[i];

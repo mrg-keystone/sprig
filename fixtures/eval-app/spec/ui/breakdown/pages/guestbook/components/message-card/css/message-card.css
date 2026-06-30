@@ -1,0 +1,71 @@
+/* ───────────────────────────────────────────────────────────────────────────
+   message-card — EXTRACTED SOURCE CSS (reference ground truth, NOT deliverable)
+   Lifted from the authored inline <style> in hearth-prototype.html.
+
+   The card's box (rounded corners, border, shadow, padding, avatar ring, badge)
+   is rendered entirely with daisyUI v5 + Tailwind-browser v4 utility classes
+   from CDN — that is FRAMEWORK css, not authored, so it is not reproduced here.
+   The authored CSS that actually governs this card is: (1) the brand theme
+   tokens it resolves its colors from, and (2) the `animate-rise` entrance.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── design tokens the card consumes ──────────────────────────────────────── */
+/* LIGHT theme (default; <html data-theme="brand">) */
+[data-theme="brand"] {
+  --color-base-100: #FBF7F0;   /* card background        -> rgb(251,247,240) */
+  --color-base-300: #E6D7C3;   /* card border / avatar ring -> rgb(230,215,195) */
+  --color-base-content: #3B2A1E;
+  --color-secondary: #5E6B47;          --color-secondary-content: #FBF7F0;  /* time badge + 1 initials tint */
+  --color-accent:    #DA9A3E;          --color-accent-content:    #3B2A1E;  /* 1 initials tint */
+  --color-neutral:   #43342A;          --color-neutral-content:   #FBF3E9;  /* 1 initials tint */
+  --radius-box: 1.25rem;   /* card radius -> renders 20px */
+}
+/* DARK theme (<html data-theme="brand-dark">) — same card, dark surfaces */
+[data-theme="brand-dark"] {
+  --color-base-100: #1E1712;   /* card background -> rgb(30,23,18)  */
+  --color-base-300: #3A2E24;   /* card border     -> rgb(58,46,36)  */
+  --color-base-content: #F1E7D9;
+  --color-secondary: #93A179;          --color-secondary-content: #1B1611;
+  --color-accent:    #E8B25E;          --color-accent-content:    #2A1F0E;
+  --color-neutral:   #2C231C;          --color-neutral-content:   #F1E7D9;
+  --radius-box: 1.25rem;
+}
+
+:root {
+  --font-display: 'Caveat', 'Comic Sans MS', system-ui, cursive;   /* name uses body font, NOT display */
+  --font-body:    'Quicksand', system-ui, sans-serif;
+  --ease-bounce:  cubic-bezier(0.34, 1.56, 0.64, 1);   /* overshoot easing used by animate-rise */
+  --dur-base:     320ms;
+}
+
+/* ── the entrance animation (THIS is the card's only authored motion) ─────── */
+@keyframes brand-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+/* applied to <article class="… animate-rise"> only when a card is freshly posted (isNew) */
+.animate-rise {
+  animation: brand-rise var(--dur-base) var(--ease-bounce) both;
+}
+
+/* global reduced-motion guard — collapses the entrance to ~0ms */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── framework utility classes the card markup relies on (daisyUI/Tailwind) ──
+   article: card bg-base-100 border border-base-300 shadow-sm
+   body:    card-body gap-3 p-5
+   row:     flex items-start gap-3
+   avatar (photo):  avatar > div.w-12.rounded-full.ring-1.ring-base-300 > img
+   avatar (initials): avatar avatar-placeholder > div.{tint}.w-12.rounded-full > span.text-base.font-semibold
+   text col: min-w-0 flex-1
+   name/badge row: flex flex-wrap items-baseline gap-x-2 gap-y-0.5
+   name:    span.font-semibold.break-words
+   time:    span.badge.badge-soft.badge-secondary.badge-sm.shrink-0  (+ lucide clock icon)
+   message: p.mt-1.5.text-base-content/85.leading-relaxed.break-words.[overflow-wrap:anywhere]
+   ── overflow safety on the message comes from break-words + [overflow-wrap:anywhere];
+      the name uses break-words and the row uses flex-wrap so a long name wraps too. */

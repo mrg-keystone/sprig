@@ -1,0 +1,48 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
+  "_generated": true,
+  "_source": "theme.css",
+  "_note": "DERIVED from theme.css — the token allow-list below mirrors theme.css. Regenerate on change.",
+  "plugins": ["react"],
+  "rules": {
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a daisyUI semantic class (btn-primary, bg-base-100) or var(--color-*)."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value — use a Tailwind utility or a design-system token (--radius-*, --step-*)."
+      },
+      {
+        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\"]?(?:Caveat|Quicksand))/i]",
+        "message": "Off-system font. Available: Caveat (display, --font-display), Quicksand (body, --font-body)."
+      }
+    ]
+  },
+  "x-ds": {
+    "_comment": "Token catalog for resolving legal var() / class names. Derived from theme.css.",
+    "fontFamilies": ["Caveat", "Quicksand"],
+    "semanticColors": [
+      "base-100", "base-200", "base-300", "base-content",
+      "primary", "primary-content", "secondary", "secondary-content",
+      "accent", "accent-content", "neutral", "neutral-content",
+      "info", "info-content", "success", "success-content",
+      "warning", "warning-content", "error", "error-content"
+    ],
+    "radii": ["--radius-selector", "--radius-field", "--radius-box"],
+    "typeScale": ["--step--2", "--step--1", "--step-0", "--step-1", "--step-2", "--step-3", "--step-4", "--step-5"],
+    "easing": ["--ease-bounce", "--ease-standard"],
+    "shades": ["--color-base-content-30", "--color-base-content-50", "--color-primary-30", "--color-primary-15", "--color-secondary-30", "--color-accent-30"],
+    "prototypeDesignLint": {
+      "_comment": "Anti-patterns prototype's design-lint flags; these are brand-intentional exceptions — do not auto-fix.",
+      "knownBrandExceptions": [
+        "cream-palette — base-100 #FBF7F0 is intentionally a pale, warm cream (the cozy paper surface), not an accidental near-white.",
+        "noise-texture — --noise: 1 (subtle grain) is on purpose, leaning into the hand-made vibe.",
+        "warm-family-clustering — primary (terracotta), accent (honey), and warning (amber) intentionally cluster in the warm family; the earthy 'hearth' palette is the point.",
+        "handwriting-display-font — Caveat (a handwriting script) is used for headings/wordmark only; body + UI text use Quicksand."
+      ]
+    }
+  }
+}

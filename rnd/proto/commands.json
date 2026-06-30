@@ -1,0 +1,25 @@
+{
+  "$doc": "The WRITE half of the seam. Every write the UI performs is a COMMAND — an intent verb, never an in-place record edit. The UI fires `window.commands.run(name, input)`; the host applies it generically by `kind` and appends it to the append-only `events.json`. This file IS the write contract: each entry maps 1:1 to a rune command verb + input DTO, and its `kind` seeds rune:data's immutability strategy (below the waist — the UI never knows or cares which the backend picks).",
+
+  "$kinds": {
+    "create": "append a brand-new object to its type's collection (auto-id) → rune: already-immutable (fresh ids)",
+    "set":    "record a new value for fields of an existing object → rune:data decides append-child vs aggregate vs overwrite-justified, BELOW the contract",
+    "append": "push a child onto a collection field (needs `field`) → rune: append-child (history matters)",
+    "adjust": "atomically move a numeric field by `input.by` (needs `field`) → rune: aggregate (a derived counter)",
+    "remove": "tombstone an object by id → rune: a remove command + retention policy"
+  },
+
+  "task.create": {
+    "type": "task",
+    "kind": "create",
+    "input": { "project": "string", "title": "string", "assignee": "string", "points": "number" },
+    "does": "Add a new task to a project."
+  },
+
+  "task.setStatus": {
+    "type": "task",
+    "kind": "set",
+    "input": { "id": "string", "status": "todo|in_progress|done" },
+    "does": "Move a task to a new status."
+  }
+}

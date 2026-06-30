@@ -1,0 +1,25 @@
+<!-- message-card — one guestbook entry: avatar + name + time-ago badge + message body.
+     Static: a pure projection of one Message. The only authored motion is the CSS-only
+     `animate-rise` entrance, gated by the plain `isNew` prop. No logic.ts → ships zero JS.
+     name fallback + relative-time label are derived here in the template; the avatar
+     branch lives in <guest-avatar>. Self-contained scoped styling (no daisyUI/Tailwind). -->
+@let displayName = (name || '').trim() || 'Anonymous guest';
+@let mins = minutesAgo;
+@let timeLabel = mins < 1 ? 'just now' : (mins < 60 ? (mins + ' min ago') : (mins < 1440 ? (((mins - (mins % 60)) / 60) + (mins < 120 ? ' hour ago' : ' hours ago')) : (mins < 2880 ? 'yesterday' : (((mins - (mins % 1440)) / 1440) + ' days ago'))));
+<article class="card" [class.animate-rise]="isNew">
+  <div class="card-body">
+    <div class="entry">
+      <guest-avatar [name]="name" [avatar]="avatar" [id]="id"></guest-avatar>
+      <div class="entry-text">
+        <div class="entry-head">
+          <span class="entry-name">{{ displayName }}</span>
+          <span class="time-badge">
+            <svg class="time-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            {{ timeLabel }}
+          </span>
+        </div>
+        <p class="entry-message">{{ message }}</p>
+      </div>
+    </div>
+  </div>
+</article>

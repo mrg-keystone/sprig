@@ -1,0 +1,18 @@
+<!-- guest-avatar — shared static avatar primitive. A photo in a ringed circle when
+     `avatar` is set, otherwise a tinted initials placeholder. Tint rotation is
+     [neutral, secondary, accent][id % 3] (AVATAR_TINTS). Initials are the first letters
+     of the first two whitespace-split words, uppercased; a blank name renders "?".
+     No logic.ts → static (ships zero JS); all display is derived here in the template.
+     Self-contained scoped styling (the app ships no daisyUI/Tailwind utilities). -->
+@let nm = (name || '').trim();
+@let parts = nm.split(' ');
+@let ini = nm ? ((parts[0][0] || '') + (parts[1] ? parts[1][0] : '')) : '?';
+@if (avatar) {
+  <div class="avatar avatar-photo">
+    <img class="avatar-img" alt="" [src]="avatar" />
+  </div>
+} @else {
+  <div class="avatar avatar-ph" [attr.data-tint]="id % 3">
+    <span class="avatar-initials">{{ ini.toUpperCase() }}</span>
+  </div>
+}

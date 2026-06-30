@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<!-- Hearth — community guestbook · THROWAWAY clickable prototype.
+     One file, CDN-only, all data hardcoded, every interaction faked in memory. -->
+<html lang="en" data-theme="brand">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hearth — a community guestbook</title>
+
+  <!-- CDN stack (both required: daisyUI = components+colors, tailwind/browser = layout utils) -->
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+
+  <!-- ===== Hearth brand theme (pasted inline from design-system/theme.cdn.css) ===== -->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Quicksand:wght@300;400;500;600;700&display=swap');
+
+    [data-theme="brand"] {
+      color-scheme: light;
+      --color-base-100: #FBF7F0;
+      --color-base-200: #F3EADB;
+      --color-base-300: #E6D7C3;
+      --color-base-content: #3B2A1E;
+      --color-primary: #C2410C;            --color-primary-content: #FFF8F1;
+      --color-secondary: #5E6B47;          --color-secondary-content: #FBF7F0;
+      --color-accent: #DA9A3E;             --color-accent-content: #3B2A1E;
+      --color-neutral: #43342A;            --color-neutral-content: #FBF3E9;
+      --color-info: #3F7E8C;               --color-info-content: #FBF7F0;
+      --color-success: #4E7A2F;            --color-success-content: #FBF7F0;
+      --color-warning: #D97706;            --color-warning-content: #3B2A1E;
+      --color-error: #C0392B;              --color-error-content: #FFF6F4;
+      --radius-selector: 1rem; --radius-field: 0.75rem; --radius-box: 1.25rem;
+      --size-selector: 0.25rem; --size-field: 0.25rem;
+      --border: 1px; --depth: 1; --noise: 1;
+    }
+    [data-theme="brand-dark"] {
+      color-scheme: dark;
+      --color-base-100: #1E1712;
+      --color-base-200: #29201A;
+      --color-base-300: #3A2E24;
+      --color-base-content: #F1E7D9;
+      --color-primary: #EA7A45;            --color-primary-content: #2A1206;
+      --color-secondary: #93A179;          --color-secondary-content: #1B1611;
+      --color-accent: #E8B25E;             --color-accent-content: #2A1F0E;
+      --color-neutral: #2C231C;            --color-neutral-content: #F1E7D9;
+      --color-info: #5FA6B5;               --color-info-content: #0E1B1E;
+      --color-success: #84B85A;            --color-success-content: #14210C;
+      --color-warning: #E8A53E;            --color-warning-content: #2A1E08;
+      --color-error: #E06A5C;              --color-error-content: #2A0E0A;
+      --radius-selector: 1rem; --radius-field: 0.75rem; --radius-box: 1.25rem;
+      --size-selector: 0.25rem; --size-field: 0.25rem;
+      --border: 1px; --depth: 1; --noise: 1;
+    }
+    :root {
+      --font-display: 'Caveat', 'Comic Sans MS', system-ui, cursive;
+      --font-body:    'Quicksand', system-ui, sans-serif;
+      --font-mono:    ui-monospace, 'SF Mono', Menlo, monospace;
+      --step--2: 0.64rem; --step--1: 0.8rem; --step-0: 1rem; --step-1: 1.25rem;
+      --step-2: 1.5625rem; --step-3: 1.9531rem; --step-4: 2.4414rem; --step-5: 3.0518rem;
+      --leading-tight: 1.1; --leading-snug: 1.25; --leading-normal: 1.5; --leading-relaxed: 1.6;
+      --tracking-display: -0.015em; --measure: 65ch;
+      --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+      --ease-standard: cubic-bezier(0.20, 0, 0, 1);
+      --dur-micro: 120ms; --dur-fast: 200ms; --dur-base: 320ms;
+    }
+    body { font-family: var(--font-body); }
+    h1, h2, h3, h4, .font-display {
+      font-family: var(--font-display);
+      letter-spacing: var(--tracking-display);
+      line-height: var(--leading-tight);
+      font-weight: 700;
+    }
+    @keyframes brand-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    .animate-rise { animation: brand-rise var(--dur-base) var(--ease-bounce) both; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+
+<body class="min-h-screen bg-base-100 text-base-content">
+
+  <!-- ================= Header / wordmark ================= -->
+  <header class="border-b border-base-300 bg-base-200/40">
+    <div class="mx-auto max-w-5xl px-4 py-7 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <span class="grid place-items-center size-12 rounded-box bg-primary text-primary-content shadow-sm">
+          <i data-lucide="flame" class="size-7"></i>
+        </span>
+        <div>
+          <h1 class="text-4xl leading-none">Hearth</h1>
+          <p class="text-sm text-base-content/60 -mt-0.5">A community guestbook — pull up a chair.</p>
+        </div>
+      </div>
+      <div class="hidden sm:flex items-center gap-2 text-sm text-base-content/70">
+        <i data-lucide="users-round" class="size-4"></i>
+        <span><span id="signedCount">—</span> have signed</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= Main ================= -->
+  <main class="mx-auto max-w-5xl px-4 py-8 pb-28">
+    <div class="grid gap-8 lg:grid-cols-[360px_1fr]">
+
+      <!-- ---- Composer (sticky on large screens) ---- -->
+      <aside class="lg:sticky lg:top-6 self-start space-y-4">
+        <div class="card bg-base-100 border border-base-300 shadow-sm">
+          <div class="card-body gap-2">
+            <h2 class="card-title text-2xl">Leave a message</h2>
+            <p class="text-sm text-base-content/60 -mt-1">A warm note for whoever wanders in next.</p>
+
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">What's your name?</legend>
+              <label class="input w-full">
+                <i data-lucide="user-round" class="size-4 opacity-60"></i>
+                <input id="nameInput" type="text" placeholder="e.g. Jamie" />
+              </label>
+              <p class="label">Shown next to your message. Leave blank to sign as a guest.</p>
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Your message</legend>
+              <textarea id="msgInput" class="textarea textarea-primary h-28 w-full" placeholder="Leave a warm note…"></textarea>
+              <p class="label">Keep it kind. <span id="charCount" class="ml-auto tabular-nums">0/240</span></p>
+            </fieldset>
+
+            <div class="card-actions mt-1">
+              <button id="postBtn" class="btn btn-primary btn-block">
+                <i data-lucide="feather" class="size-[1.2em]"></i>
+                Sign the guestbook
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- warm social proof -->
+        <div class="flex items-center gap-3 px-1">
+          <div class="avatar-group -space-x-4">
+            <div class="avatar"><div class="w-9"><img alt="" src="https://i.pravatar.cc/96?img=12" /></div></div>
+            <div class="avatar"><div class="w-9"><img alt="" src="https://i.pravatar.cc/96?img=32" /></div></div>
+            <div class="avatar"><div class="w-9"><img alt="" src="https://i.pravatar.cc/96?img=5" /></div></div>
+            <div class="avatar avatar-placeholder">
+              <div class="bg-neutral text-neutral-content w-9"><span class="text-xs">+9</span></div>
+            </div>
+          </div>
+          <p class="text-sm text-base-content/60">and others signed today</p>
+        </div>
+      </aside>
+
+      <!-- ---- The wall ---- -->
+      <section>
+        <div class="flex items-end justify-between mb-4">
+          <h2 class="text-3xl flex items-center gap-2">
+            On the wall
+            <span id="wallCount" class="badge badge-soft badge-accent align-middle">0</span>
+          </h2>
+          <span class="text-sm text-base-content/50 flex items-center gap-1">
+            <i data-lucide="arrow-up" class="size-4"></i> newest first
+          </span>
+        </div>
+
+        <!-- JS renders the wall here -->
+        <div id="wall" class="space-y-4"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ================= Demo-states panel ================= -->
+  <div class="fixed bottom-4 left-4 z-40 w-56 card bg-base-200 border border-base-300 shadow-lg">
+    <div class="card-body p-3 gap-2">
+      <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-base-content/60">
+        <i data-lucide="sliders-horizontal" class="size-3.5"></i> Demo states
+      </div>
+      <div class="grid grid-cols-2 gap-1.5">
+        <button class="btn btn-xs btn-soft btn-secondary js-state" data-state="normal">Normal</button>
+        <button class="btn btn-xs btn-ghost js-state" data-state="empty">Empty</button>
+        <button class="btn btn-xs btn-ghost js-state" data-state="loading">Loading</button>
+        <button class="btn btn-xs btn-ghost js-state" data-state="overflow">Overflow</button>
+      </div>
+      <button id="errToastBtn" class="btn btn-xs btn-soft btn-error">
+        <i data-lucide="triangle-alert" class="size-3.5"></i> Error toast
+      </button>
+    </div>
+  </div>
+
+  <!-- toast container (transient confirmations) -->
+  <div id="toasts" class="toast toast-end z-50"></div>
+
+  <!-- ================= Script — all fake, in-memory ================= -->
+  <script>
+    // ---------- Hardcoded data (the whole "backend") ----------
+    const SEED_MESSAGES = [
+      { id: 1, name: "Marisol Vega",      avatar: "https://i.pravatar.cc/96?img=47", message: "So glad I found this little corner of the internet. It feels like a kitchen with the lights on. Thank you for having me.", minutesAgo: 8 },
+      { id: 2, name: "Dev Okafor",        avatar: "https://i.pravatar.cc/96?img=15", message: "Stopping by from the other side of the world. Sending warmth to whoever reads this next. 🌍", minutesAgo: 41 },
+      { id: 3, name: "Pilar",             avatar: null,                               message: "First time signing a guestbook since I was a kid at my grandmother's lake house. Lovely to do it again.", minutesAgo: 95 },
+      { id: 4, name: "The Whitman House", avatar: null,                               message: "We read these out loud at dinner. Keep them coming — they make the table a little brighter.", minutesAgo: 180 },
+      { id: 5, name: "Quinn Adeyemi",     avatar: "https://i.pravatar.cc/96?img=8",   message: "Just passing through. Lovely place. I'll be back.", minutesAgo: 420 },
+      { id: 6, name: "Sam",               avatar: null,                               message: "Hello from a rainy Tuesday. This made it a little less grey.", minutesAgo: 1500 },
+    ];
+
+    // overflow torture-test entries (one giant unbroken token + a wall of text + a long name)
+    const OVERFLOW_MESSAGES = [
+      {
+        id: 901,
+        name: "Maximiliana-Featherington-Bartholomew-the-Third-of-Willowbrook-upon-Avon",
+        avatar: null,
+        message: "I have an extraordinary amount to say and absolutely no intention of using paragraph breaks, so here is one breathless run-on sentence that keeps going and going well past any reasonable length to make certain the card wraps gracefully instead of blowing out the layout, and then for good measure here is an unbreakable token: Supercalifragilisticexpialidocioussuperlongunbreakableurlwithnowhitespaceatallxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        minutesAgo: 2,
+      },
+      ...SEED_MESSAGES,
+    ];
+
+    // mutable working copy (posting mutates this)
+    let MESSAGES = SEED_MESSAGES.map((m) => ({ ...m }));
+    let viewState = "loading"; // normal | empty | loading | overflow
+
+    // ---------- Helpers ----------
+    const $ = (sel) => document.querySelector(sel);
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    function initials(name) {
+      const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return "?";
+      return (parts[0][0] + (parts[1] ? parts[1][0] : "")).toUpperCase();
+    }
+
+    function timeAgo(min) {
+      if (min < 1) return "just now";
+      if (min < 60) return `${min} min ago`;
+      const h = Math.floor(min / 60);
+      if (h < 24) return `${h} hour${h > 1 ? "s" : ""} ago`;
+      const d = Math.floor(h / 24);
+      if (d === 1) return "yesterday";
+      return `${d} day${d > 1 ? "s" : ""} ago`;
+    }
+
+    // rotate warm (non-terracotta) tints for initials avatars
+    const AVATAR_TINTS = [
+      "bg-neutral text-neutral-content",
+      "bg-secondary text-secondary-content",
+      "bg-accent text-accent-content",
+    ];
+
+    function avatarHtml(m) {
+      if (m.avatar) {
+        return `<div class="avatar">
+          <div class="w-12 rounded-full ring-1 ring-base-300">
+            <img alt="" src="${escapeHtml(m.avatar)}" />
+          </div>
+        </div>`;
+      }
+      const tint = AVATAR_TINTS[m.id % AVATAR_TINTS.length];
+      return `<div class="avatar avatar-placeholder">
+        <div class="${tint} w-12 rounded-full">
+          <span class="text-base font-semibold">${escapeHtml(initials(m.name))}</span>
+        </div>
+      </div>`;
+    }
+
+    function cardHtml(m, isNew) {
+      const name = (m.name || "").trim() || "Anonymous guest";
+      return `<article class="card bg-base-100 border border-base-300 shadow-sm ${isNew ? "animate-rise" : ""}">
+        <div class="card-body gap-3 p-5">
+          <div class="flex items-start gap-3">
+            ${avatarHtml(m)}
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span class="font-semibold break-words">${escapeHtml(name)}</span>
+                <span class="badge badge-soft badge-secondary badge-sm shrink-0">
+                  <i data-lucide="clock" class="size-[0.85em]"></i> ${timeAgo(m.minutesAgo)}
+                </span>
+              </div>
+              <p class="mt-1.5 text-base-content/85 leading-relaxed break-words [overflow-wrap:anywhere]">${escapeHtml(m.message)}</p>
+            </div>
+          </div>
+        </div>
+      </article>`;
+    }
+
+    function skeletonCardHtml() {
+      return `<div class="card bg-base-100 border border-base-300 shadow-sm">
+        <div class="card-body p-5">
+          <div class="flex items-start gap-3">
+            <div class="skeleton h-12 w-12 shrink-0 rounded-full"></div>
+            <div class="flex flex-col gap-2.5 w-full">
+              <div class="skeleton h-4 w-32"></div>
+              <div class="skeleton h-3.5 w-full"></div>
+              <div class="skeleton h-3.5 w-4/5"></div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    function emptyStateHtml() {
+      return `<div class="card bg-base-100 border border-dashed border-base-300">
+        <div class="card-body items-center text-center py-16 gap-3">
+          <span class="grid place-items-center size-16 rounded-full bg-base-200 text-accent">
+            <i data-lucide="feather" class="size-8"></i>
+          </span>
+          <h3 class="text-2xl">The wall is quiet… for now</h3>
+          <p class="text-base-content/60 max-w-sm">No one has signed yet. Be the first to leave a warm note for whoever wanders in next.</p>
+          <button class="btn btn-primary mt-2" onclick="focusComposer()">
+            <i data-lucide="feather" class="size-[1.2em]"></i> Be the first to sign
+          </button>
+        </div>
+      </div>`;
+    }
+
+    // ---------- Render ----------
+    function renderWall() {
+      const wall = $("#wall");
+      const list = viewState === "overflow" ? OVERFLOW_MESSAGES : MESSAGES;
+
+      if (viewState === "loading") {
+        wall.innerHTML = Array.from({ length: 4 }, skeletonCardHtml).join("");
+        $("#wallCount").textContent = "…";
+      } else if (viewState === "empty") {
+        wall.innerHTML = emptyStateHtml();
+        $("#wallCount").textContent = "0";
+      } else {
+        wall.innerHTML = list.map((m) => cardHtml(m, m.isNew)).join("");
+        list.forEach((m) => { m.isNew = false; }); // only animate once
+        $("#wallCount").textContent = list.length;
+      }
+
+      // total "signed" count in header — playful fixed base + live wall size
+      const base = 47;
+      $("#signedCount").textContent = (base + (viewState === "empty" ? 0 : list.length)).toLocaleString();
+
+      // reflect active demo button
+      document.querySelectorAll(".js-state").forEach((b) => {
+        const on = b.dataset.state === viewState;
+        b.classList.toggle("btn-secondary", on);
+        b.classList.toggle("btn-soft", on);
+        b.classList.toggle("btn-ghost", !on);
+      });
+
+      lucide.createIcons();
+    }
+
+    // ---------- Toasts ----------
+    function showToast(kind, title, body) {
+      const tones = {
+        success: { cls: "alert-success", icon: "party-popper" },
+        error:   { cls: "alert-error",   icon: "circle-alert" },
+        warning: { cls: "alert-warning", icon: "triangle-alert" },
+        info:    { cls: "alert-soft alert-info", icon: "info" },
+      };
+      const t = tones[kind] || tones.info;
+      const el = document.createElement("div");
+      el.className = `alert ${t.cls} animate-rise shadow-lg`;
+      el.setAttribute("role", "alert");
+      el.innerHTML = `<i data-lucide="${t.icon}" class="size-5 shrink-0"></i>
+        <div>
+          <h3 class="font-bold">${escapeHtml(title)}</h3>
+          ${body ? `<div class="text-xs opacity-90">${escapeHtml(body)}</div>` : ""}
+        </div>`;
+      $("#toasts").appendChild(el);
+      lucide.createIcons();
+      setTimeout(() => {
+        el.style.transition = "opacity .25s, transform .25s";
+        el.style.opacity = "0";
+        el.style.transform = "translateY(8px)";
+        setTimeout(() => el.remove(), 260);
+      }, 3200);
+    }
+
+    // ---------- Posting (optimistic, in-memory) ----------
+    let nextId = 1000;
+    function post() {
+      const nameEl = $("#nameInput");
+      const msgEl = $("#msgInput");
+      const text = msgEl.value.trim();
+
+      if (!text) {
+        showToast("warning", "Your note is empty", "Write a few warm words first.");
+        msgEl.focus();
+        return;
+      }
+
+      // optimistic add — appears instantly at the top of the wall
+      const entry = {
+        id: nextId++,
+        name: nameEl.value.trim(),
+        avatar: null,
+        message: text,
+        minutesAgo: 0,
+        isNew: true,
+      };
+      MESSAGES.unshift(entry);
+      if (viewState !== "normal") viewState = "normal";
+      renderWall();
+      showToast("success", "Message posted!", "Thanks for signing the guestbook.");
+
+      nameEl.value = "";
+      msgEl.value = "";
+      updateCharCount();
+      // scroll the fresh entry into view on small screens
+      $("#wall").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function focusComposer() {
+      $("#msgInput").focus();
+      $("#msgInput").scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function updateCharCount() {
+      const v = $("#msgInput").value;
+      $("#charCount").textContent = `${v.length}/240`;
+    }
+
+    // ---------- Wire up ----------
+    $("#postBtn").addEventListener("click", post);
+    $("#msgInput").addEventListener("input", updateCharCount);
+    $("#msgInput").setAttribute("maxlength", "240");
+
+    document.querySelectorAll(".js-state").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const target = btn.dataset.state;
+        if (target === "loading") {
+          // fake a fetch: show skeletons, then settle back to the real wall
+          viewState = "loading";
+          renderWall();
+          setTimeout(() => { viewState = "normal"; renderWall(); }, 1400);
+        } else {
+          viewState = target;
+          renderWall();
+        }
+      });
+    });
+
+    $("#errToastBtn").addEventListener("click", () => {
+      showToast("error", "Couldn't post your message", "Something went wrong on our end. Give it another try.");
+    });
+
+    // ---------- Boot (fake initial load) ----------
+    lucide.createIcons();
+    renderWall(); // shows skeletons (viewState = "loading")
+    setTimeout(() => { viewState = "normal"; renderWall(); }, 900);
+  </script>
+</body>
+</html>

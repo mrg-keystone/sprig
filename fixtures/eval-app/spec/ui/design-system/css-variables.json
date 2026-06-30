@@ -1,0 +1,94 @@
+{
+  "_generated": true,
+  "_source": "theme.css",
+  "_note": "DERIVED from theme.css — the plain token map a SPRIG app consumes (copy to its src/css-variables.json). sprig's build compiles this to a global @theme (utility tokens) + :root (the rest) + [data-theme] (variants) with NO daisyUI. RULES: keys are custom properties (--*) or the reserved color-scheme ONLY; the daisyUI-plugin params --size-*/--border/--depth/--noise are dropped (the plain build can't use them); the default theme (brand-dark) carries EVERY token, the other theme (brand) carries only what changes (its colors); `default` is the theme rendered with no data-theme attribute — set to brand-dark so a dark-first SSR app has no light flash (this differs from theme.css's daisyUI `default: true`, which is fine — different consumers). Values byte-identical to theme.css.",
+  "default": "brand-dark",
+  "themes": {
+    "brand-dark": {
+      "color-scheme": "dark",
+
+      "--color-base-100": "#1E1712",
+      "--color-base-200": "#29201A",
+      "--color-base-300": "#3A2E24",
+      "--color-base-content": "#F1E7D9",
+      "--color-primary": "#EA7A45",
+      "--color-primary-content": "#2A1206",
+      "--color-secondary": "#93A179",
+      "--color-secondary-content": "#1B1611",
+      "--color-accent": "#E8B25E",
+      "--color-accent-content": "#2A1F0E",
+      "--color-neutral": "#2C231C",
+      "--color-neutral-content": "#F1E7D9",
+      "--color-info": "#5FA6B5",
+      "--color-info-content": "#0E1B1E",
+      "--color-success": "#84B85A",
+      "--color-success-content": "#14210C",
+      "--color-warning": "#E8A53E",
+      "--color-warning-content": "#2A1E08",
+      "--color-error": "#E06A5C",
+      "--color-error-content": "#2A0E0A",
+
+      "--radius-selector": "1rem",
+      "--radius-field": "0.75rem",
+      "--radius-box": "1.25rem",
+
+      "--font-display": "'Caveat', 'Comic Sans MS', system-ui, cursive",
+      "--font-body": "'Quicksand', system-ui, sans-serif",
+      "--font-mono": "ui-monospace, 'SF Mono', Menlo, monospace",
+
+      "--step--2": "0.64rem",
+      "--step--1": "0.8rem",
+      "--step-0": "1rem",
+      "--step-1": "1.25rem",
+      "--step-2": "1.5625rem",
+      "--step-3": "1.9531rem",
+      "--step-4": "2.4414rem",
+      "--step-5": "3.0518rem",
+
+      "--leading-tight": "1.1",
+      "--leading-snug": "1.25",
+      "--leading-normal": "1.5",
+      "--leading-relaxed": "1.6",
+      "--tracking-display": "-0.015em",
+      "--measure": "65ch",
+
+      "--ease-bounce": "cubic-bezier(0.34, 1.56, 0.64, 1)",
+      "--ease-standard": "cubic-bezier(0.20, 0, 0, 1)",
+      "--dur-micro": "120ms",
+      "--dur-fast": "200ms",
+      "--dur-base": "320ms",
+
+      "--color-base-content-30": "color-mix(in oklch, var(--color-base-content) 30%, transparent)",
+      "--color-base-content-50": "color-mix(in oklch, var(--color-base-content) 50%, transparent)",
+      "--color-primary-30": "color-mix(in oklch, var(--color-primary) 30%, transparent)",
+      "--color-primary-15": "color-mix(in oklch, var(--color-primary) 15%, transparent)",
+      "--color-secondary-30": "color-mix(in oklch, var(--color-secondary) 30%, transparent)",
+      "--color-accent-30": "color-mix(in oklch, var(--color-accent) 30%, transparent)"
+    },
+
+    "brand": {
+      "color-scheme": "light",
+
+      "--color-base-100": "#FBF7F0",
+      "--color-base-200": "#F3EADB",
+      "--color-base-300": "#E6D7C3",
+      "--color-base-content": "#3B2A1E",
+      "--color-primary": "#C2410C",
+      "--color-primary-content": "#FFF8F1",
+      "--color-secondary": "#5E6B47",
+      "--color-secondary-content": "#FBF7F0",
+      "--color-accent": "#DA9A3E",
+      "--color-accent-content": "#3B2A1E",
+      "--color-neutral": "#43342A",
+      "--color-neutral-content": "#FBF3E9",
+      "--color-info": "#3F7E8C",
+      "--color-info-content": "#FBF7F0",
+      "--color-success": "#4E7A2F",
+      "--color-success-content": "#FBF7F0",
+      "--color-warning": "#D97706",
+      "--color-warning-content": "#3B2A1E",
+      "--color-error": "#C0392B",
+      "--color-error-content": "#FFF6F4"
+    }
+  }
+}

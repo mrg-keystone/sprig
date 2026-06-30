@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sprout — prototype</title>
+  <style>
+    :root {
+      --bg: #f7f7fb; --panel: #fff; --ink: #1f2937; --muted: #6b7280;
+      --line: #ececf3; --accent: #6366f1; --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+      color: var(--ink); background: var(--bg);
+      display: grid; grid-template-rows: auto 1fr; height: 100%;
+    }
+
+    header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 22px; background: var(--panel); border-bottom: 1px solid var(--line);
+    }
+    header .logo { font-size: 20px; }
+    header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
+    header .spacer { flex: 1; }
+    .me { display: flex; align-items: center; gap: 8px; }
+    .me .who { text-align: right; line-height: 1.2; }
+    .me .who small { color: var(--muted); }
+
+    .avatar {
+      width: 30px; height: 30px; border-radius: 50%; color: #fff;
+      display: grid; place-items: center; font-size: 11px; font-weight: 700; flex: 0 0 auto;
+    }
+
+    .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
+
+    aside {
+      background: var(--panel); border-right: 1px solid var(--line);
+      padding: 16px 12px; overflow: auto;
+    }
+    aside .label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 4px 10px 8px; }
+    .proj {
+      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+      padding: 9px 10px; border: 0; background: transparent; border-radius: 8px;
+      cursor: pointer; font: inherit; color: inherit;
+    }
+    .proj:hover { background: #f1f1f8; }
+    .proj.active { background: #eef0ff; color: var(--accent); font-weight: 600; }
+    .proj .icon { font-size: 16px; }
+
+    main { padding: 24px 28px; overflow: auto; }
+    .main-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px; }
+    .main-head h2 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
+    .main-head .count { color: var(--muted); }
+
+    .cards { display: grid; gap: 12px; max-width: 720px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 14px 16px; display: flex; align-items: center; gap: 14px;
+    }
+    .card.pending { opacity: .55; }
+    .card .title { flex: 1; font-weight: 600; }
+    .pill {
+      font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+      border: 0; cursor: pointer; font-family: inherit;
+    }
+    .pill.todo        { background: #f3f4f6; color: #6b7280; }
+    .pill.in_progress { background: #fef3c7; color: #b45309; }
+    .pill.done        { background: #d1fae5; color: #047857; }
+    .points { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; width: 34px; text-align: right; }
+
+    /* the add-task composer — a write affordance */
+    .composer { display: flex; gap: 10px; max-width: 720px; margin-top: 12px; }
+    .composer input {
+      flex: 1; padding: 11px 14px; border: 1px solid var(--line); border-radius: var(--radius);
+      font: inherit; background: var(--panel); color: inherit;
+    }
+    .composer input:focus { outline: 2px solid #c7d2fe; border-color: var(--accent); }
+    .composer button {
+      padding: 0 16px; border: 0; border-radius: var(--radius); background: var(--accent); color: #fff;
+      font: 600 14px ui-sans-serif, system-ui, sans-serif; cursor: pointer;
+    }
+
+    .state { color: var(--muted); padding: 40px; text-align: center; }
+    .state .big { font-size: 40px; display: block; margin-bottom: 8px; }
+    #toast {
+      position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%);
+      background: #dc2626; color: #fff; padding: 10px 16px; border-radius: 8px;
+      font: 500 13px ui-sans-serif, system-ui, sans-serif; box-shadow: 0 6px 24px rgba(0,0,0,.25);
+      opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="logo">🌱</span>
+    <h1>Sprout</h1>
+    <span class="spacer"></span>
+    <div class="me" id="me"></div>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <div class="label">Projects</div>
+      <nav id="projects"><div class="state">…</div></nav>
+    </aside>
+    <main id="main">
+      <div class="state"><span class="big">⏳</span>Loading objects…</div>
+    </main>
+  </div>
+  <div id="toast"></div>
+
+  <script>
+    // ── PURE UI ──────────────────────────────────────────────────────────
+    // No data, no storage knowledge. Reads come from window.objects; writes go
+    // out as window.commands (intents). This file only knows object TYPES, how
+    // to render them, and which COMMAND a user action fires. Everything else is
+    // the host. Writes are OPTIMISTIC: change local state, render, fire the
+    // command, reconcile (or revert) when it answers.
+
+    const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    const byId = (rows) => Object.fromEntries(rows.map((r) => [r.id, r]));
+    const STATUSES = ["todo", "in_progress", "done"];
+
+    let state = { users: {}, projects: [], tasks: [], current: null };
+
+    function toast(msg) {
+      const t = document.getElementById("toast");
+      t.textContent = msg; t.style.opacity = "1";
+      setTimeout(() => (t.style.opacity = "0"), 2000);
+    }
+
+    async function boot() {
+      const [users, projects, tasks] = await Promise.all([
+        window.objects.all("user"),
+        window.objects.all("project"),
+        window.objects.all("task"),
+      ]);
+      state.users = byId(users);
+      state.projects = projects;
+      state.tasks = tasks;
+      state.current = projects[0]?.id ?? null;
+
+      renderMe(users[0]);            // "current user" = first user (no auth yet)
+      renderProjects();
+      renderTasks();
+    }
+
+    // ── WRITES (commands, optimistic) ────────────────────────────────────
+    async function cycleStatus(task) {
+      const next = STATUSES[(STATUSES.indexOf(task.status) + 1) % STATUSES.length];
+      const prev = task.status;
+      task.status = next; renderTasks();                                  // optimistic
+      try {
+        await window.commands.run("task.setStatus", { id: task.id, status: next });
+      } catch (e) {
+        task.status = prev; renderTasks(); toast("couldn't save status");  // revert
+      }
+    }
+
+    async function addTask(title) {
+      title = title.trim();
+      if (!title) return;
+      const assignee = Object.keys(state.users)[0];
+      const optimistic = { id: "tmp", project: state.current, title, status: "todo", assignee, points: 1, _pending: true };
+      state.tasks.push(optimistic); renderTasks();                        // optimistic
+      try {
+        const saved = await window.commands.run("task.create", { project: state.current, title, assignee, points: 1 });
+        Object.assign(optimistic, saved, { _pending: false });            // swap temp id → real
+      } catch (e) {
+        state.tasks = state.tasks.filter((t) => t !== optimistic); toast("couldn't add task");
+      }
+      renderTasks();
+    }
+
+    // ── RENDER ───────────────────────────────────────────────────────────
+    function renderMe(u) {
+      document.getElementById("me").innerHTML = u ? `
+        <div class="who">${esc(u.name)}<br><small>${esc(u.role)}</small></div>
+        <div class="avatar" style="background:${esc(u.color)}">${esc(u.initials)}</div>` : "";
+    }
+
+    function renderProjects() {
+      document.getElementById("projects").innerHTML = state.projects.map((p) => `
+        <button class="proj ${p.id === state.current ? "active" : ""}" data-id="${esc(p.id)}">
+          <span class="icon">${esc(p.icon)}</span><span>${esc(p.name)}</span>
+        </button>`).join("");
+      document.querySelectorAll(".proj").forEach((b) =>
+        b.addEventListener("click", () => { state.current = b.dataset.id; renderProjects(); renderTasks(); }));
+    }
+
+    function renderTasks() {
+      const proj = state.projects.find((p) => p.id === state.current);
+      const tasks = state.tasks.filter((t) => t.project === state.current);
+      const main = document.getElementById("main");
+      if (!proj) { main.innerHTML = `<div class="state">Pick a project.</div>`; return; }
+
+      const head = `<div class="main-head">
+        <h2>${esc(proj.icon)} ${esc(proj.name)}</h2>
+        <span class="count">${tasks.length} task${tasks.length === 1 ? "" : "s"}</span>
+      </div>`;
+
+      const composer = `<div class="composer">
+        <input id="newtask" placeholder="Add a task…  (Enter)" autocomplete="off" />
+        <button id="addbtn">Add</button>
+      </div>`;
+
+      // The unglamorous empty state — a project with no task objects.
+      const body = tasks.length === 0
+        ? `<div class="state"><span class="big">🍃</span>No tasks yet — add the first one below.</div>`
+        : `<div class="cards">` + tasks.map((t) => {
+            const a = state.users[t.assignee];                            // client-side join: task → user
+            const av = a ? `<div class="avatar" title="${esc(a.name)}" style="background:${esc(a.color)}">${esc(a.initials)}</div>` : "";
+            const label = { todo: "To do", in_progress: "In progress", done: "Done" }[t.status] ?? t.status;
+            return `<div class="card ${t._pending ? "pending" : ""}">
+              ${av}
+              <span class="title">${esc(t.title)}</span>
+              <button class="pill ${esc(t.status)}" data-task="${esc(t.id)}" title="click to advance status">${esc(label)}</button>
+              <span class="points">${esc(t.points)} pt</span>
+            </div>`;
+          }).join("") + `</div>`;
+
+      main.innerHTML = head + body + composer;
+
+      // wire the writes
+      main.querySelectorAll(".pill[data-task]").forEach((b) =>
+        b.addEventListener("click", () => {
+          const t = state.tasks.find((x) => x.id === b.dataset.task);
+          if (t && !t._pending) cycleStatus(t);
+        }));
+      const input = main.querySelector("#newtask");
+      const fire = () => { addTask(input.value); input.value = ""; };
+      main.querySelector("#addbtn").addEventListener("click", fire);
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") fire(); });
+    }
+
+    boot().catch((err) => {
+      document.getElementById("main").innerHTML =
+        `<div class="state"><span class="big">⚠️</span>Could not load objects.<br><small>${esc(err.message)}</small></div>`;
+    });
+  </script>
+</body>
+</html>

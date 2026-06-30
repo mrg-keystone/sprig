@@ -1,0 +1,7 @@
+:global(body) {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  background: #0b1020;
+  color: #e7ecff;
+}
+.app-root { min-height: 100vh; display: grid; place-items: center; }

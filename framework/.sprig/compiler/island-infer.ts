@@ -1,5 +1,13 @@
 // ─────────────────────────── island inference + build report ───────────────────────────
-// Phase 3: decide static vs island, syntactically, with no data-flow guessing.
+// ⚠️ PROTOTYPE — NOT WIRED INTO THE BUILD. The shipping framework declares island-ness by
+// FILE PRESENCE (a folder with a `logic.ts` is an island), exactly as the docs state. The
+// syntactic inference below is an unadopted alternative model; `classify`/`formatReport` are
+// referenced only by island-infer.test.ts. Do not read the description below as the
+// framework's actual behavior. Adopting this model (build would then ship less JS — e.g. an
+// onServerInit-only page becomes static) OR deleting this prototype is an OPEN decision; it
+// changes the documented contract, so it must be made deliberately, not inferred from here.
+//
+// Phase 3 (proposed): decide static vs island, syntactically, with no data-flow guessing.
 //
 // A component ships + runs JS (is an island) iff it has BROWSER BEHAVIOUR:
 //   • its template binds an (event) or [(two-way)],  OR
@@ -7,8 +15,8 @@
 // Otherwise it's static — final HTML, zero JS — EVEN with onServerInit, signals, or
 // one-way bindings/interpolation, all of which resolve at render time.
 //
-// Because island-ness is now inferred rather than declared by file presence, the build
-// must REPORT it per component (formatReport) so the decision is never silent.
+// In this proposed model island-ness would be INFERRED rather than declared by file presence,
+// so the build would REPORT it per component (formatReport) to keep the decision visible.
 import { named, type Node } from "./node.ts";
 
 const BROWSER_HOOKS = ["onBrowserInit", "onBrowserDestroy"];

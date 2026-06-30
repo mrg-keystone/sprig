@@ -1,0 +1,13 @@
+{
+  "category": "guestbook",
+  "folder": "message-card",
+  "background": "#F3EADB",
+  "controls": {
+    "name": { "type": "text", "value": "Marisol Vega" },
+    "avatar": { "type": "text", "value": "https://i.pravatar.cc/96?img=47" },
+    "message": { "type": "text", "value": "So glad I found this little corner of the internet. It feels like a kitchen with the lights on. Thank you for having me." },
+    "id": { "type": "number", "value": 1 },
+    "minutesAgo": { "type": "number", "value": 8 },
+    "isNew": { "type": "boolean", "value": false }
+  }
+}

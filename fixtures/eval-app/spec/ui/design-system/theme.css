@@ -1,0 +1,150 @@
+/* =========================================================================
+   Hearth Design System — theme.css  ·  SINGLE SOURCE OF TRUTH
+   -------------------------------------------------------------------------
+   A community guestbook. Warm, inviting, cozy, a little hand-made.
+   Theme names are generic ("brand" / "brand-dark") so the artifact is reusable.
+
+   Everything else in the artifact is DERIVED from this file:
+     theme.cdn.css · manifest.json · css-variables.json · adherence.oxlintrc.json
+   Edit tokens HERE only, then re-derive (that is the deriver's job, not this file's).
+
+   Syntax: Tailwind 4 + daisyUI 5, CSS-first (@plugin, NOT tailwind.config.js).
+   Variable set pulled from the daisyUI MCP (custom-theme + colors). Hex values.
+   ========================================================================= */
+
+@import "tailwindcss";
+@plugin "daisyui";
+
+/* ---- Brand theme · light (default) ------------------------------------
+   Cream page, espresso-brown ink, terracotta CTA. Sage + honey support a
+   warm, earthy "hearth" palette; status colors are tuned warm.            */
+@plugin "daisyui/theme" {
+  name: "brand";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+
+  --color-base-100: #FBF7F0;            /* warm cream — page surface       */
+  --color-base-200: #F3EADB;            /* deeper cream — elevation / hover */
+  --color-base-300: #E6D7C3;            /* warm tan — borders / dividers    */
+  --color-base-content: #3B2A1E;        /* espresso brown — body + headings */
+
+  --color-primary: #C2410C;             /* terracotta — the one precious CTA */
+  --color-primary-content: #FFF8F1;
+  --color-secondary: #5E6B47;           /* sage — calm, affirmative support  */
+  --color-secondary-content: #FBF7F0;
+  --color-accent: #DA9A3E;              /* honey gold — decorative warmth    */
+  --color-accent-content: #3B2A1E;
+  --color-neutral: #43342A;             /* warm dark brown — structural      */
+  --color-neutral-content: #FBF3E9;
+
+  --color-info: #3F7E8C;       --color-info-content: #FBF7F0;     /* muted teal */
+  --color-success: #4E7A2F;    --color-success-content: #FBF7F0;  /* leaf green */
+  --color-warning: #D97706;    --color-warning-content: #3B2A1E;  /* warm amber */
+  --color-error: #C0392B;      --color-error-content: #FFF6F4;    /* brick red  */
+
+  --radius-selector: 1rem;              /* badges, toggles, checkboxes — pill */
+  --radius-field: 0.75rem;              /* buttons, inputs, tabs — soft       */
+  --radius-box: 1.25rem;                /* cards, modals, alerts — generous   */
+
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;     /* subtle shadow + 3D — adds cozy softness */
+  --noise: 1;     /* subtle grain — leans into the hand-made vibe */
+}
+
+/* ---- Brand theme · dark ----------------------------------------------- */
+@plugin "daisyui/theme" {
+  name: "brand-dark";
+  default: false;
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-base-100: #1E1712;            /* warm near-black espresso */
+  --color-base-200: #29201A;
+  --color-base-300: #3A2E24;
+  --color-base-content: #F1E7D9;        /* warm cream ink */
+
+  --color-primary: #EA7A45;    --color-primary-content: #2A1206;   /* brighter terracotta */
+  --color-secondary: #93A179;  --color-secondary-content: #1B1611; /* lifted sage */
+  --color-accent: #E8B25E;     --color-accent-content: #2A1F0E;    /* lifted honey */
+  --color-neutral: #2C231C;    --color-neutral-content: #F1E7D9;
+
+  --color-info: #5FA6B5;       --color-info-content: #0E1B1E;
+  --color-success: #84B85A;    --color-success-content: #14210C;
+  --color-warning: #E8A53E;    --color-warning-content: #2A1E08;
+  --color-error: #E06A5C;      --color-error-content: #2A0E0A;
+
+  --radius-selector: 1rem;
+  --radius-field: 0.75rem;
+  --radius-box: 1.25rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 1;
+}
+
+/* ---- Non-color layer (daisyUI carries none of this) -------------------
+   Pairing chosen via the google-fonts MCP "Handwritten Charm":
+     display = Caveat   (warm handwritten script — the hand-made voice)
+     body    = Quicksand (clean geometric rounded sans — readable & friendly)
+   Contrast type: Structure (script x geometric sans). Scale: major-third (1.25).
+   Correct semicolon-delimited weight axis (the MCP embed emitted commas).      */
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Quicksand:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --font-display: 'Caveat', 'Comic Sans MS', system-ui, cursive;
+  --font-body:    'Quicksand', system-ui, sans-serif;
+  --font-mono:    ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Modular type scale — major-third (1.25), base 16px (from the MCP) */
+  --step--2: 0.64rem;     /* 10.2px — fine print          */
+  --step--1: 0.8rem;      /* 12.8px — captions / labels   */
+  --step-0:  1rem;        /* 16px   — body                */
+  --step-1:  1.25rem;     /* 20px   — lead / large body   */
+  --step-2:  1.5625rem;   /* 25px   — h4                  */
+  --step-3:  1.9531rem;   /* 31px   — h3                  */
+  --step-4:  2.4414rem;   /* 39px   — h2                  */
+  --step-5:  3.0518rem;   /* 49px   — h1 / hero wordmark  */
+
+  /* Line-height + tracking that travel with the scale (from the MCP) */
+  --leading-tight:  1.1;
+  --leading-snug:   1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.6;
+  --tracking-display: -0.015em;
+  --measure: 65ch;          /* comfortable reading width for messages */
+
+  /* Motion — gentle, with a warm little bounce on welcome */
+  --ease-bounce:   cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-standard: cubic-bezier(0.20, 0, 0, 1);
+  --dur-micro: 120ms; --dur-fast: 200ms; --dur-base: 320ms;
+
+  /* Derived shade tokens (build-free; charts & subtle fills read these) */
+  --color-base-content-30: color-mix(in oklch, var(--color-base-content) 30%, transparent);
+  --color-base-content-50: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+  --color-primary-30:      color-mix(in oklch, var(--color-primary) 30%, transparent);
+  --color-primary-15:      color-mix(in oklch, var(--color-primary) 15%, transparent);
+  --color-secondary-30:    color-mix(in oklch, var(--color-secondary) 30%, transparent);
+  --color-accent-30:       color-mix(in oklch, var(--color-accent) 30%, transparent);
+}
+
+body                          { font-family: var(--font-body); }
+h1, h2, h3, h4, .font-display { font-family: var(--font-display); letter-spacing: var(--tracking-display); line-height: var(--leading-tight); }
+
+/* Caveat is a script: it carries little weight contrast, so headings want a
+   heavier weight to read as headings. */
+h1, h2, h3, h4, .font-display { font-weight: 700; }
+
+/* A warm welcome: new guestbook entries rise gently into place. */
+@keyframes brand-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-rise { animation: brand-rise var(--dur-base) var(--ease-bounce) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

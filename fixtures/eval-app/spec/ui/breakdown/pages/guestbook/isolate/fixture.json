@@ -1,0 +1,8 @@
+{
+  "category": "guestbook",
+  "background": "#FBF7F0",
+  "controls": {
+    "signedCount": { "type": "number", "value": 53 },
+    "loading": { "type": "boolean", "value": false, "signal": true }
+  }
+}

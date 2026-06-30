@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<!-- @dsCard group="Showcase" name="Dashboard showcase" subtitle="full themed dashboard" viewport="1280x900" -->
+<!-- DERIVED specimen — links the canonical ../theme.cdn.css (never inlines tokens). Keep BOTH CDN tags. -->
+<html data-theme="brand" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hearth · Guestbook</title>
+  <link rel="stylesheet" href="../theme.cdn.css" />
+  <!-- BOTH required: daisyUI = components+colors; tailwind/browser = layout utilities (flex/grid/w-*). -->
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+</head>
+<body class="bg-base-200 text-base-content min-h-screen">
+  <div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <aside class="w-60 shrink-0 bg-base-100 border-r border-base-300 hidden md:flex flex-col">
+      <div class="px-6 py-5 font-display text-2xl font-extrabold">Hearth</div>
+      <ul class="menu w-full grow gap-1 px-3">
+        <li><a class="active font-medium">The Wall</a></li>
+        <li><a>Messages</a></li>
+        <li><a>Visitors</a></li>
+        <li><a>Settings</a></li>
+      </ul>
+      <div class="p-3">
+        <div class="card bg-accent text-accent-content rounded-box">
+          <div class="card-body p-4">
+            <p class="font-display font-bold">Invite friends</p>
+            <p class="text-sm opacity-90">Share your guestbook link and grow the wall.</p>
+            <button class="btn btn-sm bg-base-100 text-base-content border-0 mt-1">Get link</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <!-- Main -->
+    <div class="flex-1 flex flex-col min-w-0">
+      <nav class="navbar bg-base-100 border-b border-base-300 px-6 gap-2">
+        <div class="navbar-start">
+          <span class="uppercase tracking-widest text-accent" style="font-size:var(--step--2)">Today</span>
+          <h1 class="font-display font-extrabold ml-3" style="font-size:var(--step-2)">Welcome back</h1>
+        </div>
+        <div class="navbar-end gap-2">
+          <input type="text" placeholder="Search messages" class="input input-sm w-40" />
+          <label class="swap swap-rotate btn btn-ghost btn-circle" title="theme">
+            <input type="checkbox" id="darktoggle" /><span class="swap-off">🌞</span><span class="swap-on">🌙</span>
+          </label>
+          <button class="btn btn-primary btn-sm">Leave a message</button>
+        </div>
+      </nav>
+      <main class="p-6 grid gap-6">
+        <div class="stats stats-vertical lg:stats-horizontal bg-base-100 shadow-md rounded-box">
+          <div class="stat"><div class="stat-title">Messages</div><div class="stat-value text-primary">1,284</div><div class="stat-desc text-success">↗︎ +12% this week</div></div>
+          <div class="stat"><div class="stat-title">Signers today</div><div class="stat-value">38</div><div class="stat-desc text-success">↗︎ +8%</div></div>
+          <div class="stat"><div class="stat-title">Avg. words / note</div><div class="stat-value">42</div><div class="stat-desc text-error">↘︎ -3%</div></div>
+          <div class="stat"><div class="stat-title">Featured</div><div class="stat-value text-accent">6</div><div class="stat-desc">this week</div></div>
+        </div>
+        <div class="grid lg:grid-cols-3 gap-6">
+          <div class="card bg-base-100 shadow-md rounded-box lg:col-span-2">
+            <div class="card-body"><h2 class="card-title font-display">Messages per day</h2><div id="trend"></div></div>
+          </div>
+          <div class="card bg-base-100 shadow-md rounded-box">
+            <div class="card-body"><h2 class="card-title font-display">Where signers came from</h2><div id="breakdown"></div></div>
+          </div>
+        </div>
+        <div class="card bg-base-100 shadow-md rounded-box">
+          <div class="card-body">
+            <h2 class="card-title font-display mb-2">Recent messages</h2>
+            <div class="overflow-x-auto">
+              <table class="table table-zebra">
+                <thead><tr><th>Visitor</th><th>Message</th><th>When</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr><td>Gordon</td><td>A warm welcome</td><td>2h ago</td><td><span class="badge badge-success">Posted</span></td></tr>
+                  <tr><td>Maria</td><td>Just passing through</td><td>5h ago</td><td><span class="badge badge-warning">Pending</span></td></tr>
+                  <tr><td>Sam</td><td>buy-cheap-watches link…</td><td>1d ago</td><td><span class="badge badge-error">Hidden</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div role="alert" class="alert alert-success animate-rise"><span>Thanks for signing the guestbook!</span></div>
+      </main>
+    </div>
+  </div>
+  <script>
+    const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+    let trend, breakdown;
+    function draw() {
+      const primary = css('--color-primary'), accent = css('--color-accent'),
+            secondary = css('--color-secondary'), neutral = css('--color-neutral'), base300 = css('--color-base-300');
+      if (trend) trend.destroy(); if (breakdown) breakdown.destroy();
+      trend = new ApexCharts(document.getElementById('trend'), {
+        chart: { type: 'area', height: 260, fontFamily: 'Quicksand, sans-serif', toolbar: { show: false } },
+        series: [{ name: 'Messages', data: [4, 7, 5, 12, 9, 15] }],
+        xaxis: { categories: ['Mon','Tue','Wed','Thu','Fri','Sat'] },
+        colors: [primary], stroke: { curve: 'smooth', width: 3 }, dataLabels: { enabled: false },
+        fill: { type: 'gradient', gradient: { opacityFrom: .4, opacityTo: .05 } }, grid: { borderColor: base300 },
+      });
+      trend.render();
+      breakdown = new ApexCharts(document.getElementById('breakdown'), {
+        chart: { type: 'donut', height: 260, fontFamily: 'Quicksand, sans-serif' },
+        series: [48, 22, 18, 12], labels: ['Direct','Shared link','Search','Other'],
+        colors: [primary, accent, secondary, neutral], stroke: { colors: [css('--color-base-200')], width: 2 },
+        legend: { position: 'bottom' }, dataLabels: { enabled: false },
+      });
+      breakdown.render();
+    }
+    draw();
+    document.getElementById('darktoggle').addEventListener('change', (e) => {
+      document.documentElement.setAttribute('data-theme', e.target.checked ? 'brand-dark' : 'brand');
+      setTimeout(draw, 50);
+    });
+  </script>
+</body>
+</html>

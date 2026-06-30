@@ -1,0 +1,78 @@
+/* ============================================================================
+   message-composer — AUTHORED CSS (reference ground truth, NOT a deliverable)
+   ----------------------------------------------------------------------------
+   Verbatim copy of the inline <style> block in hearth-prototype.html (the
+   "Hearth brand theme", pasted from design-system/theme.cdn.css).
+   This is the only hand-authored CSS in the source; everything else is daisyUI
+   5 + Tailwind v4 generated (see composer-applied.css).
+
+   Relevant to the composer: the brand color tokens (--color-primary terracotta
+   = #C2410C drives the post button + textarea-primary border/focus ring),
+   the type scale + --font-display/--font-body, the motion tokens
+   (--ease-bounce, --ease-standard, --dur-* ), and the reduced-motion guard.
+   NOTE: the composer card itself does NOT use .animate-rise — that keyframe is
+   applied to newly-posted wall cards and to toasts, not to the composer.
+   ============================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Quicksand:wght@300;400;500;600;700&display=swap');
+
+[data-theme="brand"] {
+  color-scheme: light;
+  --color-base-100: #FBF7F0;
+  --color-base-200: #F3EADB;
+  --color-base-300: #E6D7C3;
+  --color-base-content: #3B2A1E;
+  --color-primary: #C2410C;            --color-primary-content: #FFF8F1;
+  --color-secondary: #5E6B47;          --color-secondary-content: #FBF7F0;
+  --color-accent: #DA9A3E;             --color-accent-content: #3B2A1E;
+  --color-neutral: #43342A;            --color-neutral-content: #FBF3E9;
+  --color-info: #3F7E8C;               --color-info-content: #FBF7F0;
+  --color-success: #4E7A2F;            --color-success-content: #FBF7F0;
+  --color-warning: #D97706;            --color-warning-content: #3B2A1E;
+  --color-error: #C0392B;              --color-error-content: #FFF6F4;
+  --radius-selector: 1rem; --radius-field: 0.75rem; --radius-box: 1.25rem;
+  --size-selector: 0.25rem; --size-field: 0.25rem;
+  --border: 1px; --depth: 1; --noise: 1;
+}
+[data-theme="brand-dark"] {
+  color-scheme: dark;
+  --color-base-100: #1E1712;
+  --color-base-200: #29201A;
+  --color-base-300: #3A2E24;
+  --color-base-content: #F1E7D9;
+  --color-primary: #EA7A45;            --color-primary-content: #2A1206;
+  --color-secondary: #93A179;          --color-secondary-content: #1B1611;
+  --color-accent: #E8B25E;             --color-accent-content: #2A1F0E;
+  --color-neutral: #2C231C;            --color-neutral-content: #F1E7D9;
+  --color-info: #5FA6B5;               --color-info-content: #0E1B1E;
+  --color-success: #84B85A;            --color-success-content: #14210C;
+  --color-warning: #E8A53E;            --color-warning-content: #2A1E08;
+  --color-error: #E06A5C;              --color-error-content: #2A0E0A;
+  --radius-selector: 1rem; --radius-field: 0.75rem; --radius-box: 1.25rem;
+  --size-selector: 0.25rem; --size-field: 0.25rem;
+  --border: 1px; --depth: 1; --noise: 1;
+}
+:root {
+  --font-display: 'Caveat', 'Comic Sans MS', system-ui, cursive;
+  --font-body:    'Quicksand', system-ui, sans-serif;
+  --font-mono:    ui-monospace, 'SF Mono', Menlo, monospace;
+  --step--2: 0.64rem; --step--1: 0.8rem; --step-0: 1rem; --step-1: 1.25rem;
+  --step-2: 1.5625rem; --step-3: 1.9531rem; --step-4: 2.4414rem; --step-5: 3.0518rem;
+  --leading-tight: 1.1; --leading-snug: 1.25; --leading-normal: 1.5; --leading-relaxed: 1.6;
+  --tracking-display: -0.015em; --measure: 65ch;
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-standard: cubic-bezier(0.20, 0, 0, 1);
+  --dur-micro: 120ms; --dur-fast: 200ms; --dur-base: 320ms;
+}
+body { font-family: var(--font-body); }
+h1, h2, h3, h4, .font-display {
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-tight);
+  font-weight: 700;
+}
+@keyframes brand-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.animate-rise { animation: brand-rise var(--dur-base) var(--ease-bounce) both; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

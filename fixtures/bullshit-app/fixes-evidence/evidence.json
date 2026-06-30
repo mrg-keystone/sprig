@@ -1,0 +1,40 @@
+{
+  "status_codes": {
+    "/ui": 200,
+    "/ui/widget/a": 200,
+    "/ui/widget/b": 200,
+    "/ui/widget/nope": "200 (EXPECTED 404 per user story #3) — soft 404",
+    "/": "404 (off-base, by design; base=/ui)",
+    "/ui/bogus": 404
+  },
+  "soft_404_proof": {
+    "url": "/ui/widget/nope",
+    "http_status_curl": 200,
+    "http_status_inpage_fetch": 200,
+    "body_renders": ["Widget not found", "No widget with id nope"],
+    "header_line": "HTTP/1.1 200 OK"
+  },
+  "counter_island_wiped_by_hydration": {
+    "ssr_markup_from_curl": "<sprig-island data-sel=\"counter\" data-trigger=\"load\"><script class=\"sprig-props\">{\"__snapshot\":{\"count\":0}}</script><div class=\"counter\"><button>+1</button> <span class=\"count\">0</span></div></sprig-island>",
+    "live_dom_after_hydration_load1": "<sprig-island data-sel=\"counter\" data-trigger=\"load\"><script class=\"sprig-props\">{}</script></sprig-island>  (div.counter + button + count GONE)",
+    "live_dom_after_hydration_load2_and_3": "<counter></counter>  (raw unexpanded tag; no sprig-island, no button, no count)",
+    "a11y_snapshot_counter_region": "no +1 button present; only the '♥ Like' button exists on the page",
+    "isl_counter_js_loaded": true,
+    "console_errors_during_hydration": "none (only favicon.ico 404)",
+    "loads_tested": 3,
+    "deterministic": true
+  },
+  "like_button_dead_island": {
+    "url": "/ui",
+    "before": "0 likes",
+    "after_click_1": "0 likes",
+    "after_click_2": "0 likes",
+    "isl_like_button_js_in_network": false,
+    "ssr_button_markup": "<button class=\"like-btn\">♥ Like</button> (no sprig-island wrapper, (click) stripped)"
+  },
+  "favicon_404": "GET http://localhost:8099/favicon.ico => 404 (console error on every page)",
+  "performance_home_and_widget": {
+    "ttfb_ms": 2, "domContentLoaded_ms": 26, "load_ms": 26, "cls": 0,
+    "longtasks": [], "loaf": [], "verdict": "no perf findings"
+  }
+}
