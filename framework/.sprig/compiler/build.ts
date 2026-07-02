@@ -11,7 +11,7 @@
 //   <out>/chunk-<hash>.js    the shared runtime, loaded once
 // The ?v= cache-bust is the content hash of <out>/ recomputed by the SSR on demand
 // (mod.ts readVersion) — no manifest file is written; the build is self-contained in <out>.
-import { basename, dirname, fromFileUrl, join, relative } from "@std/path";
+import { basename, dirname, fromFileUrl, join, relative, resolve as resolvePath, toFileUrl } from "@std/path";
 import { walk } from "@std/fs/walk";
 import { parseTemplate } from "./parse.ts";
 import { serialize } from "./serialize.ts";
@@ -176,8 +176,13 @@ export async function buildClient(srcDir: string, outDir: string, opts: { dev?: 
     }
   }
   const entries = [join(genDir, "client.ts"), ...islands.map((i) => join(genDir, `isl.${i.sel}.ts`))];
+  // Run the bundle under a map that forces @sprig/core to the CLI's ONE runtime (see
+  // forcedImportMap): this is what makes single-core structural rather than merely gated. The
+  // map lives in genDir, which is removed right after the bundle.
+  const mapPath = join(genDir, "import-map.json");
+  await Deno.writeTextFile(mapPath, JSON.stringify(await forcedImportMap(srcDir)));
   const res = await new Deno.Command("deno", {
-    args: ["bundle", "--platform", "browser", "--minify", "--code-splitting", "--outdir", outDir, ...entries],
+    args: ["bundle", "--platform", "browser", "--minify", "--code-splitting", "--import-map", mapPath, "--outdir", outDir, ...entries],
     stdout: "piped",
     stderr: "piped",
   }).output();
@@ -185,6 +190,15 @@ export async function buildClient(srcDir: string, outDir: string, opts: { dev?: 
     throw new Error("client bundle failed:\n" + new TextDecoder().decode(res.stderr));
   }
   await Deno.remove(genDir, { recursive: true }).catch(() => {});
+
+  // 3b. GATE: the bundle MUST carry exactly one copy of the runtime. Code-splitting dedups
+  // @sprig/core into a single shared chunk ONLY when every entry resolves it to the SAME
+  // module; a version/pin drift (the CLI's runtime vs the app's @sprig/core) yields TWO runtime
+  // chunks — a "dual-core" bundle whose islands all die at hydration with `inject() must be
+  // called synchronously` (the module-global DI context can't cross two copies). That failure is
+  // silent at build + typecheck and only shows in the browser after deploy, so catch it HERE,
+  // loudly, at the moment it's created — never ship it.
+  await assertSingleRuntime(outDir);
 
   // 4. per-component styles.css → scoped (view encapsulation) → Tailwind → app.css
   await buildCss(srcDir, outDir);
@@ -358,6 +372,94 @@ async function cssFromVariables(srcDir: string): Promise<string> {
     throw new Error(`css-variables.json: invalid JSON — ${e instanceof Error ? e.message : e}`);
   }
   return emitThemeCss(cfg);
+}
+
+/** Build the import map the client bundle runs under: the APP's own imports (so island
+ *  logic resolves its app specifiers — `$.services/…`, etc.) with the sprig runtime FORCED
+ *  to the CLI's own copy. This is the structural fix for the dual-core bundle: without it the
+ *  CLI's generated loader/`hydrate.ts` resolve `@sprig/core` through the CLI's version while
+ *  the island `logic.ts` resolves it through the app's pin — two `core.ts` ⇒ two runtime
+ *  chunks ⇒ every island dies at hydration. Forcing BOTH to the one CLI runtime makes a single
+ *  shared runtime chunk guaranteed, regardless of what (if anything) the app pins.
+ *
+ *  `--import-map` REPLACES the app's deno.json map (it does not merge), so we reconstruct the
+ *  app's effective imports here — walking up from `srcDir`, nearest-wins, resolving relative
+ *  values to absolute file URLs so the map is location-independent — then overlay the runtime. */
+export async function forcedImportMap(srcDir: string): Promise<{ imports: Record<string, string> }> {
+  const layers: Array<{ dir: string; imports: Record<string, string> }> = [];
+  let dir = resolvePath(srcDir);
+  for (;;) {
+    for (const name of ["deno.json", "deno.jsonc"]) {
+      const p = join(dir, name);
+      if (await fileExists(p)) {
+        try {
+          const cfg = JSON.parse(await Deno.readTextFile(p)) as { imports?: Record<string, string> };
+          if (cfg.imports) layers.push({ dir, imports: cfg.imports });
+        } catch { /* unreadable/!json config → skip this layer */ }
+        break;
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  const imports: Record<string, string> = {};
+  // apply ancestors first, the nearest config last, so a member's mapping wins over the root's
+  for (const layer of layers.reverse()) {
+    for (const [k, v] of Object.entries(layer.imports)) {
+      if (!/^\.\.?\//.test(v)) {
+        imports[k] = v; // jsr:/npm:/https:/bare — keep as-is
+        continue;
+      }
+      // relative → absolute file URL. A PREFIX mapping (value ends with "/") must keep its
+      // trailing slash or deno rejects the whole import map ("prefix mapping must end in /");
+      // resolvePath strips it, so restore it.
+      let abs = toFileUrl(resolvePath(layer.dir, v)).href;
+      if (v.endsWith("/") && !abs.endsWith("/")) abs += "/";
+      imports[k] = abs;
+    }
+  }
+  // FORCE the runtime to the CLI's own modules — one core.ts + one signals for every entry.
+  // `new URL(..., import.meta.url)` resolves against THIS file whether the CLI runs from a
+  // local checkout (file://) or JSR (https://), the same trick the generated entries already use.
+  imports["@sprig/core"] = new URL("../core.ts", import.meta.url).href;
+  imports["@preact/signals-core"] = "npm:@preact/signals-core@^1.8.0";
+  return { imports };
+}
+
+/** The once-per-runtime sentinel core.ts writes at module init (`g.__sprig_runtime`).
+ *  It is a property access, which esbuild's minifier does NOT rename, so counting the
+ *  emitted chunks that contain it counts copies of the sprig runtime in the bundle. */
+const RUNTIME_SENTINEL = "__sprig_runtime";
+
+/** Fail the build if the emitted client bundle carries MORE THAN ONE copy of the sprig
+ *  runtime (a "dual-core" bundle). Exactly one copy is the invariant the DI + hydration model
+ *  depends on; two means the client loader and the island chunks resolved @sprig/core to
+ *  different versions and esbuild could not dedup them, so every island would fail to hydrate
+ *  in the browser. Exported for direct testing. (Only >1 fails: a count of 0 would mean the
+ *  sentinel moved, which is a framework change, not a user's dual-core — don't block builds on
+ *  it.) */
+export async function assertSingleRuntime(outDir: string): Promise<void> {
+  const carriers: string[] = [];
+  for await (const e of Deno.readDir(outDir)) {
+    if (!e.isFile || !e.name.endsWith(".js")) continue;
+    if ((await Deno.readTextFile(join(outDir, e.name))).includes(RUNTIME_SENTINEL)) {
+      carriers.push(e.name);
+    }
+  }
+  if (carriers.length > 1) {
+    throw new Error(
+      `sprig build: DUAL-CORE bundle — the sprig runtime was emitted into ${carriers.length} ` +
+        `chunks (${carriers.sort().join(", ")}), but it must be exactly one. Two copies means the ` +
+        `island logic resolved @sprig/core to a DIFFERENT copy than the CLI's loader/hydrate, so ` +
+        `code-splitting could not dedup them. In the browser every island would fail to hydrate ` +
+        `with "inject() must be called synchronously" — the DI context is module-global and cannot ` +
+        `cross two runtime copies. Fix: REMOVE @sprig/core (and @sprig/core/) from the app's ` +
+        `deno.json — the CLI supplies the one runtime. In a Deno workspace, remove it from the ` +
+        `MEMBER that holds the islands (e.g. ui/deno.json): a member's own pin scopes the island ` +
+        `logic to a second copy that the CLI's import map cannot override.`,
+    );
+  }
 }
 
 async function fileExists(p: string): Promise<boolean> {

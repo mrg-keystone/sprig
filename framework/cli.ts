@@ -14,7 +14,7 @@
 import { basename, dirname, join, relative, resolve, toFileUrl } from "@std/path";
 // static relative imports of the package's own modules (computed-path dynamic imports
 // are unanalyzable + don't resolve once this is published to JSR).
-import { buildClient } from "./.sprig/compiler/build.ts";
+import { buildClient, forcedImportMap } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
 import { serveSprig, sprigUi } from "../packages/keep/mod.ts";
 import { assertWorkbench, installRuntimeFromDeployment, installRuntimeFromWorkingTree, latestRuntimeRelease } from "./.sprig/install.ts";
@@ -268,6 +268,83 @@ async function build(appDir = ".", dev = false, outDir = join(Deno.cwd(), "stati
       `(${(r.bytes / 1024).toFixed(1)}kb, v=${r.hash})`,
   );
   if (rune) await emitRuneComposition(appDir, outDir);
+}
+
+/** Recursively collect the app's own `.ts` files (skipping tests, isolate scaffolding, and
+ *  node_modules) — the graph `sprig check` typechecks. */
+async function collectTs(dir: string, out: string[] = []): Promise<string[]> {
+  for await (const e of Deno.readDir(dir)) {
+    const p = join(dir, e.name);
+    if (e.isDirectory) {
+      if (e.name === "isolate" || e.name === "_isolate" || e.name === "node_modules") continue;
+      await collectTs(p, out);
+    } else if (e.isFile && e.name.endsWith(".ts") && !e.name.endsWith(".test.ts")) {
+      out.push(p);
+    }
+  }
+  return out;
+}
+
+/** `sprig check` — typecheck the app under the SAME forced import map the build uses
+ *  (@sprig/core → the CLI's one runtime). This REPLACES a standalone `deno check` once an app
+ *  drops its @sprig/core pin (the CLI is the sole runtime owner): the app authors against the
+ *  @sprig/core interface, the CLI supplies the one implementation, so what typechecks is
+ *  exactly what builds — there is no second copy to drift against. */
+async function check(appDir = "."): Promise<void> {
+  const srcDir = join(resolve(appDir), "src");
+  if (!(await pathExists(srcDir))) {
+    console.error(`sprig check: no src/ under ${resolve(appDir)}`);
+    Deno.exit(1);
+  }
+  const tmp = await Deno.makeTempDir({ prefix: "sprig-check-" });
+  // A temp deno.json carrying BOTH the forced runtime imports AND the app's compilerOptions —
+  // islands run in the browser, so the app's `lib` (dom) + decorator options must apply or
+  // valid island code (e.g. `setInterval` → number, class decorators) mis-typechecks. --config
+  // uses this file's `imports` as the import map, so there's one source, no --import-map clash.
+  const cfgPath = join(tmp, "deno.json");
+  await Deno.writeTextFile(
+    cfgPath,
+    JSON.stringify({
+      compilerOptions: await appCompilerOptions(srcDir),
+      imports: (await forcedImportMap(srcDir)).imports,
+    }),
+  );
+  const files = await collectTs(srcDir);
+  try {
+    if (files.length === 0) {
+      console.log(`sprig check: no .ts files under ${srcDir}`);
+      return;
+    }
+    const res = await new Deno.Command("deno", {
+      args: ["check", "--config", cfgPath, ...files],
+      stdout: "inherit",
+      stderr: "inherit",
+    }).output();
+    if (!res.success) Deno.exit(1);
+    console.log(`sprig check: ${files.length} file(s) typecheck clean under the CLI runtime.`);
+  } finally {
+    await Deno.remove(tmp, { recursive: true }).catch(() => {});
+  }
+}
+
+/** The app's `compilerOptions` (nearest deno.json up from `srcDir`) — islands need the app's
+ *  `lib`/decorator settings to typecheck the way they'll run. Empty when none is declared. */
+async function appCompilerOptions(srcDir: string): Promise<Record<string, unknown>> {
+  let dir = resolve(srcDir);
+  for (;;) {
+    for (const name of ["deno.json", "deno.jsonc"]) {
+      const p = join(dir, name);
+      if (await pathExists(p)) {
+        const cfg = await readJson(p);
+        if (cfg?.compilerOptions) return cfg.compilerOptions as Record<string, unknown>;
+        break;
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return {};
 }
 
 async function pathExists(p: string): Promise<boolean> {
@@ -1124,6 +1201,8 @@ const USAGE = `sprig — the framework CLI
   sprig build [appDir] [--rune]  code-split islands + scope CSS + Tailwind → static/ (default: .; never annotate)
                                   --rune also folds the sibling keep backend + this UI into a git-root
                                   serve.ts (serveSprig) and makes the root deno.json a Deno workspace
+  sprig check [appDir]           typecheck the app under the CLI runtime (the @sprig/core-pin-free
+                                  replacement for `deno check` — the CLI owns the one runtime)
   sprig isolate [appDir]         component/page workbench — develop in isolation (default: .)
   sprig serve [entry]            run the app's host entry under its deno.json (default: serve.ts)
   sprig install [--dev]          install the global sprig CLI + Claude Code skills + agents (--dev: from this checkout)
@@ -1150,6 +1229,11 @@ switch (cmd) {
     } else {
       await build(appArg, dev, join(Deno.cwd(), "static"), false);
     }
+    break;
+  }
+  case "check": {
+    const appArg = rest.find((a) => !a.startsWith("-")) ?? ".";
+    await check(appArg);
     break;
   }
   case "dev":
