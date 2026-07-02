@@ -8,9 +8,9 @@ exits non-zero if the defect is ever fixed and the expectation stops holding.
 Run everything from the **repo root**:
 
 ```sh
-deno run -A feedback/repro/01-frozen-version.ts
-deno run -A feedback/repro/02-immutable-wedge.ts
-deno run -A feedback/repro/03-dual-runtime-inject.ts
+deno run -A feedback/01-stale-bundle-wedge/repro/01-frozen-version.ts
+deno run -A feedback/01-stale-bundle-wedge/repro/02-immutable-wedge.ts
+deno run -A feedback/01-stale-bundle-wedge/repro/03-dual-runtime-inject.ts
 ```
 
 | Script | Demonstrates | Implicated code |

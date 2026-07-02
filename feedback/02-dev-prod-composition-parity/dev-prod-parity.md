@@ -5,7 +5,8 @@ its ugly head locally first. Two alfred incidents violated this. Both are sprig;
 diagnosis, the owning layer, and the exact status.
 
 This is the index doc. Incident 2's implementation is in `composition-parity.md`; incident
-1's cache root cause + the maintainer's fix are in `bug-report.md` / `response.md`.
+1's cache root cause + the maintainer's fix are in
+`../01-stale-bundle-wedge/bug-report.md` / `../01-stale-bundle-wedge/response.md`.
 
 ---
 

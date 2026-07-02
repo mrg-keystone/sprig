@@ -1,0 +1,6 @@
+<section id="overview">
+  <h1>Protected overview — {{ count() }} calls</h1>
+  <ul>
+    <li *for="c of calls()">{{ c.phone }} — {{ c.reason }}</li>
+  </ul>
+</section>

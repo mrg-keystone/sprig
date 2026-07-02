@@ -9,11 +9,11 @@
 //      frozen-URL outcome, harder to spot.
 //
 // Run from the repo root:
-//   deno run -A feedback/repro/01-frozen-version.ts
+//   deno run -A feedback/01-stale-bundle-wedge/repro/01-frozen-version.ts
 import { makeApp } from "./fixture-app/main.ts";
 import { dirname, fromFileUrl, join } from "@std/path";
 
-const repoRoot = join(dirname(fromFileUrl(import.meta.url)), "..", "..");
+const repoRoot = join(dirname(fromFileUrl(import.meta.url)), "..", "..", "..");
 
 async function renderedVersion(): Promise<string> {
   // createRenderer computes the version ONCE at creation (prod path), so a fresh
@@ -33,7 +33,7 @@ const vA = await renderedVersion();
 Deno.chdir(repoRoot);
 const vB = await renderedVersion();
 
-console.log(`\nfixture assets dir (what serveSprig would serve): feedback/repro/fixture-app — NEVER hashed`);
+console.log(`\nfixture assets dir (what serveSprig would serve): feedback/01-stale-bundle-wedge/repro/fixture-app — NEVER hashed`);
 console.log(`A. cwd=${bare} (no static/)        → ?v=${vA}`);
 console.log(`B. cwd=${repoRoot} (unrelated static/) → ?v=${vB}`);
 

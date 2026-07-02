@@ -6,7 +6,7 @@
 // production incident: deploy 1 is cached, deploy 2 ships, the browser runs a mix.
 //
 // Run from the repo root:
-//   deno run -A feedback/repro/02-immutable-wedge.ts
+//   deno run -A feedback/01-stale-bundle-wedge/repro/02-immutable-wedge.ts
 import { serveSprig, type KeepApi } from "@sprig/keep";
 import { makeApp } from "./fixture-app/main.ts";
 import { join } from "@std/path";

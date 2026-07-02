@@ -26,7 +26,7 @@ The eventual fix — wrap the `sprigApp` export so unmatched paths fall through 
 *discovered* pattern, not a documented seam.
 
 This is the SECOND dev/prod divergence in this codebase in two days (the first was the
-stale-immutable-bundle wedge in `bug-report.md`). Same root theme: **dev and prod were never
+stale-immutable-bundle wedge in `../01-stale-bundle-wedge/bug-report.md`). Same root theme: **dev and prod were never
 running the same thing.**
 
 ## The fix (both halves)

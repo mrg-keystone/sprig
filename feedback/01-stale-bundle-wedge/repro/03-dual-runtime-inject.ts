@@ -16,9 +16,9 @@
 // instance — precisely what two differently-hashed chunk files do in a browser).
 //
 // Run from the repo root:
-//   deno run -A feedback/repro/03-dual-runtime-inject.ts
+//   deno run -A feedback/01-stale-bundle-wedge/repro/03-dual-runtime-inject.ts
 
-const coreUrl = new URL("../../framework/.sprig/core.ts", import.meta.url).href;
+const coreUrl = new URL("../../../framework/.sprig/core.ts", import.meta.url).href;
 const runtimeOld = await import(coreUrl); // the cached deploy-1 chunk
 const runtimeNew = await import(coreUrl + "?deploy-2-chunk"); // the fresh deploy-2 chunk
 
