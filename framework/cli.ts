@@ -260,6 +260,10 @@ function devCacheDir(appDir: string): string {
 }
 
 async function build(appDir = ".", dev = false, outDir = join(Deno.cwd(), "static"), rune = false): Promise<void> {
+  // --rune: consolidate the workspace config FIRST (pin @sprig at the root, strip it from every
+  // member) so the client build sees pin-free members that inherit the ONE root runtime — a
+  // member's own pin would scope its islands to a second copy (dual-core). Must precede buildClient.
+  if (rune) await emitRuneComposition(appDir, outDir);
   const srcDir = join(resolve(appDir), "src");
   const r = await buildClient(srcDir, outDir, { dev });
   console.log(
@@ -267,7 +271,6 @@ async function build(appDir = ".", dev = false, outDir = join(Deno.cwd(), "stati
       `[${r.islands.join(", ")}] + ${r.chunks.length} shared chunk(s) → ${outDir} ` +
       `(${(r.bytes / 1024).toFixed(1)}kb, v=${r.hash})`,
   );
-  if (rune) await emitRuneComposition(appDir, outDir);
 }
 
 /** Recursively collect the app's own `.ts` files (skipping tests, isolate scaffolding, and
@@ -625,6 +628,26 @@ async function ensureRuneWorkspace(gitRoot: string, uiRel: string, serverRel: st
   imports["@std/path"] ??= uiImports["@std/path"] ?? "jsr:@std/path@^1";
   imports["@preact/signals-core"] ??= uiImports["@preact/signals-core"] ?? "npm:@preact/signals-core@^1";
   cfg.imports = imports;
+  // 2b. @sprig/* belongs at the ROOT only — strip it from every member (like `unstable` below).
+  //     A workspace member with its OWN @sprig/core pin scopes its files to that copy; if it
+  //     drifts from the root, the client bundle carries TWO runtimes (dead islands) AND, on the
+  //     server, an OLD core whose bootstrap silently ignores route guards — an auth bypass we hit
+  //     in practice. With the pin at the root only, members INHERIT the one runtime: single-core,
+  //     guards intact. (The build.ts gate is the backstop if a stray member pin ever returns.)
+  for (const member of [uiRel, serverRel]) {
+    const mPath = join(gitRoot, member, "deno.json");
+    const mCfg = await readJson(mPath);
+    if (!mCfg || typeof mCfg.imports !== "object") continue;
+    const mImports = mCfg.imports as Record<string, string>;
+    let changed = false;
+    for (const k of ["@sprig/core", "@sprig/core/", "@sprig/keep"]) {
+      if (k in mImports) {
+        delete mImports[k];
+        changed = true;
+      }
+    }
+    if (changed) await Deno.writeTextFile(mPath, JSON.stringify(mCfg, null, 2) + "\n");
+  }
   // 3. a working `start` task — replace a stale `deno run … server.ts`, keep a good one
   const tasks = (cfg.tasks && typeof cfg.tasks === "object") ? cfg.tasks as Record<string, string> : {};
   const envFlag = (await pathExists(join(gitRoot, ".env"))) ? " --env-file=.env" : "";
