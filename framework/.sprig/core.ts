@@ -428,6 +428,9 @@ export interface ComponentModule {
 /** What a guard receives. `path` is the target route's post-base path segments
  *  (as they appear in the URL, undecoded) — return it (or an equal route) to let
  *  the navigation proceed. `params` are the matched `:param` captures (decoded).
+ *  `headers` are the incoming request's headers — page navigations carry the
+ *  browser's cookies there, which is what makes a server-side auth guard possible
+ *  at all (an Authorization header never accompanies a document navigation).
  *  Call `inject()` synchronously inside a guard (before any `await`) for DI —
  *  guards run on the request's route injector, so a service a guard instantiates
  *  is the SAME instance the page's resolve() later injects. */
@@ -435,6 +438,7 @@ export interface GuardCtx {
   path: string[];
   params: Record<string, string>;
   url: URL;
+  headers: Headers;
 }
 /** A route guard: a function that returns the route — as an array of path
  *  segments — the navigation should go to. Returning the route it was going to
@@ -604,7 +608,7 @@ export function bootstrap(config: AppConfig): SprigApp {
       if (matched.guards?.length) {
         const segs = path.split("/").filter((s) => s.length > 0);
         const target = segs.join("/");
-        const ctx: GuardCtx = { path: segs, params: matched.params, url };
+        const ctx: GuardCtx = { path: segs, params: matched.params, url, headers: req.headers };
         try {
           for (const guard of matched.guards) {
             const out = normalizeRoute(await runInInjector(routeInjector, () => guard(ctx)));

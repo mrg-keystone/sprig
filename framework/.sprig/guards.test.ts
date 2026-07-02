@@ -211,6 +211,25 @@ Deno.test("guards don't run for disallowed methods (405 wins)", async () => {
   assertEquals(calls, []);
 });
 
+Deno.test("guard receives the request headers — a cookie-based auth guard works", async () => {
+  const requireLogin: Guard = (ctx) => {
+    const cookies = ctx.headers.get("cookie") ?? "";
+    return cookies.split(/;\s*/).some((c) => c.startsWith("auth=")) ? ctx.path : ["login"];
+  };
+  const app = bootstrap({
+    routes: defineRoutes([
+      { path: "login", load: "./pages/login" },
+      { path: "admin", load: "./pages/admin", guards: [requireLogin] },
+    ]),
+  });
+  const anon = await app.fetch(new Request("http://localhost/admin"));
+  assertEquals(anon.status, 302, "no cookie → back to login");
+  assertEquals(anon.headers.get("location"), "/login");
+  const authed = await app.fetch(new Request("http://localhost/admin", { headers: { "cookie": "theme=dark; auth=1" } }));
+  assertEquals(authed.status, 200, "the browser's cookie header reaches the guard");
+  await authed.text();
+});
+
 Deno.test("matchRoute collects the guard chain parent-first, without sibling leaks", () => {
   const g1: Guard = (c) => c.path;
   const g2: Guard = (c) => c.path;

@@ -85,8 +85,11 @@ export const routes = defineRoutes([
 ```
 
 - **Contract:** `(ctx: GuardCtx) => string[] | Promise<string[]>` with `ctx = { path, params,
-  url }`. `ctx.path` is the target's post-base segments exactly as they appear in the URL
-  (undecoded, so returning it round-trips); `ctx.params` are the decoded `:param` captures.
+  url, headers }`. `ctx.path` is the target's post-base segments exactly as they appear in the
+  URL (undecoded, so returning it round-trips); `ctx.params` are the decoded `:param` captures;
+  `ctx.headers` are the incoming request's headers — page navigations carry the browser's
+  cookies there, which is what a server-side login guard checks (a marker cookie; an
+  `Authorization` header never accompanies a document navigation).
 - **Normalization:** returned elements may carry `/` separators and empty segments are
   dropped — `["admin","users"]` ≡ `["admin/users"]`; `[]` means the root route.
 - **Order:** the matched chain's guards run **parent-first** (a route's own guards last),

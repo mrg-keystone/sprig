@@ -83,7 +83,8 @@ export const routes = defineRoutes([
 ]);
 ```
 
-- `ctx = { path, params, url }`; async guards fine; call `inject()` synchronously (before any
+- `ctx = { path, params, url, headers }` (headers = the request’s — cookies live there, the
+  basis for a login guard); async guards fine; call `inject()` synchronously (before any
   `await`) — guards share the request's route injector with `resolve`.
 - Returned segments normalize (`["admin/users"]` ≡ `["admin","users"]`; `[]` = root). First
   divergent guard wins; a throwing guard → controlled 500 (fails closed).
