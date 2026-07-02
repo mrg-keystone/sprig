@@ -48,6 +48,47 @@ export interface SprigConfig {
    *  page-local registry the server used (registryForPage). A fallback for hosts that
    *  carry no data-page; soft-nav re-sets it from each swapped document. */
   page?: string;
+  /** Hidden INFRA perf reporting endpoint (stamped by the SSR when INFRA_PERF is on —
+   *  see compiler/perf.ts). Full document loads report via an inline <head> snippet;
+   *  this config is what lets the runtime report SOFT navigations the same way. */
+  perf?: PerfEndpoint;
+}
+
+// ───────────────────── hidden INFRA perf reporting ──────────────────────────
+// A soft navigation swaps the outlet without executing any of the fetched document's
+// scripts, so the head snippet that reports full loads never runs for it. The pair is
+// fired from HERE instead, on the same wire contract (see perf.ts): two POSTs joined
+// by one navId — #1 when the navigation is intercepted, #2 once the swap commits.
+export interface PerfEndpoint {
+  url: string;
+  app: string;
+}
+
+/** A random correlation id for one navigation's report pair. (crypto.randomUUID is
+ *  secure-context-only, hence the fallback.) */
+export function perfNavId(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  return c?.randomUUID ? c.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+/** Fire-and-forget one perf report. `post` is injectable for tests; the default posts
+ *  via sendBeacon (a plain JSON string → text/plain → no CORS preflight, survives an
+ *  early tab close) with a keepalive no-cors fetch fallback. Telemetry must never
+ *  throw into the app. */
+export function perfSend(
+  perf: PerfEndpoint,
+  route: string,
+  navId: string,
+  timestamp: Date,
+  post?: (url: string, body: string) => void,
+): void {
+  try {
+    const body = JSON.stringify({ timestamp: timestamp.toISOString(), navId, route, "infra-app-id": perf.app });
+    if (post) return post(perf.url, body);
+    const nav = (globalThis as { navigator?: { sendBeacon?: (url: string, data?: string) => boolean } }).navigator;
+    if (nav?.sendBeacon) nav.sendBeacon(perf.url, body);
+    else fetch(perf.url, { method: "POST", body, keepalive: true, mode: "no-cors" }).catch(() => {});
+  } catch { /* fire-and-forget */ }
 }
 
 // Static (non-island) component templates shipped to the client by the build, so an
@@ -442,31 +483,40 @@ export function softNavScroll(
   deps.scrollTo(0, 0);
 }
 
+/** How one intercepted navigation ended: the outlet swap committed, we fell back to a
+ *  real browser navigation (whose own document reports itself), or a superseding
+ *  navigation aborted this one. The perf hook keys off this — only "swapped" gets a
+ *  page-loaded report. */
+export type SoftNavOutcome = "swapped" | "fallback" | "aborted";
+
 /** The full soft-nav flow for one intercepted navigation, with all environment access
  *  injected so it is unit-testable. Returns when the swap (or fallback) is done. */
-export async function runSoftNav(e: NavEvent, cfg: SprigConfig, deps: SoftNavDeps): Promise<void> {
+export async function runSoftNav(e: NavEvent, cfg: SprigConfig, deps: SoftNavDeps): Promise<SoftNavOutcome> {
   let html: string;
   try {
     const r = await deps.fetch(e.destination.url, { signal: e.signal });
-    if (e.signal?.aborted) return;
+    if (e.signal?.aborted) return "aborted";
     if (!softNavResponseOk(r)) {
       deps.assign(e.destination.url);
-      return;
+      return "fallback";
     }
     html = await r.text();
   } catch {
     // network/abort/HTTP-transport failure: fall back to a real browser navigation
     // (unless a superseding navigation already aborted this one).
-    if (!e.signal?.aborted) deps.assign(e.destination.url);
-    return;
+    if (!e.signal?.aborted) {
+      deps.assign(e.destination.url);
+      return "fallback";
+    }
+    return "aborted";
   }
-  if (e.signal?.aborted) return;
+  if (e.signal?.aborted) return "aborted";
   const doc = deps.parse(html);
   const next = deps.outletOf(doc);
   const cur = deps.outletOf(document);
   if (!next || !cur) {
     deps.assign(e.destination.url);
-    return;
+    return "fallback";
   }
   const hash = (() => {
     try {
@@ -486,6 +536,7 @@ export async function runSoftNav(e: NavEvent, cfg: SprigConfig, deps: SoftNavDep
   };
   if (deps.viewTransition) deps.viewTransition(swap);
   else swap();
+  return "swapped";
 }
 
 /** Intercept same-origin <base>/* links, swap ONLY the <sprig-outlet> in a view
@@ -529,7 +580,29 @@ export function setupSoftNav(cfg: SprigConfig): void {
   nav.addEventListener("navigate", (e: NavEvent) => {
     if (softNavShouldSkip(e, cfg, location.href)) return;
     persistState(); // save current state before navigating away (it reconstructs on the next page)
-    e.intercept({ scroll: "manual", handler: () => runSoftNav(e, cfg, deps) });
+    // hidden INFRA perf: a soft nav is a server-rendered page request like any other,
+    // so it reports the same two-POST pair the head snippet emits for full loads —
+    // #1 now (nav start), #2 only for a COMMITTED swap ("fallback" becomes a real
+    // document load whose own head snippet reports itself; reporting it here too
+    // would double-count, and "aborted" never became a page).
+    const perf = cfg.perf;
+    let navId = "", route = "";
+    if (perf) {
+      try {
+        route = new URL(e.destination.url).pathname;
+      } catch {
+        route = location.pathname;
+      }
+      navId = perfNavId();
+      perfSend(perf, route, navId, new Date());
+    }
+    e.intercept({
+      scroll: "manual",
+      handler: () =>
+        runSoftNav(e, cfg, deps).then((outcome) => {
+          if (perf && outcome === "swapped") perfSend(perf, route, navId, new Date());
+        }),
+    });
   });
 }
 

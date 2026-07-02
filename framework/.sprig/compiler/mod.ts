@@ -17,6 +17,7 @@ import type { Scope } from "./expr.ts";
 import { makeServerCtx, withServerInjector } from "./island.ts";
 import { versionOf } from "./hash.ts";
 import { componentScopeId } from "./scope.ts";
+import { perfConfig, type PerfConfig, perfHeadSnippet } from "./perf.ts";
 import type { ComponentDef as CoreComponentDef, Resolve } from "@sprig/core";
 
 export interface SsrRenderer {
@@ -59,6 +60,10 @@ export async function createRenderer(
   // off-app (keep-owned) prefixes the client soft-nav must leave to the browser. Defaults
   // to keep's defaults so an app mounted at base "" doesn't soft-fetch /api or /docs.
   const reserved = opts.reserved ?? ["/api", "/docs"];
+  // hidden INFRA perf reporting (env-gated, read once at boot — see ./perf.ts): when
+  // enabled, every document ships the head beacon snippet and __sprig_config carries
+  // the endpoint so the client runtime can report soft navigations the same way.
+  const perf = perfConfig();
   // A component's IDENTITY is its folder path relative to srcDir (unique), not its
   // bare basename. Two registries: `global` for shared/shell/page components (keyed
   // by basename, must be unique → collision throws), and `pageLocal` for components
@@ -281,7 +286,7 @@ export async function createRenderer(
       // wins over readVersion(), whose SPRIG_ASSETS_DIR/<cwd>/static guess is wrong
       // exactly where it matters (Deno Deploy's cwd is not the app dir).
       const v = pickVersion(ropts?.assetsVersion);
-      return document(await renderBody(pageLoad, inputs), base, v, reserved, pageName(pageLoad));
+      return document(await renderBody(pageLoad, inputs), base, v, reserved, pageName(pageLoad), perf);
     },
     renderStream(pageLoad, inputs, ropts) {
       const enc = new TextEncoder();
@@ -293,10 +298,11 @@ export async function createRenderer(
             // mutates the module-level `version` during the body await.
             const v = pickVersion(ropts?.assetsVersion);
             // flush the head NOW → the browser preloads app.css + client.js while we
-            // await the body's onServerInit fetches.
-            ctrl.enqueue(enc.encode(documentHead(base, v)));
+            // await the body's onServerInit fetches (and, when INFRA_PERF is on, the
+            // perf snippet's nav-start beacon fires while the body is still streaming).
+            ctrl.enqueue(enc.encode(documentHead(base, v, perf)));
             const body = await renderBody(pageLoad, inputs);
-            ctrl.enqueue(enc.encode(body + documentTail(base, v, reserved, pageName(pageLoad))));
+            ctrl.enqueue(enc.encode(body + documentTail(base, v, reserved, pageName(pageLoad), perf)));
           } catch {
             // headers + head are already on the wire, so a render failure can't become a
             // 500 — emit a marker and close (matches the renderDocument 500's no-leak rule).
@@ -379,13 +385,16 @@ export async function assertStaticPage(_templateDir: string): Promise<void> {}
 // first byte — the browser preloads app.css + client.js (modulepreload) while the
 // server is still awaiting the body's onServerInit fetches. documentHead() + the body +
 // documentTail() concatenate to EXACTLY document()'s string (streaming is transparent).
-function documentHead(base: string, version: string): string {
+function documentHead(base: string, version: string, perf: PerfConfig | null = null): string {
   const client = `${base}/_assets/client.js?v=${version}`;
+  // the perf snippet (when enabled) sits BEFORE the stylesheet link: an inline script
+  // after a pending stylesheet blocks on the CSSOM, which would hold the nav-start
+  // beacon hostage to the CSS download.
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />${perfHeadSnippet(perf)}
   <title>sprig</title>
   <link rel="stylesheet" href="${base}/_assets/app.css?v=${version}" />
   <link rel="modulepreload" href="${client}" />
@@ -393,20 +402,23 @@ function documentHead(base: string, version: string): string {
 <body>
 `;
 }
-function documentTail(base: string, version: string, reserved: string[], page?: string): string {
+function documentTail(base: string, version: string, reserved: string[], page?: string, perf: PerfConfig | null = null): string {
   const client = `${base}/_assets/client.js?v=${version}`;
   // `page` (the matched page's basename) lets the client resolve an island's child
   // components against the same page-local registry the server used (registryForPage).
   const cfg: Record<string, unknown> = { base, v: version, reserved };
   if (page !== undefined) cfg.page = page;
+  // hidden INFRA perf: hand the client runtime the collector so SOFT navigations —
+  // whose fetched documents never execute scripts — emit the same beacon pair.
+  if (perf) cfg.perf = { url: perf.url, app: perf.app };
   return `
 <script type="application/json" id="__sprig_config">${JSON.stringify(cfg).replace(/</g, "\\u003c")}</script>
 <script type="module" src="${client}"></script>
 </body>
 </html>`;
 }
-function document(body: string, base: string, version: string, reserved: string[], page?: string): string {
-  return documentHead(base, version) + body + documentTail(base, version, reserved, page);
+function document(body: string, base: string, version: string, reserved: string[], page?: string, perf: PerfConfig | null = null): string {
+  return documentHead(base, version, perf) + body + documentTail(base, version, reserved, page, perf);
 }
 
 export { join };

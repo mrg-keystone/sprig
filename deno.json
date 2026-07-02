@@ -52,6 +52,7 @@
       "framework/.sprig/compiler/mod.ts",
       "framework/.sprig/compiler/node.ts",
       "framework/.sprig/compiler/parse.ts",
+      "framework/.sprig/compiler/perf.ts",
       "framework/.sprig/compiler/render.ts",
       "framework/.sprig/compiler/scope.ts",
       "framework/.sprig/compiler/serialize.ts",
