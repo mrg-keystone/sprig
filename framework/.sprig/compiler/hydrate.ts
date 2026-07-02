@@ -277,8 +277,28 @@ function hydratePending(sel: string): void {
         hydrateIsland(el as HTMLElement, entry);
       } catch (err) {
         console.error(`[sprig] failed to hydrate island "${sel}"`, err);
+        maybeRecoverDualRuntime();
       }
     });
+}
+
+/** One-shot recovery for the DETECTED dual-runtime state (core.ts sets the flag when a
+ *  second copy of the runtime chunk loads — a stale cached bundle next to a fresh one
+ *  after a redeploy). A reload fetches a fresh document whose content-addressed asset
+ *  URLs resolve to ONE consistent build, so a transient deploy skew self-heals instead
+ *  of leaving every island dead. sessionStorage-guarded to ONCE per session: a genuine
+ *  app bug (flag unset) never reloads at all, and even the dual state never loops. */
+function maybeRecoverDualRuntime(): void {
+  const g = globalThis as { __sprig_runtime_dual?: true };
+  if (!g.__sprig_runtime_dual) return;
+  try {
+    if (sessionStorage.getItem("__sprig_dual_reload")) return;
+    sessionStorage.setItem("__sprig_dual_reload", "1");
+  } catch {
+    return; // no sessionStorage (privacy mode) → never risk a reload loop
+  }
+  console.error("[sprig] reloading once to recover from the dual-runtime state…");
+  location.reload();
 }
 
 // ───────────────────────────── the eager loader ─────────────────────────────
@@ -346,6 +366,7 @@ function loadIsland(sel: string, cfg: SprigConfig): void {
   import(`${cfg.base}/_assets/isl.${sel}.js?v=${cfg.v}`).catch((err) => {
     loading.delete(sel);
     console.error(`[sprig] failed to load island "${sel}"`, err);
+    maybeRecoverDualRuntime();
   });
 }
 

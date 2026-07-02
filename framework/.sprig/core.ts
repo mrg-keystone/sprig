@@ -259,6 +259,36 @@ export function clientRoot(): Injector {
   return (g.__sprig_root ??= new Injector("client", "root"));
 }
 
+/** Detect a SECOND copy of the sprig runtime in one document. Module-scoped state
+ *  (the DI context `current` below, token symbols, class identities) cannot cross
+ *  copies, so a dual load kills every island with a misleading inject()/provider
+ *  error. The usual cause: a stale cached bundle running next to a freshly fetched
+ *  chunk after a redeploy. Report the REAL cause loudly and flag the state so the
+ *  hydrate loop can attempt its one-shot recovery reload (hydrate.ts). Browser-only:
+ *  on the server two module instances are legitimate (tests import with query
+ *  strings; jsr + relative specifiers can coexist) and a reload is meaningless.
+ *  Exported for direct testing; runs once at module init. */
+export function detectDualRuntime(
+  g: { __sprig_runtime?: true; __sprig_runtime_dual?: true } = globalThis as never,
+  // via globalThis (not a bare `document`) so core.ts type-checks lib-agnostically —
+  // it is imported by DOM-lib and deno-lib graphs alike
+  isBrowser: boolean = typeof (globalThis as { document?: unknown }).document !== "undefined",
+): boolean {
+  if (!isBrowser) return false;
+  if (g.__sprig_runtime) {
+    g.__sprig_runtime_dual = true;
+    console.error(
+      "[sprig] two copies of the sprig runtime are loaded in this document — usually a " +
+        "stale cached bundle running next to a fresh one after a redeploy. Islands will " +
+        "fail to hydrate. Hard-reload / clear caches if this page does not recover itself.",
+    );
+    return true;
+  }
+  g.__sprig_runtime = true;
+  return false;
+}
+detectDualRuntime();
+
 let current: Injector | undefined;
 /** Resolve a dependency from the active injector. Synchronous-only: call it
  *  before any `await` (capture deps into vars first). */
@@ -452,8 +482,8 @@ function walk(routes: Route[], segs: string[], inherited: Record<string, string>
  *  ONLY wiring an app needs — render + stream + per-page resolve loading all come from
  *  it, so `routes` alone drive data loading (no `modules` map, no per-page imports). */
 export interface AppRenderer {
-  renderDocument(pageLoad: string, inputs: Record<string, unknown>): Promise<string>;
-  renderStream?(pageLoad: string, inputs: Record<string, unknown>): ReadableStream<Uint8Array>;
+  renderDocument(pageLoad: string, inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }): Promise<string>;
+  renderStream?(pageLoad: string, inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }): ReadableStream<Uint8Array>;
   loadResolve?(pageLoad: string): Promise<Resolve | undefined>;
 }
 
@@ -466,12 +496,16 @@ export interface AppConfig {
    *  by route `load`); this is only consulted as an override when present. */
   modules?: Record<string, ComponentModule>;
   /** LEGACY direct render callback; superseded by `renderer.renderDocument`. */
-  render?: (pageLoad: string, inputs: Record<string, unknown>) => Promise<string>;
+  render?: (pageLoad: string, inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }) => Promise<string>;
   /** LEGACY direct stream callback; superseded by `renderer.renderStream`. */
-  renderStream?: (pageLoad: string, inputs: Record<string, unknown>) => ReadableStream<Uint8Array>;
+  renderStream?: (pageLoad: string, inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }) => ReadableStream<Uint8Array>;
 }
 export interface SprigApp {
-  fetch(req: Request, info?: Deno.ServeHandlerInfo, env?: { backend?: BackendClient }): Promise<Response>;
+  /** `env.assetsVersion` is the content hash of the dir the assets are ACTUALLY served
+   *  from (serveSprig/sprigUi compute it from their assetsDir). The renderer stamps it
+   *  into `?v=` so the asset URLs are content-addressed — the renderer's own fallback
+   *  (SPRIG_ASSETS_DIR/<cwd>/static) can't know the served dir and degrades on Deploy. */
+  fetch(req: Request, info?: Deno.ServeHandlerInfo, env?: { backend?: BackendClient; assetsVersion?: string }): Promise<Response>;
 }
 
 /** Read-only methods the SSR document route honors. */
@@ -552,16 +586,18 @@ export function bootstrap(config: AppConfig): SprigApp {
       const renderStream = config.renderStream ??
         (config.renderer?.renderStream ? config.renderer.renderStream.bind(config.renderer) : undefined);
       const render = config.render ?? config.renderer?.renderDocument?.bind(config.renderer);
+      // the served-assets content hash from serveSprig/sprigUi → the renderer's ?v=
+      const ropts = env?.assetsVersion ? { assetsVersion: env.assetsVersion } : undefined;
 
       // Streaming SSR (preferred): flush the head now, stream the body after its fetches.
       if (renderStream && matched.load && method !== "HEAD") {
-        return new Response(renderStream(matched.load, inputs), { status, headers: ssrHeaders() });
+        return new Response(renderStream(matched.load, inputs, ropts), { status, headers: ssrHeaders() });
       }
 
       let html: string;
       try {
         html = render && matched.load
-          ? await render(matched.load, inputs)
+          ? await render(matched.load, inputs, ropts)
           : renderDocument(matched, inputs, base);
       } catch {
         return new Response("Internal Server Error", { status: 500, headers: ssrHeaders() });

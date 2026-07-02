@@ -12,6 +12,7 @@ import { backendClient, type SprigApp } from "@sprig/core";
 // @sprig/core; it belongs with the rest of the server glue. The actual COMPILER
 // (buildClient + the tree-sitter parser) is CLI-only and is NOT re-exported here.
 export { createRenderer, type SsrRenderer } from "../../framework/.sprig/compiler/mod.ts";
+import { assetsVersioner } from "../../framework/.sprig/compiler/hash.ts";
 
 /** The slice of keep's `bootstrapServer(...)` result that serveSprig consumes. */
 export interface KeepApi {
@@ -87,7 +88,19 @@ function jsonDepth(text: string): number {
   return max;
 }
 
-async function serveAsset(dir: string, file: string, req: Request): Promise<Response> {
+/** esbuild's content-hashed chunk names (chunk-XXXXXXXX.js, 8 base32 chars). These are
+ *  content-addressed by FILENAME — new bytes always mean a new name — so `immutable`
+ *  is sound for them even without a ?v= (they're fetched via bare relative imports,
+ *  which don't inherit the importer's query). The pattern is deliberately tight so a
+ *  hand-authored "chunk-utils.js" can never be wrongly pinned for a year. */
+const HASHED_CHUNK = /^chunk-[A-Z0-9]{8}\.js$/;
+
+async function serveAsset(
+  dir: string,
+  file: string,
+  req: Request,
+  version?: () => Promise<string | null>,
+): Promise<Response> {
   // static files answer only to GET/HEAD
   if (req.method !== "GET" && req.method !== "HEAD") {
     return new Response("Method Not Allowed", {
@@ -114,6 +127,17 @@ async function serveAsset(dir: string, file: string, req: Request): Promise<Resp
   try {
     const path = `${dir}/${decoded}`;
     const stat = await Deno.stat(path);
+    // `immutable` may only ever be sent for a CONTENT-ADDRESSED request — one whose
+    // URL is guaranteed to change when the bytes change: either ?v= equals the served
+    // dir's CURRENT content hash, or the file is a content-hash-named chunk. Anything
+    // else (?v=dev from a degraded version, a missing ?v=, a stale hash from a browser
+    // that cached an older deploy) gets `no-cache` = revalidate before reuse — the
+    // ETag/304 path below makes that one cheap conditional request, not a re-download.
+    // Unconditional `immutable` here is what turned a frozen ?v= into browsers wedged
+    // on a year-long cache of a dead deploy (every island failing to hydrate).
+    const q = new URL(req.url).searchParams.get("v");
+    const cur = version ? await version() : null;
+    const addressed = (cur !== null && q === cur) || HASHED_CHUNK.test(decoded.slice(decoded.lastIndexOf("/") + 1));
     // cache validators so conditional GETs can 304 instead of re-transferring
     const lastModified = stat.mtime ?? new Date(0);
     const etag = `W/"${stat.size.toString(16)}-${lastModified.getTime().toString(16)}"`;
@@ -123,7 +147,7 @@ async function serveAsset(dir: string, file: string, req: Request): Promise<Resp
       (inm === null && ims !== null && new Date(ims).getTime() >= Math.floor(lastModified.getTime() / 1000) * 1000);
     const headers: Record<string, string> = {
       "content-type": contentTypeFor(file),
-      "cache-control": "public, max-age=31536000, immutable",
+      "cache-control": addressed ? "public, max-age=31536000, immutable" : "no-cache",
       "etag": etag,
       "last-modified": lastModified.toUTCString(),
     };
@@ -158,6 +182,11 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
   }
 
   const backend = backendClient(config.keep.backend.fetch);
+  // ONE source of truth for the asset version: the content hash of the dir we ACTUALLY
+  // serve. It drives both the renderer's ?v= (via env.assetsVersion) and serveAsset's
+  // immutable check, so the two can never disagree. Stat-probed memoization: steady
+  // state is cheap, and an in-place rebuild is picked up on the next request.
+  const version = assetsVersioner(assetsDir);
 
   return {
     async fetch(req, info): Promise<Response> {
@@ -173,9 +202,9 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
         });
       }
 
-      // built assets → static dir (immutable cache)
+      // built assets → static dir (immutable only for content-addressed requests)
       if (path.startsWith(assetPrefix + "/")) {
-        return serveAsset(assetsDir, path.slice(assetPrefix.length + 1), req);
+        return serveAsset(assetsDir, path.slice(assetPrefix.length + 1), req, version);
       }
       // network /api/* → keep (auth-gated), prefix stripped, info forwarded
       if (path === apiPrefix || path.startsWith(apiPrefix + "/")) {
@@ -219,8 +248,9 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
       if (path === docsPrefix || path.startsWith(docsPrefix + "/")) {
         return Promise.resolve(config.keep.handler(req, info));
       }
-      // everything else → sprig SSR, in-process Backend threaded in (no globalThis)
-      return config.app.fetch(req, info, { backend });
+      // everything else → sprig SSR, in-process Backend threaded in (no globalThis),
+      // plus the served-assets content hash so the rendered ?v= is content-addressed.
+      return config.app.fetch(req, info, { backend, assetsVersion: (await version()) ?? undefined });
     },
   };
 }
@@ -257,19 +287,20 @@ export function sprigUi(
   const assetsDir = config.assetsDir ?? "static";
   const assetPrefix = `${base}/_assets`;
   const backend = config.backend ? backendClient(config.backend.fetch) : undefined;
+  // same single source of truth as serveSprig: the served dir's content hash drives
+  // the renderer's ?v= AND the immutable check (stat-probed, tracks in-place rebuilds).
+  const version = assetsVersioner(assetsDir);
 
-  return (req, info) => {
+  return async (req, info) => {
     const path = new URL(req.url).pathname;
     // not under <base> → not ours; the host handles it (next()).
-    if (path !== base && !path.startsWith(base + "/")) return Promise.resolve(null);
+    if (path !== base && !path.startsWith(base + "/")) return null;
     if (FORBIDDEN_METHODS.has(req.method)) {
-      return Promise.resolve(
-        new Response("Method Not Allowed", { status: 405, headers: { "allow": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS" } }),
-      );
+      return new Response("Method Not Allowed", { status: 405, headers: { "allow": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS" } });
     }
     if (path.startsWith(assetPrefix + "/")) {
-      return serveAsset(assetsDir, path.slice(assetPrefix.length + 1), req);
+      return serveAsset(assetsDir, path.slice(assetPrefix.length + 1), req, version);
     }
-    return config.app.fetch(req, info, backend ? { backend } : undefined);
+    return config.app.fetch(req, info, { backend, assetsVersion: (await version()) ?? undefined });
   };
 }

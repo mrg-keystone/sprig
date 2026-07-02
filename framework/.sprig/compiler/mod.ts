@@ -15,17 +15,20 @@ let _parser: typeof import("./parse.ts") | null = null;
 const parser = async () => (_parser ??= await import("./parse.ts"));
 import type { Scope } from "./expr.ts";
 import { makeServerCtx, withServerInjector } from "./island.ts";
-import { shortHash } from "./hash.ts";
+import { versionOf } from "./hash.ts";
 import { componentScopeId } from "./scope.ts";
 import type { ComponentDef as CoreComponentDef, Resolve } from "@sprig/core";
 
 export interface SsrRenderer {
-  /** Render `pageLoad`'s component into the shell, return a full HTML document. */
-  renderDocument(pageLoad: string, inputs: Scope): Promise<string>;
+  /** Render `pageLoad`'s component into the shell, return a full HTML document.
+   *  `ropts.assetsVersion` (threaded from serveSprig/sprigUi via the app env) is the
+   *  content hash of the dir the assets are ACTUALLY served from — it wins over this
+   *  renderer's own readVersion(), which only knows SPRIG_ASSETS_DIR/<cwd>/static. */
+  renderDocument(pageLoad: string, inputs: Scope, ropts?: { assetsVersion?: string }): Promise<string>;
   /** Same document, STREAMED: the <head> (asset preloads) flushes on the first byte,
    *  the body streams after its onServerInit fetches resolve. Byte-identical to
    *  renderDocument's output, just chunked. */
-  renderStream(pageLoad: string, inputs: Scope): ReadableStream<Uint8Array>;
+  renderStream(pageLoad: string, inputs: Scope, ropts?: { assetsVersion?: string }): ReadableStream<Uint8Array>;
   /** Selectors discovered (for diagnostics/tests). */
   selectors(): string[];
   /** the scanned src root (for the dev server's watcher). */
@@ -173,20 +176,29 @@ export async function createRenderer(
   // never changes (e.g. the repo root) yields a frozen ?v=, so a returning browser keeps a
   // stale cached client.js even after a rebuild.
   const staticDir = Deno.env.get("SPRIG_ASSETS_DIR") || join(Deno.cwd(), "static");
-  const readVersion = async () => {
-    try {
-      const files: string[] = [];
-      // hash the SERVED assets only (.js + app.css) — same set the build hashes, so
-      // templates.json / source maps don't perturb ?v=.
-      for await (const e of Deno.readDir(staticDir)) {
-        if (e.isFile && (e.name.endsWith(".js") || e.name === "app.css")) files.push(join(staticDir, e.name));
-      }
-      return files.length ? await shortHash(files.sort()) : "dev";
-    } catch {
-      return "dev";
-    }
-  };
+  // hash the SERVED assets only (.js + app.css) — same set the build hashes, so
+  // templates.json / source maps don't perturb ?v=. A missing/empty dir degrades to
+  // the constant "dev" — NOT content-addressed, so the asset server must never send
+  // `immutable` for it (serveAsset only does for a ?v= matching the real hash).
+  const readVersion = async () => (await versionOf(staticDir)) ?? "dev";
   let version = await readVersion();
+  // The degraded state warns ONCE, at first actual use in a non-dev render — not at
+  // boot, where it would false-alarm serveSprig/sprigUi apps whose env supplies the
+  // real assetsVersion per request. Silent degradation is what turned a Deno Deploy
+  // cwd mismatch into browsers wedged on a year-long immutable cache of ?v=dev.
+  let warnedDegraded = false;
+  const pickVersion = (assetsVersion?: string): string => {
+    if (assetsVersion) return assetsVersion;
+    if (version === "dev" && !opts.dev && !warnedDegraded) {
+      warnedDegraded = true;
+      console.warn(
+        `[sprig] could not hash assets dir "${staticDir}" — asset URLs are not ` +
+          `cache-busted (?v=dev) and long-term caching is disabled. Serve through ` +
+          `serveSprig/sprigUi with assetsDir set, or set SPRIG_ASSETS_DIR.`,
+      );
+    }
+    return version;
+  };
 
   /** find a single def by selector for the selector-based public API (dev watcher /
    *  HMR). Prefers a global component; falls back to a uniquely-named page-local. */
@@ -260,23 +272,26 @@ export async function createRenderer(
       resolveCache.set(rel, fn);
       return fn;
     },
-    async renderDocument(pageLoad, inputs) {
-      if (opts.dev) version = await readVersion();
+    async renderDocument(pageLoad, inputs, ropts) {
+      if (opts.dev && !ropts?.assetsVersion) version = await readVersion();
       // snapshot the version BEFORE the body await so a concurrent dev request recomputing
       // the module-level `version` during renderBody can't make this document stamp the
       // other request's version (mirrors renderStream's `const v = version;` guard).
-      const v = version;
+      // The env-threaded assetsVersion (hash of the dir serveSprig actually serves)
+      // wins over readVersion(), whose SPRIG_ASSETS_DIR/<cwd>/static guess is wrong
+      // exactly where it matters (Deno Deploy's cwd is not the app dir).
+      const v = pickVersion(ropts?.assetsVersion);
       return document(await renderBody(pageLoad, inputs), base, v, reserved, pageName(pageLoad));
     },
-    renderStream(pageLoad, inputs) {
+    renderStream(pageLoad, inputs, ropts) {
       const enc = new TextEncoder();
       return new ReadableStream<Uint8Array>({
         async start(ctrl) {
           try {
-            if (opts.dev) version = await readVersion();
+            if (opts.dev && !ropts?.assetsVersion) version = await readVersion();
             // snapshot the version so head and tail agree even if a concurrent dev rebuild
             // mutates the module-level `version` during the body await.
-            const v = version;
+            const v = pickVersion(ropts?.assetsVersion);
             // flush the head NOW → the browser preloads app.css + client.js while we
             // await the body's onServerInit fetches.
             ctrl.enqueue(enc.encode(documentHead(base, v)));

@@ -33,7 +33,7 @@ Config: `base` (default `"/ui"`), `apiPrefix` (`"/api"`), `docsPrefix` (`"/docs"
 
 | path | handler |
 |---|---|
-| `<base>/_assets/*` | built static files from `assetsDir`, with ETag + `cache-control: public, max-age=31536000, immutable` (conditional GETs 304) |
+| `<base>/_assets/*` | built static files from `assetsDir`, with ETag (conditional GETs 304). `cache-control` is `public, max-age=31536000, immutable` **only for content-addressed requests** — a `?v=` equal to the served dir's current content hash, or a content-hash-named `chunk-*.js`; anything else (stale/missing `?v=`) gets `no-cache` so a browser can never pin an outdated bundle across redeploys |
 | `/api/*` | keep network handler, **prefix stripped**, `info` forwarded — token-gated (never `backend.fetch`) |
 | `/docs*` | keep handler, **unstripped** (Swagger UI references `/docs/*` absolutely) |
 | everything else | the sprig SSR app, with the in-process `Backend` threaded in |
@@ -69,10 +69,15 @@ export default serveSprig({ keep, app, base: "/ui" });
 ```
 
 Swap in a real keep `api` (`serveSprig({ keep: api, app, base })`) to get an in-process
-`Backend` for `resolve.ts` plus the live `/api/*` network channel. The build's
-`.sprig-manifest.json` is written **outside** `assetsDir` (sibling to it), so it's never
-reachable under `/_assets` and never immutably cached — only the SSR renderer reads it for the
-`?v=` cache-buster.
+`Backend` for `resolve.ts` plus the live `/api/*` network channel.
+
+The `?v=` cache-buster is the content hash of `assetsDir` (the `.js` files + `app.css`).
+`serveSprig`/`sprigUi` compute it from the dir they **actually serve** and thread it into the
+renderer via `env.assetsVersion`, so the rendered asset URLs, the immutable check, and the
+served bytes can never disagree — a redeploy changes the hash, every returning browser fetches
+the new bundle, and a stale `?v=` degrades to `no-cache` revalidation instead of a year-long
+pin. A standalone renderer (no serveSprig/sprigUi) falls back to hashing
+`SPRIG_ASSETS_DIR`/`<cwd>/static` and warns once if that fails (`?v=dev`, long-term caching off).
 
 ---
 
