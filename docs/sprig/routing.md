@@ -55,6 +55,54 @@ export const resolve: Resolve = async (ctx) => {
 };
 ```
 
+## Guards
+
+A guard is a function that returns **the route the navigation should go to**, as an array of
+path segments. Returning the route it was about to hit anyway (`ctx.path`) lets the
+navigation proceed; returning any other route answers the request with a **302 redirect**
+there instead (bare path, prefixed with `base`). Guards attach to routes; a parent's guards
+protect its whole subtree.
+
+```ts
+import { defineRoutes, type Guard, inject } from "@sprig/core";
+import { Session } from "./services/session.ts";
+
+const requireAuth: Guard = (ctx) => {
+  const session = inject(Session);       // DI — the same route injector resolve() gets
+  if (!session.user) return ["login"];   // → 302 /login
+  return ctx.path;                       // same route → proceed
+};
+
+export const routes = defineRoutes([
+  { path: "login", load: "./pages/login" },
+  {
+    path: "admin",
+    load: "./pages/admin",
+    guards: [requireAuth],               // protects /admin AND /admin/users
+    children: [{ path: "users", load: "./pages/users" }],
+  },
+]);
+```
+
+- **Contract:** `(ctx: GuardCtx) => string[] | Promise<string[]>` with `ctx = { path, params,
+  url }`. `ctx.path` is the target's post-base segments exactly as they appear in the URL
+  (undecoded, so returning it round-trips); `ctx.params` are the decoded `:param` captures.
+- **Normalization:** returned elements may carry `/` separators and empty segments are
+  dropped — `["admin","users"]` ≡ `["admin/users"]`; `[]` means the root route.
+- **Order:** the matched chain's guards run **parent-first** (a route's own guards last),
+  each awaited; the first guard whose route differs from the target wins. All-pass → the
+  page renders.
+- **Before `resolve`:** guards run first, so a denied page does no data work.
+- **DI:** call `inject()` synchronously (before any `await`), exactly like in `resolve` —
+  guards run on the request's route injector, so a service a guard instantiates is the SAME
+  instance the page's `resolve` later injects.
+- **Failure:** a throwing guard is a controlled **500** (fails closed).
+- **Client:** a soft-nav that hits a guard redirect falls back to a full navigation
+  (redirected responses are deliberately not soft-swapped), so the browser lands on the
+  redirect target normally — no client-side guard wiring needed.
+- **Complete example:** [`fixtures/guarded-app`](../../fixtures/guarded-app/) — a login
+  flow, subtree inheritance, an async admin check, and guard-only "action" routes.
+
 ## The shell `<router-outlet>`
 
 The matched page renders into the shell's `<router-outlet>`, which SSR emits as a persistent
@@ -74,6 +122,9 @@ The matched page renders into the shell's `<router-outlet>`, which SSR emits as 
 - **No route match → 404.**
 - **Method gating:** SSR pages are read-only resources. `OPTIONS` → 204 (`Allow: GET, HEAD,
   OPTIONS`); anything other than `GET`/`HEAD` → 405.
+- **Guards:** the matched chain's guards run next (parent-first, before `resolve`); the first
+  guard returning a route other than the target → **302** to it (on-base). A throwing
+  guard → 500.
 - **Resolver-set status:** honored on the response line (e.g. `setResponseStatus(…, 404)` —
   see [data-and-di.md](./data-and-di.md)).
 - **Hardening + cache headers** on every HTML response: `content-type: text/html`,

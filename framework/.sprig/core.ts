@@ -2,7 +2,7 @@
  * @sprig/core — the runtime contract for the folder-component model.
  *
  * This is the SERVER spine: dependency injection, the keep in-process `Backend`
- * bridge, and `bootstrap()` (routing → resolve → SSR). It is backend-agnostic —
+ * bridge, and `bootstrap()` (routing → guards → resolve → SSR). It is backend-agnostic —
  * it does NOT import @mrg-keystone/rune; the in-process client arrives as an
  * opaque `BackendClient` value threaded through `SprigApp.fetch`.
  *
@@ -294,7 +294,7 @@ let current: Injector | undefined;
  *  before any `await` (capture deps into vars first). */
 export function inject<T>(token: Ctor<T> | Token<T>): T {
   if (!current) {
-    throw new Error("inject() must be called synchronously within setup(), resolve(), or a service constructor");
+    throw new Error("inject() must be called synchronously within setup(), resolve(), a guard, or a service constructor");
   }
   return current.resolve(token);
 }
@@ -425,10 +425,32 @@ export interface ComponentModule {
 }
 
 // ───────────────────────────────── Router ───────────────────────────────────
+/** What a guard receives. `path` is the target route's post-base path segments
+ *  (as they appear in the URL, undecoded) — return it (or an equal route) to let
+ *  the navigation proceed. `params` are the matched `:param` captures (decoded).
+ *  Call `inject()` synchronously inside a guard (before any `await`) for DI —
+ *  guards run on the request's route injector, so a service a guard instantiates
+ *  is the SAME instance the page's resolve() later injects. */
+export interface GuardCtx {
+  path: string[];
+  params: Record<string, string>;
+  url: URL;
+}
+/** A route guard: a function that returns the route — as an array of path
+ *  segments — the navigation should go to. Returning the route it was going to
+ *  hit anyway (`ctx.path`) lets it proceed; returning any other route answers
+ *  the request with a 302 redirect there (bare path, on-base). Segments are
+ *  normalized: each element may carry "/" separators and empties are dropped,
+ *  so `["admin","users"]` ≡ `["admin/users"]`; `[]` means the root route. */
+export type Guard = (ctx: GuardCtx) => string[] | Promise<string[]>;
+
 export interface Route {
   path: string;
   load?: string;
   children?: Route[];
+  /** Guards protecting this route AND its children (the matched chain's guards
+   *  run parent-first, this route's own guards last). */
+  guards?: Guard[];
 }
 export function defineRoutes(routes: Route[]): Route[] {
   return routes;
@@ -437,6 +459,8 @@ export function defineRoutes(routes: Route[]): Route[] {
 export interface MatchedRoute {
   load?: string;
   params: Record<string, string>;
+  /** Guards collected along the matched chain, parent-first. */
+  guards?: Guard[];
 }
 
 /** Minimal primary-path matcher: walks routes, supports ":param" segments and a
@@ -455,7 +479,12 @@ function decodeParam(seg: string): string {
     return seg;
   }
 }
-function walk(routes: Route[], segs: string[], inherited: Record<string, string>): MatchedRoute | null {
+function walk(
+  routes: Route[],
+  segs: string[],
+  inherited: Record<string, string>,
+  guards: Guard[] = [],
+): MatchedRoute | null {
   for (const route of routes) {
     const rs = route.path.split("/").filter((s) => s.length > 0);
     const params: Record<string, string> = { ...inherited };
@@ -467,14 +496,24 @@ function walk(routes: Route[], segs: string[], inherited: Record<string, string>
       else if (rs[i] !== u) { ok = false; break; }
     }
     if (!ok) continue;
+    // a fresh array per matched level (never mutate `guards`): a failed child
+    // descent must not leak this route's guards onto a later sibling attempt.
+    const chain = route.guards?.length ? [...guards, ...route.guards] : guards;
     const rest = segs.slice(rs.length);
-    if (rest.length === 0) return { load: route.load, params };
+    if (rest.length === 0) return { load: route.load, params, guards: chain };
     if (route.children) {
-      const sub = walk(route.children, rest, params);
+      const sub = walk(route.children, rest, params, chain);
       if (sub) return sub;
     }
   }
   return null;
+}
+
+/** Normalize a guard's returned route: split each element on "/" and drop empty
+ *  segments, so ["admin/users"], ["admin","users"], ["/admin","users/"] are all
+ *  the same route and [] (or [""]) is the root. */
+function normalizeRoute(out: string[]): string[] {
+  return out.flatMap((s) => s.split("/")).filter((s) => s.length > 0);
 }
 
 // ──────────────────────────────── Bootstrap ─────────────────────────────────
@@ -556,6 +595,31 @@ export function bootstrap(config: AppConfig): SprigApp {
       const root = new Injector("server", "root");
       if (env?.backend) root.provide(Backend, env.backend);
       const routeInjector = root.child("route");
+
+      // Guards run BEFORE resolve (no data work for a denied page), each wrapped
+      // in runInInjector individually so EVERY guard gets a synchronous inject()
+      // window (an earlier guard's `await` must not strip the injector from the
+      // next one). The first guard whose returned route differs from the target
+      // route wins → 302 there; all guards returning the target → proceed.
+      if (matched.guards?.length) {
+        const segs = path.split("/").filter((s) => s.length > 0);
+        const target = segs.join("/");
+        const ctx: GuardCtx = { path: segs, params: matched.params, url };
+        try {
+          for (const guard of matched.guards) {
+            const out = normalizeRoute(await runInInjector(routeInjector, () => guard(ctx)));
+            if (out.join("/") !== target) {
+              return new Response(null, {
+                status: 302,
+                headers: { "location": `${base}/${out.join("/")}`, "cache-control": "no-store" },
+              });
+            }
+          }
+        } catch {
+          // a throwing guard fails CLOSED — same controlled 500 as a resolve failure
+          return new Response("Internal Server Error", { status: 500, headers: ssrHeaders() });
+        }
+      }
 
       // resolve(): an explicit modules[load] override wins; otherwise auto-load the
       // page's resolve.ts by its route `load` path (the renderer knows the src root).

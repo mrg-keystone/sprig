@@ -1,0 +1,12 @@
+<main class="page">
+  <h1>Users</h1>
+  <p>
+    You reached a child route — its <code>requireAuth</code> came from the parent
+    <code>admin</code> route, not from this one.
+  </p>
+  <ul>
+    @for (m of members; track m) {
+      <li>{{ m }}</li>
+    }
+  </ul>
+</main>

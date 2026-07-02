@@ -10,8 +10,10 @@ Fresh/Preact, Next, or Angular.**
 A buildable sprig project (see `sprig:build`):
 - `src/` — `shell/` (the document layout, holds `<router-outlet>`), `pages/<name>/`,
   `components/<name>/`, `islands/<name>/`, optional `services/`, and `main.ts`
-  (`defineRoutes` + `createRenderer` + `bootstrap`). A component is a **folder**
-  (`template.html` + optional `logic.ts` + optional `styles.css`), **never a `.tsx`**.
+  (`defineRoutes` + `createRenderer` + `bootstrap`; protected routes carry `guards:` —
+  a guard returns the target route to proceed or another route to 302). A component is a
+  **folder** (`template.html` + optional `logic.ts` + optional `styles.css`), **never a
+  `.tsx`**.
 - `serve.ts` — the host: `serveSprig({ keep, app, base: "/ui" })` folds the keep backend +
   the sprig UI into one `{ fetch }` handler and binds keep's in-process client to the `Backend`
   DI token. `deno.json` carries `dev` / `build` / `start` tasks.

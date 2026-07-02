@@ -5,7 +5,8 @@ description: >-
   Angular-flavored HTML templates and selective island hydration, published on JSR as
   @sprig/core. Use this whenever the user is scaffolding, building, or modifying a sprig
   app: adding pages or components, islands (interactive components), wiring data with a
-  page's logic.ts class or resolve, routes, persisted state, dependency injection, or
+  page's logic.ts class or resolve, routes, route guards (auth redirects), persisted state,
+  dependency injection, or
   previewing/testing a component in isolation with `sprig isolate`; or when working in a
   repo with sprig markers (a deno.json importing "jsr:@sprig/core", folder-components made
   of template.html + optional logic.ts, a src/ tree with pages/ + a shell, or main.ts
@@ -108,7 +109,7 @@ component specialist applies them as behavior/scoped-styles and strips them from
 
 | Task | Delegate to / read |
 | --- | --- |
-| Scaffold / project shape / CLI / routes / serving / global tokens | **`sprig-build-scaffolder`** |
+| Scaffold / project shape / CLI / routes + guards / serving / global tokens | **`sprig-build-scaffolder`** |
 | A page/component/island: data + lifecycle, signals, DI, optimistic write, template, scoped styles, isolate | **`sprig-build-component`** |
 | Apply a `build-notes.json` entry | **`sprig-build-component`** (the owning component) |
 | Pure conceptual question (no file produced) | read the matching `references/` leaf yourself (`INDEX.md` is the table of contents) |

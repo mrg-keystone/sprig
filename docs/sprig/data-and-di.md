@@ -28,7 +28,9 @@ export const resolve: Resolve = async (ctx) => {
 serialized `@inputs` for any islands the page mounts.
 
 > **`inject()` is synchronous-only.** Call it (capture deps into locals) *before* the first
-> `await` — the active injector is cleared across async boundaries.
+> `await` — the active injector is cleared across async boundaries. The same contract holds
+> inside a route guard ([routing.md](./routing.md)): guards run on the same route-scoped
+> injector as `resolve`, so a service a guard instantiates is the instance `resolve` sees.
 
 Wire the resolver into the app in `main.ts`:
 

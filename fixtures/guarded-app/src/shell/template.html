@@ -1,0 +1,12 @@
+<!-- App shell — nav persists across pages; the matched page renders into the outlet. -->
+<div class="app-root">
+  <header class="bar">
+    <a class="brand" href="/ui">guarded-app</a>
+    <nav>
+      <a href="/ui/admin">Console</a>
+      <a href="/ui/admin/users">Users</a>
+      <a href="/ui/admin/danger">Danger zone</a>
+    </nav>
+  </header>
+  <router-outlet></router-outlet>
+</div>

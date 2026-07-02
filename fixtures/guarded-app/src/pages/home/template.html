@@ -1,0 +1,22 @@
+<main class="page">
+  <h1>Guards demo</h1>
+  @if (user) {
+    <p>Signed in as <strong>{{ user }}</strong>. <a href="/ui/go/logout">Log out</a></p>
+  } @else {
+    <p>
+      You are anonymous. Try the <a href="/ui/admin">console</a> — its guard bounces
+      you to the login page.
+    </p>
+  }
+  <ul>
+    <li><a href="/ui/admin">/admin</a> — <code>requireAuth</code></li>
+    <li>
+      <a href="/ui/admin/users">/admin/users</a> — inherits <code>requireAuth</code>
+      from the parent route
+    </li>
+    <li>
+      <a href="/ui/admin/danger">/admin/danger</a> — <code>requireAuth</code>, then
+      <code>requireAdmin</code> (async): bob is bounced to /denied
+    </li>
+  </ul>
+</main>

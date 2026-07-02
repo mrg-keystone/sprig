@@ -1,0 +1,21 @@
+{
+  "name": "@fixtures/guarded-app",
+  "version": "0.0.0",
+  "exports": "./src/mod.ts",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "lib": ["dom", "deno.ns", "esnext"]
+  },
+  "imports": {
+    "@sprig/core": "../../framework/.sprig/core.ts",
+    "@sprig/keep": "../../packages/keep/mod.ts",
+    "@preact/signals-core": "npm:@preact/signals-core@^1.8.0",
+    "@std/path": "jsr:@std/path@^1"
+  },
+  "tasks": {
+    "dev": "deno run -A ../../framework/cli.ts dev .",
+    "build": "deno run -A ../../framework/cli.ts build .",
+    "start": "deno serve -A serve.ts"
+  }
+}

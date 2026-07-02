@@ -61,6 +61,38 @@ Two ways, both auto-discovered by the route's `load` — you don't register eith
 
 A page folder with neither just renders its `template.html` statically.
 
+## Guards
+
+A guard returns **the route the navigation should go to** as path segments: return `ctx.path`
+(the target route) to proceed, any other route to answer with a **302** there (on-base bare
+path). Attach via `guards: [...]` on a route — a parent's guards protect its whole subtree
+(chain runs parent-first, before `resolve`, so a denied page does no data work).
+
+```ts
+import { type Guard, inject } from "@sprig/core";
+
+const requireAuth: Guard = (ctx) => {
+  if (!inject(Session).user) return ["login"];  // → 302 /login
+  return ctx.path;                              // same route → proceed
+};
+
+export const routes = defineRoutes([
+  { path: "login", load: "pages/login" },
+  { path: "admin", load: "pages/admin", guards: [requireAuth], // + all children
+    children: [{ path: "users", load: "pages/users" }] },
+]);
+```
+
+- `ctx = { path, params, url }`; async guards fine; call `inject()` synchronously (before any
+  `await`) — guards share the request's route injector with `resolve`.
+- Returned segments normalize (`["admin/users"]` ≡ `["admin","users"]`; `[]` = root). First
+  divergent guard wins; a throwing guard → controlled 500 (fails closed).
+- Returned routes are APP-RELATIVE (`["login"]`, never `["ui","login"]`) — the framework
+  prefixes `base` onto the redirect Location.
+- Client soft-nav falls back to a full navigation on redirects — no client wiring needed.
+- Complete runnable example: `fixtures/guarded-app` in the sprig repo (login flow, subtree
+  inheritance, async admin check, guard-only "action" routes).
+
 ## The render output
 
 `createRenderer(srcRoot, base, opts)` scans `srcRoot` for every folder-component (registers

@@ -41,7 +41,7 @@ deno serve -A serve.ts                   # one-origin handler
 | [islands.md](./islands.md) | `defineComponent`, signals/computed/effect, inputs/outputs/model, triggers, the server+client setup duality |
 | [styling.md](./styling.md) | view encapsulation, `:global`, scope ids across SSR/CSS/hydrate, Tailwind `@apply` |
 | [data-and-di.md](./data-and-di.md) | `resolve.ts`, `@Injectable` + scope, `inject`, the `Backend` token, `setResponseStatus` for 404s |
-| [routing.md](./routing.md) | `defineRoutes`, `:params`, the shell `<router-outlet>`, method gating, soft-nav |
+| [routing.md](./routing.md) | `defineRoutes`, `:params`, route guards (302 redirects), the shell `<router-outlet>`, method gating, soft-nav |
 | [cli.md](./cli.md) | `init` / `dev` / `build` / `serve` and the HMR loop |
 | [hosting.md](./hosting.md) | `serveSprig` dispatch, assets/cache, the `/api` hardening gateway |
 | [testing.md](./testing.md) | the three seams: unit compiler, SSR/HTTP, browser hydration |

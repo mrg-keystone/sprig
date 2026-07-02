@@ -285,9 +285,31 @@ export const app: SprigApp = bootstrap({
 ```
 
 `resolve` receives `{ params, url }`. The app's `fetch` 404s off-base paths, gates the HTTP
-method (GET/HEAD/OPTIONS), honours a resolver-set status (e.g. 404), and sets security +
-cache headers. Client-side, same-origin navigations are soft-nav'd (the outlet is swapped,
-outside islands persist).
+method (GET/HEAD/OPTIONS), runs the matched route's guards, honours a resolver-set status
+(e.g. 404), and sets security + cache headers. Client-side, same-origin navigations are
+soft-nav'd (the outlet is swapped, outside islands persist).
+
+### Route guards
+
+```ts
+import { type Guard, inject } from "@sprig/core";
+
+const requireAuth: Guard = (ctx) => {
+  if (!inject(Session).user) return ["login"];   // → 302 <base>/login
+  return ctx.path;                               // same route → proceed
+};
+
+// in defineRoutes: a parent's guards protect its whole subtree
+{ path: "admin", load: "./pages/admin", guards: [requireAuth],
+  children: [{ path: "users", load: "./pages/users" }] }
+```
+
+A guard returns **the route (as path segments) the navigation should go to**: `ctx.path` to
+proceed, any other route to 302 there. Returned routes are app-relative — the framework
+prefixes `base` onto the `Location`. The matched chain runs **parent-first, before
+`resolve`** (a denied page does no data work); async guards are awaited; `inject()` works
+synchronously inside (the same route injector `resolve` gets); a throwing guard is a
+controlled 500. Complete runnable example: `fixtures/guarded-app`.
 
 ---
 
