@@ -15,6 +15,11 @@ export interface DevConfig {
   base: string;
   outDir: string;
   handler: { fetch(req: Request, info: Deno.ServeHandlerInfo): Promise<Response> | Response };
+  /** Called when a `.ts` change lands — the app's server (renderer, guards, resolve, page/island
+   *  logic) was import()ed at boot, so an in-process rebuild leaves it STALE. The dev supervisor
+   *  passes a fn that restarts the process (re-import everything fresh, "eat the ~1s"); absent
+   *  (tests / unsupervised) the server falls back to a client-only rebuild + reload. */
+  onServerReload?: () => void;
 }
 
 export function createDevServer(cfg: DevConfig): {
@@ -116,8 +121,17 @@ export function createDevServer(cfg: DevConfig): {
         send({ type: "error", message: String(e) });
       }
     }
-    // logic.ts / resolve.ts / other → rebuild the dev bundle, then full reload
+    // logic.ts / resolve.ts / guards.ts / mod.ts / services → a .ts change. The app's server was
+    // import()ed at boot, so it's STALE in this process; the ONLY reliable refresh is a fresh
+    // process (ESM can't evict a cached module subgraph). Hand off to the supervisor, which
+    // restarts + rebuilds; the browser's HMR client reconnects to the new server and reloads.
+    // Unsupervised (tests) → the old client-only rebuild + reload.
     if (reload) {
+      if (cfg.onServerReload) {
+        console.log(`%c[sprig dev]%c .ts change → restarting (fresh server)…`, "color:#7c3aed", "");
+        cfg.onServerReload();
+        return;
+      }
       try {
         await buildClient(cfg.renderer.srcDir, cfg.outDir, { dev: true });
         send({ type: "reload" });

@@ -34,8 +34,20 @@ export function startHmr(base: string): void {
       console.error("[sprig hmr]", msg.message);
     }
   };
-  // EventSource auto-reconnects; on dev-server restart the page just resumes.
-  es.onopen = () => log("connected");
+  // EventSource auto-reconnects. The FIRST open is the initial connect; a LATER open means the
+  // dev server RESTARTED (a server-file change spawned a fresh process — see the dev supervisor),
+  // so reload to pick up the fresh SSR + rebuilt client. Template/CSS/island edits never restart,
+  // so they never trip this.
+  let connected = false;
+  es.onopen = () => {
+    if (connected) {
+      log("dev server restarted — reloading");
+      location.reload();
+      return;
+    }
+    connected = true;
+    log("connected");
+  };
 }
 
 function swapCss(v: string): void {

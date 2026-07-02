@@ -744,6 +744,38 @@ async function devAnnotateHtml(htmlPath: string, open = true): Promise<void> {
   Deno.serve({ port: want, onListen: () => { if (open) openUrl(pageURL); } }, (req: Request) => proto.fetch(req));
 }
 
+/** Exit code the dev child uses to ask the supervisor for a fresh restart (a server .ts change). */
+const DEV_RESTART_CODE = 75;
+
+/** `sprig dev` supervisor: run the real dev server as a child and respawn it whenever it exits
+ *  with DEV_RESTART_CODE — the only reliable way to pick up a changed guard/resolve/mod/logic,
+ *  which the server import()ed at boot. Any other exit (Ctrl-C, a real crash) passes through. The
+ *  old child fully exits (port + workbench released) before the next spawns, so there is no race. */
+async function devSupervisor(rawArgs: string[]): Promise<void> {
+  const entry = Deno.mainModule; // this CLI (file:// checkout or jsr: install) — re-run as the child
+  for (;;) {
+    const child = new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", entry, "dev", ...rawArgs],
+      env: { ...Deno.env.toObject(), SPRIG_DEV_CHILD: "1" },
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    }).spawn();
+    const fwd = () => {
+      try {
+        child.kill("SIGTERM");
+      } catch { /* already gone */ }
+    };
+    Deno.addSignalListener("SIGINT", fwd);
+    Deno.addSignalListener("SIGTERM", fwd);
+    const status = await child.status;
+    Deno.removeSignalListener("SIGINT", fwd);
+    Deno.removeSignalListener("SIGTERM", fwd);
+    if (status.code !== DEV_RESTART_CODE) Deno.exit(status.code);
+    console.log(`%c[sprig dev]%c server change → restarting…`, "color:#7c3aed;font-weight:bold", "");
+  }
+}
+
 async function dev(rawArgs: string[] = []): Promise<void> {
   // `sprig dev` ALWAYS serves the full-app BUILD annotate overlay (⌘/Ctrl+click → spec/ui/
   // build-notes.json) plus the isolate workbench. `--annotate <html>` switches to PROTOTYPE
@@ -754,6 +786,11 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   let annotateHtml = "";
   if (ai >= 0 && rawArgs[ai + 1] && /\.html?$/i.test(rawArgs[ai + 1])) annotateHtml = rawArgs[ai + 1];
   if (annotateHtml) return await devAnnotateHtml(annotateHtml, open);
+  // SUPERVISOR: the real dev server runs as a child; a `.ts` change makes it exit with
+  // DEV_RESTART_CODE (createDevServer.onServerReload), and we respawn a FRESH process so the app's
+  // server (guards/resolve/mod/logic — all import()ed at boot) is re-read. Template/CSS/island
+  // edits stay in-process HMR and never restart. Skipped once we're already the child.
+  if (Deno.env.get("SPRIG_DEV_CHILD") !== "1") return await devSupervisor(rawArgs);
   const positionals = rawArgs.filter((a) => !a.startsWith("-") && a !== annotateHtml);
   const appDir = positionals[0] ?? ".";
   const base = positionals[1] ?? "/ui";
@@ -819,7 +856,22 @@ async function dev(rawArgs: string[] = []): Promise<void> {
     hostFetch = (req, info) => ui(req, info).then((r: Response | null) => r ?? new Response("Not Found", { status: 404 }));
   }
   const handler = { fetch: hostFetch };
-  const devSrv = createDevServer({ renderer, base, outDir, handler });
+  // the isolate workbench (spawned below); hoisted so onServerReload can kill it before the
+  // restart exit, else each restart would orphan a workbench and the next child's would collide.
+  let wb: Deno.ChildProcess | null = null;
+  const devSrv = createDevServer({
+    renderer,
+    base,
+    outDir,
+    handler,
+    // a .ts change → tear down THIS process cleanly and ask the supervisor for a fresh one.
+    onServerReload: () => {
+      try {
+        wb?.kill("SIGTERM");
+      } catch { /* already gone */ }
+      Deno.exit(DEV_RESTART_CODE);
+    },
+  });
   // annotate uses the hashed/validated stable port (no drift).
   const port = wantPort;
 
@@ -833,7 +885,6 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   // The workbench is best-effort: if it's missing or can't start, the annotate overlay must STILL
   // run (the loop's review surface is the app; isolate is the verify surface). Never let it drop
   // dev — so a missing workbench (old slim install) just warns instead of failing.
-  let wb: Deno.ChildProcess | null = null;
   try {
     await assertWorkbench(root); // throws on an old slim install lacking the workbench
     wb = spawnWorkbench(appAbs, isoPort, open); // workbench opens its own tab when ready
