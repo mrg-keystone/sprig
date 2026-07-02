@@ -1202,7 +1202,7 @@ const USAGE = `sprig — the framework CLI
                                   --rune also folds the sibling keep backend + this UI into a git-root
                                   serve.ts (serveSprig) and makes the root deno.json a Deno workspace
   sprig check [appDir]           typecheck the app under the CLI runtime (the @sprig/core-pin-free
-                                  replacement for `deno check` — the CLI owns the one runtime)
+                                  replacement for deno check — the CLI owns the one runtime)
   sprig isolate [appDir]         component/page workbench — develop in isolation (default: .)
   sprig serve [entry]            run the app's host entry under its deno.json (default: serve.ts)
   sprig install [--dev]          install the global sprig CLI + Claude Code skills + agents (--dev: from this checkout)
