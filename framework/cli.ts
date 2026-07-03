@@ -25,7 +25,16 @@ import { specRootOf } from "./.sprig/spec-root.ts";
 
 // the published-package version range a scaffolded app pins (core + its /keep + /cli
 // sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
-const SPRIG_RANGE = "^0.12.0";
+/** The @sprig/core version range `sprig init` pins into a scaffolded app — the running CLI's OWN
+ *  version (from its deno.json), so a fresh app never targets a stale sprig. This was a frozen
+ *  "^0.12.0" that silently scaffolded seven versions behind. */
+function sprigRange(): string {
+  try {
+    const { version } = JSON.parse(Deno.readTextFileSync(join(installRoot(), "deno.json"))) as { version?: string };
+    if (typeof version === "string" && version) return `^${version}`;
+  } catch { /* fall through to a sane floor */ }
+  return "^0.19.0";
+}
 
 /** This CLI's on-disk install root — the dir holding `framework/` (a repo checkout or `~/.sprig`).
  *  `import.meta.dirname` is `<install>/framework` for a `file://` module and `undefined` for a
@@ -1251,6 +1260,7 @@ async function init(dir = "."): Promise<void> {
   }
   const name = (dir === "." ? "sprig-app" : dir.split("/").pop()) || "sprig-app";
 
+  const range = sprigRange();
   const files: Record<string, string> = {
     // `$` IS the app (src/mod.ts); `$.pages/`, `$.services/`, `$.shared-components/` alias
     // the src subtrees so deep files import siblings without ../../ chains. Plus the two
@@ -1269,8 +1279,8 @@ async function init(dir = "."): Promise<void> {
     "$.pages/": "./src/pages/",
     "$.shared-components/": "./src/shared-components/",
     "$.services/": "./src/services/",
-    "@sprig/core": "jsr:@sprig/core@${SPRIG_RANGE}",
-    "@sprig/keep": "jsr:@sprig/core@${SPRIG_RANGE}/keep",
+    "@sprig/core": "jsr:@sprig/core@${range}",
+    "@sprig/keep": "jsr:@sprig/core@${range}/keep",
     "@mrg-keystone/rune": "jsr:@mrg-keystone/rune@^1",
     "reflect-metadata": "npm:reflect-metadata@0.1.13",
     "@std/path": "jsr:@std/path@^1",
