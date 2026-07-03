@@ -141,6 +141,185 @@ async function healLocalSprig(appDir: string): Promise<void> {
   if (healed) console.log(`sprig: restored ${healed} deno.json file(s) from an interrupted previous \`sprig dev\`.`);
 }
 
+// ── shared dev-process registry (~/.sprig/dev.json) ──────────────────────────
+// ONE `sprig dev` per git repo. The first run is the OWNER: it serves + tees its output to a
+// rotating log folder and records { pid, log-size, log-folder } under the repo name. Later runs
+// find the entry, see the pid is alive, and just ATTACH — stream the newest log, no second server.
+// If the owner died without cleanup (SIGKILL/crash) the pid is dead → the entry is stale → the next
+// run reclaims it (frees the repo's stable ports, then owns). That's what stops the leak: at most
+// one server+workbench per repo, guaranteed by the lock; a dead pid can never masquerade as alive.
+const MAX_LOG_LINES = 2000; // per file, then roll to a fresh timestamped one
+const MAX_LOG_FILES = 20; // keep this many rotated files per repo; oldest pruned
+
+interface DevLockEntry {
+  pid: number;
+  "log-size": number;
+  "log-folder": string;
+}
+
+/** Global sprig state dir (~/.sprig) — NOT the install root (which is the checkout under --dev). */
+function sprigStateRoot(): string {
+  return Deno.env.get("SPRIG_HOME") ??
+    join(Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? ".", ".sprig");
+}
+function devLockPath(): string {
+  return join(sprigStateRoot(), "dev.json");
+}
+
+/** Nearest `.git` ancestor of `startAbs` (a real clone has a `.git` dir, a worktree a `.git` file — test existence, not type), or null outside any repo. */
+function gitRepoRoot(startAbs: string): string | null {
+  let d = startAbs;
+  for (;;) {
+    try {
+      Deno.statSync(join(d, ".git"));
+      return d;
+    } catch { /* keep walking up */ }
+    const parent = dirname(d);
+    if (parent === d) return null;
+    d = parent;
+  }
+}
+/** The registry key: the git repo's folder name (or the target's, outside a repo), sanitized. */
+function repoKey(target: string): string {
+  const root = gitRepoRoot(target) ?? target;
+  return basename(root).replace(/[^A-Za-z0-9._-]+/g, "-") || "app";
+}
+
+async function readDevLock(): Promise<Record<string, DevLockEntry>> {
+  try {
+    return (JSON.parse(await Deno.readTextFile(devLockPath())) as Record<string, DevLockEntry>) ?? {};
+  } catch {
+    return {};
+  }
+}
+async function writeDevLock(map: Record<string, DevLockEntry>): Promise<void> {
+  await Deno.mkdir(sprigStateRoot(), { recursive: true });
+  const tmp = `${devLockPath()}.${Deno.pid}.tmp`;
+  await Deno.writeTextFile(tmp, JSON.stringify(map, null, 2));
+  await Deno.rename(tmp, devLockPath()); // atomic swap so a concurrent read never sees a half-write
+}
+
+/** Is `pid` a live process? `ps -p` — no signal side-effects (unlike a probe kill), and a PID that
+ *  was reused by some unrelated program still reads as "a process", which is fine: we ALSO free the
+ *  repo's ports on reclaim, so a false-positive can't leave a second server up. */
+async function pidAlive(pid: number): Promise<boolean> {
+  if (!Number.isInteger(pid) || pid <= 1) return false;
+  try {
+    const { success } = await new Deno.Command("ps", { args: ["-p", String(pid)], stdout: "null", stderr: "null" }).output();
+    return success;
+  } catch {
+    return false;
+  }
+}
+/** Kill whatever is bound to `port` — an orphaned server/workbench a dead owner left behind. */
+async function killPort(port: number): Promise<void> {
+  try {
+    const out = await new Deno.Command("lsof", { args: ["-ti", `tcp:${port}`], stdout: "piped", stderr: "null" }).output();
+    for (const s of new TextDecoder().decode(out.stdout).split("\n")) {
+      const p = Number(s.trim());
+      if (p > 1) try { Deno.kill(p, "SIGKILL"); } catch { /* already gone */ }
+    }
+  } catch { /* no lsof → skip (best-effort) */ }
+}
+/** The two stable ports a repo's shared process owns (app+annotate, and the isolate workbench). */
+function devPorts(repo: string): { app: number; iso: number } {
+  return { app: Number(Deno.env.get("PORT")) || appPort(repo), iso: appPort(`isolate:${repo}`) };
+}
+
+/** Tee the shared dev process's output to the terminal AND to a rotating log folder:
+ *  <folder>/<ISO-timestamp>.log, MAX_LOG_LINES per file then roll, keep at most MAX_LOG_FILES. */
+class DevLog {
+  #folder: string;
+  #maxFiles: number;
+  #file: Deno.FsFile | null = null;
+  #lines = 0;
+  #chain: Promise<void> = Promise.resolve(); // serialize the stdout+stderr pumps
+  constructor(folder: string, maxFiles: number) {
+    this.#folder = folder;
+    this.#maxFiles = maxFiles;
+  }
+  async #roll(): Promise<void> {
+    try { this.#file?.close(); } catch { /* */ }
+    const name = new Date().toISOString().replace(/[:.]/g, "-") + ".log";
+    this.#file = await Deno.open(join(this.#folder, name), { create: true, append: true });
+    this.#lines = 0;
+    const files: string[] = [];
+    for await (const e of Deno.readDir(this.#folder)) if (e.isFile && e.name.endsWith(".log")) files.push(e.name);
+    files.sort(); // timestamp names sort chronologically
+    for (const old of files.slice(0, Math.max(0, files.length - this.#maxFiles))) {
+      await Deno.remove(join(this.#folder, old)).catch(() => {});
+    }
+  }
+  write(chunk: Uint8Array): Promise<void> {
+    return (this.#chain = this.#chain.then(() => this.#doWrite(chunk)));
+  }
+  async #doWrite(chunk: Uint8Array): Promise<void> {
+    await Deno.stdout.write(chunk); // tee to the owner's terminal
+    if (!this.#file) await this.#roll();
+    await this.#file!.write(chunk);
+    for (const b of chunk) if (b === 10) this.#lines++;
+    if (this.#lines >= MAX_LOG_LINES) await this.#roll();
+  }
+  close(): void {
+    try { this.#file?.close(); } catch { /* */ }
+  }
+}
+
+/** ATTACH to a running shared dev process: print a header, then live-tail its NEWEST log file
+ *  (following rotation to the next file). Ctrl-C just detaches — the shared process keeps running. */
+async function attachShared(repo: string, e: DevLockEntry): Promise<void> {
+  const folder = e["log-folder"];
+  console.log(
+    `%c⟶ sprig dev — a shared process for "${repo}" is already running (pid ${e.pid}).%c\n` +
+      `  Streaming its live log; hot-reloads happen on edit. Ctrl-C detaches (it keeps running).\n` +
+      `  older logs: ${folder}  (only open if you really need them)\n`,
+    "color:#7c3aed;font-weight:bold",
+    "",
+  );
+  const newest = async (): Promise<string> => {
+    let best = "";
+    try {
+      for await (const f of Deno.readDir(folder)) if (f.isFile && f.name.endsWith(".log") && f.name > best) best = f.name;
+    } catch { /* folder gone */ }
+    return best ? join(folder, best) : "";
+  };
+  let detached = false;
+  const stop = () => { detached = true; };
+  Deno.addSignalListener("SIGINT", stop);
+  Deno.addSignalListener("SIGTERM", stop);
+  let cur = "";
+  let pos = 0;
+  while (!detached) {
+    const latest = await newest();
+    if (latest && latest !== cur) { cur = latest; pos = 0; } // first file, or rotated → follow the new one
+    if (cur) {
+      try {
+        const st = await Deno.stat(cur);
+        if (st.size < pos) pos = 0; // truncated/replaced
+        if (st.size > pos) {
+          const f = await Deno.open(cur, { read: true });
+          try {
+            await f.seek(pos, Deno.SeekMode.Start);
+            const buf = new Uint8Array(st.size - pos);
+            const n = await f.read(buf) ?? 0;
+            if (n > 0) await Deno.stdout.write(buf.subarray(0, n));
+            pos += n;
+          } finally {
+            f.close();
+          }
+        }
+      } catch { /* file vanished mid-rotate → re-detect next tick */ }
+    }
+    if (!(await pidAlive(e.pid))) {
+      console.log(`\n%c⟶ the shared process (pid ${e.pid}) exited — run \`sprig dev\` again to start a fresh one.%c`, "color:#a00", "");
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  Deno.removeSignalListener("SIGINT", stop);
+  Deno.removeSignalListener("SIGTERM", stop);
+}
+
 /** Point the app's `@sprig/core` + `@sprig/keep` at the LOCAL install. The app pins them to
  *  JSR (`jsr:@sprig/core@…`) for portability, but importing its mod.ts with a JSR pin pulls a
  *  SECOND @sprig/core — the JSR build — into the process, and two web-tree-sitter wasm
@@ -804,34 +983,89 @@ async function devAnnotateHtml(htmlPath: string, open = true): Promise<void> {
 /** Exit code the dev child uses to ask the supervisor for a fresh restart (a server .ts change). */
 const DEV_RESTART_CODE = 75;
 
-/** `sprig dev` supervisor: run the real dev server as a child and respawn it whenever it exits
- *  with DEV_RESTART_CODE — the only reliable way to pick up a changed guard/resolve/mod/logic,
- *  which the server import()ed at boot. Any other exit (Ctrl-C, a real crash) passes through. The
- *  old child fully exits (port + workbench released) before the next spawns, so there is no race. */
+/** `sprig dev` supervisor: ONE shared process per git repo (see the registry above). The first run
+ *  OWNS it — records { pid, log-folder } in ~/.sprig/dev.json, tees the server+workbench output to a
+ *  rotating log, and respawns the child on a DEV_RESTART_CODE exit (the only reliable way to pick up
+ *  a changed guard/resolve/mod/logic, import()ed at boot). Later `sprig dev`s for the same repo find
+ *  the live pid and ATTACH (stream the log) instead of spawning a duplicate — so nothing accumulates.
+ *  Ctrl-C / a crash passes through; a dead owner's stale entry is reclaimed (ports freed) next run. */
 async function devSupervisor(rawArgs: string[]): Promise<void> {
+  // The registry key is the git repo, so any subdir of a monorepo maps to the one shared process.
+  const positionals = rawArgs.filter((a) => !a.startsWith("-") && !/\.html?$/i.test(a));
+  const repo = repoKey(resolve(positionals[0] ?? "."));
+
+  // Already running for this repo? Attach — no second server.
+  const existing = (await readDevLock())[repo];
+  if (existing && await pidAlive(existing.pid)) return await attachShared(repo, existing);
+  // Stale entry (owner died without cleanup): free the repo's stable ports so an orphaned
+  // server/workbench from that dead owner can't linger, then take ownership.
+  const ports = devPorts(repo);
+  if (existing) {
+    await killPort(ports.app);
+    await killPort(ports.iso);
+  }
+
+  // OWN it: a rotating log folder + our entry in the registry.
+  const logFolder = join(sprigStateRoot(), "logs", repo);
+  await Deno.mkdir(logFolder, { recursive: true });
+  const log = new DevLog(logFolder, MAX_LOG_FILES);
+  const map = await readDevLock();
+  map[repo] = { pid: Deno.pid, "log-size": MAX_LOG_FILES, "log-folder": logFolder };
+  await writeDevLock(map);
+  console.log(
+    `%c⟶ sprig dev — shared process for "${repo}" (pid ${Deno.pid}).%c Re-running \`sprig dev\` in this repo attaches here.\n  logs: ${logFolder}`,
+    "color:#7c3aed;font-weight:bold",
+    "",
+  );
+
+  // Drop our registry entry on exit — sync (safe in the signal path) and only if it's still OURS.
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    log.close();
+    try {
+      const m = JSON.parse(Deno.readTextFileSync(devLockPath())) as Record<string, DevLockEntry>;
+      if (m[repo]?.pid === Deno.pid) {
+        delete m[repo];
+        Deno.writeTextFileSync(devLockPath(), JSON.stringify(m, null, 2));
+      }
+    } catch { /* nothing to clean */ }
+  };
+
   const entry = Deno.mainModule; // this CLI (file:// checkout or jsr: install) — re-run as the child
-  for (;;) {
-    const child = new Deno.Command(Deno.execPath(), {
-      // --unstable-kv: a keep backend may use Deno.openKv (the prod `deno serve` start task passes
-      // it too); without it the dev child throws "Deno.openKv is not a function" at first use.
-      args: ["run", "-A", "--unstable-kv", entry, "dev", ...rawArgs],
-      env: { ...Deno.env.toObject(), SPRIG_DEV_CHILD: "1" },
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    }).spawn();
-    const fwd = () => {
-      try {
-        child.kill("SIGTERM");
-      } catch { /* already gone */ }
-    };
-    Deno.addSignalListener("SIGINT", fwd);
-    Deno.addSignalListener("SIGTERM", fwd);
-    const status = await child.status;
-    Deno.removeSignalListener("SIGINT", fwd);
-    Deno.removeSignalListener("SIGTERM", fwd);
-    if (status.code !== DEV_RESTART_CODE) Deno.exit(status.code);
-    console.log(`%c[sprig dev]%c server change → restarting…`, "color:#7c3aed;font-weight:bold", "");
+  try {
+    for (;;) {
+      const child = new Deno.Command(Deno.execPath(), {
+        // --unstable-kv: a keep backend may use Deno.openKv. PORT/SPRIG_DEV_ISO_PORT pin the repo's
+        // stable ports (so reclaim can free them); stdout/stderr are PIPED so we tee → DevLog.
+        args: ["run", "-A", "--unstable-kv", entry, "dev", ...rawArgs],
+        env: { ...Deno.env.toObject(), SPRIG_DEV_CHILD: "1", PORT: String(ports.app), SPRIG_DEV_ISO_PORT: String(ports.iso) },
+        stdin: "inherit",
+        stdout: "piped",
+        stderr: "piped",
+      }).spawn();
+      const pump = async (r: ReadableStream<Uint8Array>) => {
+        for await (const c of r) await log.write(c);
+      };
+      const pumps = Promise.all([pump(child.stdout), pump(child.stderr)]).catch(() => {});
+      const fwd = () => {
+        try { child.kill("SIGTERM"); } catch { /* already gone */ }
+      };
+      Deno.addSignalListener("SIGINT", fwd);
+      Deno.addSignalListener("SIGTERM", fwd);
+      const status = await child.status;
+      await pumps;
+      Deno.removeSignalListener("SIGINT", fwd);
+      Deno.removeSignalListener("SIGTERM", fwd);
+      if (status.code !== DEV_RESTART_CODE) {
+        cleanup();
+        Deno.exit(status.code);
+      }
+      await log.write(new TextEncoder().encode(`\n[sprig dev] server change → restarting…\n`));
+    }
+  } finally {
+    cleanup();
   }
 }
 
@@ -947,7 +1181,9 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   // die together on Ctrl-C.
   const root = installRoot();
   const appAbs = resolve(appDir);
-  const isoPort = freePort(port + 1);
+  // The supervisor pins this to the repo's stable isolate port (so it's reused across restarts +
+  // freeable on reclaim); standalone `sprig dev` (no supervisor) still falls back to a free one.
+  const isoPort = Number(Deno.env.get("SPRIG_DEV_ISO_PORT")) || freePort(port + 1);
   const isoBase = `http://localhost:${isoPort}`;
   // The workbench is best-effort: if it's missing or can't start, the annotate overlay must STILL
   // run (the loop's review surface is the app; isolate is the verify surface). Never let it drop
@@ -1346,6 +1582,7 @@ const USAGE = `sprig — the framework CLI
                                   replacement for deno check — the CLI owns the one runtime)
   sprig isolate [appDir]         component/page workbench — develop in isolation (default: .)
   sprig serve [entry]            run the app's host entry under its deno.json (default: serve.ts)
+  sprig stop  [appDir]           stop this repo's shared 'sprig dev' process + free its ports
   sprig install [--dev]          install the global sprig CLI + Claude Code skills + agents (--dev: from this checkout)
   sprig update                   re-install the global sprig CLI + skills + agents from the latest release
   sprig -v, --version            print the installed version + check JSR for a newer release
@@ -1381,6 +1618,24 @@ switch (cmd) {
   case "dev":
     await dev(rest);
     break;
+  case "stop": {
+    // Stop this repo's shared `sprig dev` process (registered in ~/.sprig/dev.json) + free its ports.
+    const repo = repoKey(resolve(rest.find((a) => !a.startsWith("-")) ?? "."));
+    const map = await readDevLock();
+    const e = map[repo];
+    if (!e) {
+      console.log(`sprig: no shared dev process registered for "${repo}".`);
+      break;
+    }
+    try { Deno.kill(e.pid, "SIGTERM"); } catch { /* already gone */ }
+    const ports = devPorts(repo);
+    await killPort(ports.app);
+    await killPort(ports.iso);
+    delete map[repo];
+    await writeDevLock(map);
+    console.log(`sprig: stopped the shared dev process for "${repo}" (pid ${e.pid}).`);
+    break;
+  }
   case "serve":
     await serve(rest[0]);
     break;
