@@ -2,7 +2,8 @@
   "nodeModulesDir": "auto",
   "compilerOptions": {
     "experimentalDecorators": true,
-    "emitDecoratorMetadata": true
+    "emitDecoratorMetadata": true,
+    "lib": ["deno.ns", "dom", "dom.iterable", "dom.asynciterable", "esnext"]
   },
   "workspace": [
     "./cli",
@@ -40,6 +41,7 @@
       "deno.json",
       "framework/.sprig/annotate.ts",
       "framework/.sprig/annotate-client.js",
+      "framework/.sprig/auth.ts",
       "framework/.sprig/compiler/build.ts",
       "framework/.sprig/compiler/dev.ts",
       "framework/.sprig/compiler/expr.ts",

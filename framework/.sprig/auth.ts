@@ -1,4 +1,3 @@
-/// <reference lib="dom" />
 // @sprig/core auth — the client half of sprig's Firebase/Google sign-in, owned by the
 // framework so apps don't hand-roll (and subtly misbuild) the popup → exchange → bearer
 // transport dance. Pairs with the server /auth gateway that serveSprig auto-mounts
