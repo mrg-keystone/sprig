@@ -3,7 +3,13 @@
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "lib": ["deno.ns", "dom", "dom.iterable", "dom.asynciterable", "esnext"]
+    "lib": [
+      "deno.ns",
+      "dom",
+      "dom.iterable",
+      "dom.asynciterable",
+      "esnext"
+    ]
   },
   "workspace": [
     "./cli",
@@ -28,7 +34,7 @@
     "start": "deno serve -A --unstable-kv serve.ts"
   },
   "name": "@sprig/core",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "license": "MIT",
   "exports": {
     ".": "./framework/.sprig/core.ts",
