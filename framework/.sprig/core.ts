@@ -448,28 +448,102 @@ export interface GuardCtx {
  *  so `["admin","users"]` ≡ `["admin/users"]`; `[]` means the root route. */
 export type Guard = (ctx: GuardCtx) => string[] | Promise<string[]>;
 
+/** Declarative per-route metadata for generated chrome (sidebar nav, page title) plus
+ *  any app-defined keys. A route with a `nav` label is opted INTO the generated nav. */
+export interface RouteMeta {
+  /** sidebar/nav label — its PRESENCE opts the route into the generated nav. */
+  nav?: string;
+  /** an icon key the shell's nav renders next to the label. */
+  icon?: string;
+  /** document <title> for this route. */
+  title?: string;
+  [key: string]: unknown;
+}
+
 export interface Route {
   path: string;
+  /** the folder-component to render. A `routers/*` load is a LAYOUT (it wraps its
+   *  children in its own <router-outlet>); a `pages/*` load is a leaf page. */
   load?: string;
   children?: Route[];
   /** Guards protecting this route AND its children (the matched chain's guards
    *  run parent-first, this route's own guards last). */
   guards?: Guard[];
+  /** Declarative metadata (nav label/icon/title) consumed by generated chrome. */
+  meta?: RouteMeta;
+  /** A grant the session must hold to enter this route AND its children — verified
+   *  server-side (like a guard) before render, collected parent-first along the chain. */
+  requiredGrant?: string;
 }
 export function defineRoutes(routes: Route[]): Route[] {
   return routes;
 }
 
+/** A `routers/*` load is a nesting LAYOUT (owns a <router-outlet>); anything else
+ *  (`pages/*`) is a leaf. This is what lets a router wrap its children while a plain
+ *  page-parent stays a mere index (the pre-nesting behavior is preserved). */
+export function isLayoutLoad(load: string | undefined): boolean {
+  return !!load && load.startsWith("routers/");
+}
+
+/** One generated-nav entry, derived from a route's `meta.nav`. */
+export interface NavItem {
+  href: string;
+  label: string;
+  icon?: string;
+  /** true when the current path is at or under this item's route. */
+  active: boolean;
+}
+
+/** Derive the sidebar/nav model from the route tree: every route carrying a `meta.nav` label
+ *  becomes an item, its href built from the nested path segments (so the nav IS the router — no
+ *  hand-maintained list). `activePath` is the current on-base path (post-base, e.g. "/queue").
+ *  `base` is prefixed onto each href. Pure — usable server-side (SSR chrome) or on the client. */
+export function buildNav(routes: Route[], activePath: string, base = ""): NavItem[] {
+  const active = "/" + activePath.split("/").filter(Boolean).join("/"); // normalized, leading slash
+  const items: NavItem[] = [];
+  const walk = (rs: Route[], prefix: string): void => {
+    for (const r of rs) {
+      const segs = [...prefix.split("/"), ...r.path.split("/")].filter(Boolean);
+      const full = "/" + segs.join("/"); // "/" for the index
+      if (r.meta?.nav) {
+        items.push({
+          href: `${base}${full === "/" ? "/" : full}`,
+          label: r.meta.nav,
+          icon: r.meta.icon,
+          active: active === full || (full !== "/" && active.startsWith(full + "/")),
+        });
+      }
+      if (r.children) walk(r.children, full === "/" ? "" : full);
+    }
+  };
+  walk(routes, "");
+  return items;
+}
+
+/** One renderable level of a matched route — a route with a `load`. The renderer nests
+ *  these OUTER→INNER, each layout's <router-outlet> holding the next level's HTML. */
+export interface MatchedLevel {
+  load: string;
+  meta?: RouteMeta;
+}
+
 export interface MatchedRoute {
+  /** The render stack OUTER→INNER: each matched LAYOUT (routers/*) followed by the leaf
+   *  page. e.g. [{load:"routers/main"},{load:"pages/overview"}]. Length 1 = a bare page. */
+  chain: MatchedLevel[];
+  /** The leaf load (last chain entry) — convenience for resolve + back-compat. */
   load?: string;
   params: Record<string, string>;
   /** Guards collected along the matched chain, parent-first. */
   guards?: Guard[];
+  /** Grants required along the matched chain, parent-first (verified server-side). */
+  grants?: string[];
 }
 
-/** Minimal primary-path matcher: walks routes, supports ":param" segments and a
- *  nested single primary child chain. (The full named-outlet engine is router.ts
- *  in the build; the spine needs primary routing only.) */
+/** Primary-path matcher: walks routes, supports ":param" segments, nested layouts
+ *  (routers/*), and an index child (`path: ""`) for a layout's default page. Returns the
+ *  full render CHAIN (outer layouts → leaf page) plus the parent-first guard + grant chains. */
 export function matchRoute(routes: Route[], pathname: string): MatchedRoute | null {
   const segs = pathname.split("/").filter((s) => s.length > 0);
   return walk(routes, segs, {});
@@ -488,6 +562,8 @@ function walk(
   segs: string[],
   inherited: Record<string, string>,
   guards: Guard[] = [],
+  wrappers: MatchedLevel[] = [],
+  grants: string[] = [],
 ): MatchedRoute | null {
   for (const route of routes) {
     const rs = route.path.split("/").filter((s) => s.length > 0);
@@ -500,13 +576,33 @@ function walk(
       else if (rs[i] !== u) { ok = false; break; }
     }
     if (!ok) continue;
-    // a fresh array per matched level (never mutate `guards`): a failed child
-    // descent must not leak this route's guards onto a later sibling attempt.
-    const chain = route.guards?.length ? [...guards, ...route.guards] : guards;
+    // fresh arrays per matched level (never mutate the caller's): a failed child descent
+    // must not leak this route's guards/grants/wrapper onto a later sibling attempt.
+    const gchain = route.guards?.length ? [...guards, ...route.guards] : guards;
+    const grchain = route.requiredGrant ? [...grants, route.requiredGrant] : grants;
+    // a LAYOUT (routers/*) wraps its children in its own outlet; a plain page-parent does
+    // NOT (it stays a mere index) — that's what preserves the pre-nesting behavior.
+    const childWrappers = isLayoutLoad(route.load)
+      ? [...wrappers, { load: route.load!, meta: route.meta }]
+      : wrappers;
     const rest = segs.slice(rs.length);
-    if (rest.length === 0) return { load: route.load, params, guards: chain };
+    if (rest.length === 0) {
+      // A layout (or a load-less container) has no page of its OWN at its base URL, so descend
+      // into an index child (`path: ""`) for its default page — the clean cure for a container
+      // also having to BE a page. A plain page-parent renders ITSELF (no index override), which
+      // preserves the pre-nesting behavior exactly.
+      if (route.children && (isLayoutLoad(route.load) || !route.load)) {
+        const idx = walk(route.children, [], params, gchain, childWrappers, grchain);
+        if (idx) return idx;
+      }
+      // this route is the terminal: its own load (page OR router) ends the chain, nested
+      // under the wrappers ABOVE it.
+      const chain: MatchedLevel[] = route.load ? [...wrappers, { load: route.load, meta: route.meta }] : wrappers;
+      if (!chain.length) return null; // a pure container with nothing renderable → no match
+      return { chain, load: chain[chain.length - 1].load, params, guards: gchain, grants: grchain };
+    }
     if (route.children) {
-      const sub = walk(route.children, rest, params, chain);
+      const sub = walk(route.children, rest, params, gchain, childWrappers, grchain);
       if (sub) return sub;
     }
   }
@@ -525,8 +621,8 @@ function normalizeRoute(out: string[]): string[] {
  *  ONLY wiring an app needs — render + stream + per-page resolve loading all come from
  *  it, so `routes` alone drive data loading (no `modules` map, no per-page imports). */
 export interface AppRenderer {
-  renderDocument(pageLoad: string, inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }): Promise<string>;
-  renderStream?(pageLoad: string, inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }): ReadableStream<Uint8Array>;
+  renderDocument(chain: string | readonly MatchedLevel[], inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }, chrome?: Record<string, unknown>): Promise<string>;
+  renderStream?(chain: string | readonly MatchedLevel[], inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }, chrome?: Record<string, unknown>): ReadableStream<Uint8Array>;
   loadResolve?(pageLoad: string): Promise<Resolve | undefined>;
 }
 
@@ -542,6 +638,13 @@ export interface AppConfig {
   render?: (pageLoad: string, inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }) => Promise<string>;
   /** LEGACY direct stream callback; superseded by `renderer.renderStream`. */
   renderStream?: (pageLoad: string, inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }) => ReadableStream<Uint8Array>;
+  /** Verify a route's `requiredGrant` server-side (runs after guards, before resolve — no data
+   *  work for a denied page). Given the grant name + the request ctx (headers → the session
+   *  cookie), return whether the caller holds it. The app wires this to its auth model (e.g. rune
+   *  `grantsForApp` + the `*` skeleton). A grant the caller lacks redirects like a denied guard. */
+  verifyGrant?: (grant: string, ctx: GuardCtx) => boolean | Promise<boolean>;
+  /** Where a missing grant redirects (bare path segments; default `["login"]`). */
+  grantDenied?: string[];
 }
 export interface SprigApp {
   /** `env.assetsVersion` is the content hash of the dir the assets are ACTUALLY served
@@ -605,13 +708,13 @@ export function bootstrap(config: AppConfig): SprigApp {
       // window (an earlier guard's `await` must not strip the injector from the
       // next one). The first guard whose returned route differs from the target
       // route wins → 302 there; all guards returning the target → proceed.
+      const segs = path.split("/").filter((s) => s.length > 0);
+      const gctx: GuardCtx = { path: segs, params: matched.params, url, headers: req.headers };
       if (matched.guards?.length) {
-        const segs = path.split("/").filter((s) => s.length > 0);
         const target = segs.join("/");
-        const ctx: GuardCtx = { path: segs, params: matched.params, url, headers: req.headers };
         try {
           for (const guard of matched.guards) {
-            const out = normalizeRoute(await runInInjector(routeInjector, () => guard(ctx)));
+            const out = normalizeRoute(await runInInjector(routeInjector, () => guard(gctx)));
             if (out.join("/") !== target) {
               return new Response(null, {
                 status: 302,
@@ -621,6 +724,27 @@ export function bootstrap(config: AppConfig): SprigApp {
           }
         } catch {
           // a throwing guard fails CLOSED — same controlled 500 as a resolve failure
+          return new Response("Internal Server Error", { status: 500, headers: ssrHeaders() });
+        }
+      }
+      // GRANTS: declarative per-route requirement (collected parent-first along the chain),
+      // verified via the app's grant verifier — which checks the cookie-borne session against its
+      // grant model (deny-by-default). A grant the caller lacks redirects like a denied guard. This
+      // MUST live here (not in resolve): ResolveCtx has no headers, so the session is unreadable
+      // there — the documented SSR-data-leak surface.
+      if (matched.grants?.length && config.verifyGrant) {
+        try {
+          for (const grant of matched.grants) {
+            const ok = await runInInjector(routeInjector, () => config.verifyGrant!(grant, gctx));
+            if (!ok) {
+              const to = normalizeRoute(config.grantDenied ?? ["login"]);
+              return new Response(null, {
+                status: 302,
+                headers: { "location": `${base}/${to.join("/")}`, "cache-control": "no-store" },
+              });
+            }
+          }
+        } catch {
           return new Response("Internal Server Error", { status: 500, headers: ssrHeaders() });
         }
       }
@@ -651,22 +775,34 @@ export function bootstrap(config: AppConfig): SprigApp {
       // resource) by setting the request status; honor it on the response line.
       const status = root.status ?? 200;
 
-      const renderStream = config.renderStream ??
-        (config.renderer?.renderStream ? config.renderer.renderStream.bind(config.renderer) : undefined);
-      const render = config.render ?? config.renderer?.renderDocument?.bind(config.renderer);
       // the served-assets content hash from serveSprig/sprigUi → the renderer's ?v=
       const ropts = env?.assetsVersion ? { assetsVersion: env.assetsVersion } : undefined;
+      const renderer = config.renderer;
+      // the generated-nav model (from route metadata + the current path) handed to layouts/shell
+      // as chrome — so the nav IS the route tree, no hand-maintained list. Cheap + pure.
+      const chrome: Record<string, unknown> = { nav: buildNav(config.routes, path, base) };
 
-      // Streaming SSR (preferred): flush the head now, stream the body after its fetches.
-      if (renderStream && matched.load && method !== "HEAD") {
-        return new Response(renderStream(matched.load, inputs, ropts), { status, headers: ssrHeaders() });
+      // Streaming SSR (preferred): flush the head now, stream the body after its fetches. A
+      // LEGACY config.renderStream callback (single page) keeps priority; otherwise the modern
+      // renderer streams the whole matched CHAIN (nested layouts → leaf).
+      if (method !== "HEAD" && matched.chain.length) {
+        if (config.renderStream) {
+          return new Response(config.renderStream(matched.load!, inputs, ropts), { status, headers: ssrHeaders() });
+        }
+        if (renderer?.renderStream) {
+          return new Response(renderer.renderStream(matched.chain, inputs, ropts, chrome), { status, headers: ssrHeaders() });
+        }
       }
 
       let html: string;
       try {
-        html = render && matched.load
-          ? await render(matched.load, inputs, ropts)
-          : renderDocument(matched, inputs, base);
+        if (config.render && matched.load) {
+          html = await config.render(matched.load, inputs, ropts); // LEGACY single-page callback
+        } else if (renderer?.renderDocument && matched.chain.length) {
+          html = await renderer.renderDocument(matched.chain, inputs, ropts, chrome);
+        } else {
+          html = renderDocument(matched, inputs, base); // legacy <pre>-dump placeholder
+        }
       } catch {
         return new Response("Internal Server Error", { status: 500, headers: ssrHeaders() });
       }
@@ -699,3 +835,20 @@ function renderDocument(matched: MatchedRoute, inputs: Record<string, unknown>, 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
+// Firebase/Google sign-in + the session-bearer transport — sprig OWNS the auth flow so apps
+// don't hand-roll (and misbuild) it. `loginWithGoogle()` is the sign-in primitive; the rest is
+// the bearer lifecycle (store, auto-attach to /api, seed from a `?token=` magic link, drop on a
+// stale 401). Pairs with the same-origin /auth gateway serveSprig auto-mounts (@sprig/keep).
+// Re-exported here so an island simply does `import { loginWithGoogle } from "@sprig/core"`.
+// (auth.ts is SSR-safe — its on-load side effects are typeof-guarded, so this is inert server-side.)
+export {
+  apiPost,
+  AuthError,
+  hasSession,
+  loginWithGoogle,
+  SESSION_COOKIE,
+  setBearer,
+  signOut,
+  warmAuth,
+} from "./auth.ts";

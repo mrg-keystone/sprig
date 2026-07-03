@@ -70,7 +70,9 @@ Deno.test("non-serializable fields are dropped, methods come from the class", as
 Deno.test("onBrowserDestroy cleans up (no work after teardown)", async () => {
   class Ticker {
     ticks = 0;
-    #id?: number;
+    // ReturnType<typeof setInterval> (not `number`) so it type-checks under both the DOM
+    // and Deno libs — setInterval returns an opaque Timeout under Deno's default lib.
+    #id?: ReturnType<typeof setInterval>;
     onBrowserInit() { this.#id = setInterval(() => this.ticks++, 10); }
     onBrowserDestroy() { clearInterval(this.#id); }
   }

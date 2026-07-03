@@ -68,6 +68,10 @@ export interface RenderOpts {
   registry: Registry;
   /** content for <router-outlet> (the matched child, pre-rendered) */
   outlet?: string;
+  /** the `load` of the component rendered INSIDE this outlet — stamped as data-level on the
+   *  emitted <sprig-outlet> so the client soft-nav can diff nesting levels and swap the
+   *  deepest one that changed (nested layouts). */
+  outletKey?: string;
   /** the current template's full source — used to re-emit the inter-node
    *  whitespace the grammar drops as `extras` (HTML collapses it to one space). */
   source: string;
@@ -194,8 +198,12 @@ function tagInfo(node: Node): TagInfo {
 function renderElement(node: Node, opts: RenderOpts): string {
   const { tag, attrs, children, selfClosing } = tagInfo(node);
 
-  // the outlet is a persistent boundary element (the soft-nav swap target)
-  if (tag === "router-outlet") return `<sprig-outlet>${opts.outlet ?? ""}</sprig-outlet>`;
+  // the outlet is a persistent boundary element (the soft-nav swap target). data-level names
+  // the load rendered inside it so the client can diff nesting and swap the deepest changed one.
+  if (tag === "router-outlet") {
+    const key = opts.outletKey ? ` data-level="${opts.outletKey.replace(/"/g, "&quot;")}"` : "";
+    return `<sprig-outlet${key}>${opts.outlet ?? ""}</sprig-outlet>`;
+  }
 
   // content projection: <content>/<ng-content> emits projected nodes (or its own children as a
   // fallback when nothing is projected); <ng-container> groups w/o a DOM element
@@ -279,7 +287,7 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
       ? snapshotOf(scope as Record<string, unknown>)
       : undefined;
     const inner = renderNodes(named(tpl), {
-      scope, registry: opts.registry, outlet: opts.outlet, source: tpl.text, handlers: opts.handlers, projected, scopeAttr: childScope, mocks: opts.mocks, resolved: opts.resolved,
+      scope, registry: opts.registry, outlet: opts.outlet, outletKey: opts.outletKey, source: tpl.text, handlers: opts.handlers, projected, scopeAttr: childScope, mocks: opts.mocks, resolved: opts.resolved,
       // nested islands resolve under THIS instance (extend the path at this call-site)
       resolvedPath: node ? rkey(opts.resolvedPath, node) : opts.resolvedPath,
     });
@@ -335,7 +343,7 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
   // forward `resolved` so an island nested inside this static component still finds the
   // scope the async pre-pass (resolveIslands) recorded for it — else it falls back to its
   // stale synchronous scope() value (bug H).
-  const html = renderNodes(named(tpl), { scope: inputs, registry: opts.registry, outlet: opts.outlet, source: tpl.text, projected, scopeAttr: childScope, mocks: opts.mocks, resolved: opts.resolved, resolvedPath: node ? rkey(opts.resolvedPath, node) : opts.resolvedPath });
+  const html = renderNodes(named(tpl), { scope: inputs, registry: opts.registry, outlet: opts.outlet, outletKey: opts.outletKey, source: tpl.text, projected, scopeAttr: childScope, mocks: opts.mocks, resolved: opts.resolved, resolvedPath: node ? rkey(opts.resolvedPath, node) : opts.resolvedPath });
   const out = injectRootAttrs(html, eventAttrs(attrs, opts));
   if (key) {
     if (staticCache.size >= STATIC_CACHE_MAX) staticCache.clear(); // crude bound

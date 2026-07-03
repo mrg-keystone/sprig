@@ -18,18 +18,19 @@ import { makeServerCtx, withServerInjector } from "./island.ts";
 import { versionOf } from "./hash.ts";
 import { componentScopeId } from "./scope.ts";
 import { perfConfig, type PerfConfig, perfHeadSnippet } from "./perf.ts";
-import type { ComponentDef as CoreComponentDef, Resolve } from "@sprig/core";
+import type { ComponentDef as CoreComponentDef, MatchedLevel, Resolve } from "@sprig/core";
 
 export interface SsrRenderer {
-  /** Render `pageLoad`'s component into the shell, return a full HTML document.
-   *  `ropts.assetsVersion` (threaded from serveSprig/sprigUi via the app env) is the
-   *  content hash of the dir the assets are ACTUALLY served from — it wins over this
-   *  renderer's own readVersion(), which only knows SPRIG_ASSETS_DIR/<cwd>/static. */
-  renderDocument(pageLoad: string, inputs: Scope, ropts?: { assetsVersion?: string }): Promise<string>;
+  /** Render the matched CHAIN (outer layouts → leaf page) nested inside the shell, return a
+   *  full HTML document. `chain` is the render stack from matchRoute; a length-1 chain is a
+   *  plain page (the pre-nesting behavior). `ropts.assetsVersion` (threaded from serveSprig/
+   *  sprigUi via the app env) is the content hash of the dir the assets are ACTUALLY served
+   *  from — it wins over this renderer's own readVersion(). */
+  renderDocument(chain: string | readonly MatchedLevel[], inputs: Scope, ropts?: { assetsVersion?: string }, chrome?: Scope): Promise<string>;
   /** Same document, STREAMED: the <head> (asset preloads) flushes on the first byte,
    *  the body streams after its onServerInit fetches resolve. Byte-identical to
    *  renderDocument's output, just chunked. */
-  renderStream(pageLoad: string, inputs: Scope, ropts?: { assetsVersion?: string }): ReadableStream<Uint8Array>;
+  renderStream(chain: string | readonly MatchedLevel[], inputs: Scope, ropts?: { assetsVersion?: string }, chrome?: Scope): ReadableStream<Uint8Array>;
   /** Selectors discovered (for diagnostics/tests). */
   selectors(): string[];
   /** the scanned src root (for the dev server's watcher). */
@@ -54,7 +55,7 @@ export interface SsrRenderer {
 export async function createRenderer(
   srcDir: string,
   base = "/ui",
-  opts: { dev?: boolean; shell?: string; reserved?: string[] } = {},
+  opts: { dev?: boolean; shell?: string; shellDir?: string; reserved?: string[] } = {},
 ): Promise<SsrRenderer> {
   const shellSelector = opts.shell ?? "shell";
   // off-app (keep-owned) prefixes the client soft-nav must leave to the browser. Defaults
@@ -156,6 +157,22 @@ export async function createRenderer(
     if (!defs) bySelector.set(selector, (defs = []));
     defs.push(def);
   }
+  // ── App SHELL from the sibling entrypoint folder ──────────────────────────
+  // The shell (the outer document frame) can live in the app's `bootstrap/` ENTRY folder —
+  // <srcDir>/../bootstrap/template.html — instead of a scanned `src/shell/` component. This
+  // unifies the entry (bootstrap/mod.ts), the shell (template.html) and the global stylesheet
+  // (styles.css, collected by the build's buildCss) in ONE folder. Present → it IS the shell
+  // (registered under the shell selector); absent → apps keep using a scanned "shell" component.
+  // Prebuilt when the build serialized it (key = the shell selector), else live-parsed once here.
+  const shellDir = opts.shellDir ?? join(srcDir, "..", "bootstrap");
+  const shellHtml = join(shellDir, "template.html");
+  if (await exists(shellHtml)) {
+    const shellSrc = await Deno.readTextFile(shellHtml);
+    const template = prebuilt?.[shellSelector]
+      ? fromSerialized(prebuilt[shellSelector])
+      : await (await parser()).parseCached(shellSrc);
+    global.set(shellSelector, { selector: shellSelector, template, scope: componentScopeId(shellSelector) });
+  }
   // the default (page-less) registry: global only.
   const registry: Registry = { get: (s) => global.get(s) };
   /** a per-page registry: page-local components shadow global ones within the page. */
@@ -212,44 +229,68 @@ export async function createRenderer(
     return defs && defs.length ? defs[0] : undefined;
   };
 
-  /** Build the <body> content: async pre-pass (await class-island onServerInit in
-   *  parallel) → sync render of the page → wrap in the shell. Shared by renderDocument
-   *  (returns the whole doc) and renderStream (flushes the head before this resolves). */
-  const renderBody = async (pageLoad: string, inputs: Scope): Promise<string> => {
-    const page = global.get(basename(pageLoad));
-    const pageReg = registryForPage(page ? basename(pageLoad) : null);
-    // a preview page may carry `__mocks` (child-component overrides) in its inputs
+  /** Render ONE level of the matched chain (a leaf page, a layout router, or the shell):
+   *  run its logic.ts (onServerInit → render scope), render its template with `outlet` (keyed
+   *  by `outletKey`) spliced into its <router-outlet>, and — if it is an island (has logic.ts) —
+   *  wrap it as a hydration boundary so its own onBrowserInit/onBrowserDestroy fire on the
+   *  client. This generalizes the old page-render + shell-wrap into one N-level primitive. */
+  const renderLevel = async (
+    load: string,
+    inputs: Scope,
+    reg: Registry,
+    outlet?: string,
+    outletKey?: string,
+  ): Promise<string> => {
+    const comp = global.get(basename(load));
+    if (!comp) return outlet ?? ""; // unknown load → pass the inner content through untouched
     const mocks = (inputs as Record<string, unknown>).__mocks as
       | Record<string, import("./render.ts").MockSpec>
       | undefined;
-    // The page's OWN logic.ts class IS its data source: run onServerInit and use the
-    // instance as the render scope (this is what replaces a separate resolve.ts —
-    // template + logic.ts is the whole page). `inputs` (route params) reach it via the
-    // class ctx. A page with no logic.ts just renders against inputs directly.
-    const pageScope: Scope = page?.island?.resolve
-      ? await page.island.resolve(inputs)
-      : (page?.island ? page.island.scope(inputs) : inputs);
-    const baseOpts = { scope: pageScope, registry: pageReg, source: page?.template.text ?? "", scopeAttr: page?.scope, mocks };
-    // if the page IS a class island, snapshot its post-onServerInit state NOW (before the
-    // template's @let locals mutate the scope) so the browser re-seeds it before onBrowserInit.
-    const pageSnap = page?.island?.snapshot ? snapshotOf(pageScope as Record<string, unknown>) : undefined;
+    // the component's OWN logic.ts class IS its data source: run onServerInit and use the
+    // instance as the render scope. A component with no logic.ts renders against `inputs`.
+    const scope: Scope = comp.island?.resolve
+      ? await comp.island.resolve(inputs)
+      : (comp.island ? comp.island.scope(inputs) : inputs);
+    const baseOpts = { scope, registry: reg, source: comp.template.text, scopeAttr: comp.scope, outlet, outletKey, mocks };
+    // snapshot the post-onServerInit state NOW (before @let locals mutate it) so the browser
+    // re-seeds before onBrowserInit — for a layout too, so its live cycle resumes correctly.
+    const snap = comp.island?.snapshot ? snapshotOf(scope as Record<string, unknown>) : undefined;
     const resolved = new Map<string, Scope>();
-    if (page) await resolveIslands(named(page.template), baseOpts, resolved);
-    let pageHtml = page ? renderNodes(named(page.template), { ...baseOpts, resolved }) : "";
-    // wrap the page-root as a hydration boundary so its own logic.ts hydrates on the client
-    // (constructs the class, restores the snapshot, runs onBrowserInit, wires its events).
-    if (page?.island) {
+    await resolveIslands(named(comp.template), baseOpts, resolved);
+    let html = renderNodes(named(comp.template), { ...baseOpts, resolved });
+    // if it's a class island, wrap it as a hydration boundary so its logic.ts hydrates on the
+    // client (constructs the class, restores the snapshot, runs onBrowserInit, wires events).
+    if (comp.island) {
       const propsObj: Record<string, unknown> = { ...(inputs as Record<string, unknown>) };
-      if (pageSnap) propsObj.__snapshot = pageSnap;
-      pageHtml = islandHost(page.scope ?? "", page.selector, page.island.trigger, propsObj, pageHtml);
+      if (snap) propsObj.__snapshot = snap;
+      html = islandHost(comp.scope ?? "", comp.selector, comp.island.trigger, propsObj, html);
     }
+    return html;
+  };
+
+  /** Build the <body> content for the matched CHAIN (outer layouts → leaf page), nested
+   *  inner→outer, then wrapped in the shell. Each layout's <router-outlet> holds the next
+   *  inner level, keyed by that level's load (data-level) so the client soft-nav can swap the
+   *  deepest changed one. The leaf gets the resolved `inputs`; layouts get {} (their own
+   *  logic.ts onServerInit is their data source). Shared by renderDocument + renderStream. */
+  const renderBody = async (chain: readonly MatchedLevel[], inputs: Scope, chrome?: Scope): Promise<string> => {
+    if (!chain.length) return "";
+    // layouts + the shell receive the CHROME model (generated nav etc.) as their inputs; the leaf
+    // page gets its own resolved data. A layout's logic.ts reads chrome via ctx.input("nav").
+    const chromeInputs = chrome ?? ({} as Scope);
+    const leaf = chain[chain.length - 1].load;
+    // the deepest level (the page) — its page-local registry, its resolved inputs, no outlet.
+    let html = await renderLevel(leaf, inputs, registryForPage(basename(leaf)));
+    let innerLoad = leaf;
+    // wrap in each ancestor LAYOUT (routers/*), inner→outer; each holds the inner HTML, keyed.
+    for (let i = chain.length - 2; i >= 0; i--) {
+      html = await renderLevel(chain[i].load, chromeInputs, registry, html, innerLoad);
+      innerLoad = chain[i].load;
+    }
+    // wrap in the shell (outermost); its outlet is keyed by the outermost chain level.
     const shell = global.get(shellSelector);
-    if (!shell) return pageHtml;
-    // the SHELL template can also embed islands — pre-resolve their async onServerInit too.
-    const shellOpts = { scope: {} as Scope, registry, outlet: pageHtml, source: shell.template.text, scopeAttr: shell.scope };
-    const shellResolved = new Map<string, Scope>();
-    await resolveIslands(named(shell.template), shellOpts, shellResolved);
-    return renderNodes(named(shell.template), { ...shellOpts, resolved: shellResolved });
+    if (!shell) return html;
+    return await renderLevel(shellSelector, chromeInputs, registry, html, innerLoad);
   };
 
   // resolve.ts loaders, imported on first match by route `load` path and cached.
@@ -277,7 +318,7 @@ export async function createRenderer(
       resolveCache.set(rel, fn);
       return fn;
     },
-    async renderDocument(pageLoad, inputs, ropts) {
+    async renderDocument(chain, inputs, ropts, chrome) {
       if (opts.dev && !ropts?.assetsVersion) version = await readVersion();
       // snapshot the version BEFORE the body await so a concurrent dev request recomputing
       // the module-level `version` during renderBody can't make this document stamp the
@@ -286,9 +327,12 @@ export async function createRenderer(
       // wins over readVersion(), whose SPRIG_ASSETS_DIR/<cwd>/static guess is wrong
       // exactly where it matters (Deno Deploy's cwd is not the app dir).
       const v = pickVersion(ropts?.assetsVersion);
-      return document(await renderBody(pageLoad, inputs), base, v, reserved, pageName(pageLoad), perf);
+      // a bare load string (the pre-nesting caller, incl. tests) normalizes to a length-1 chain.
+      const levels = typeof chain === "string" ? [{ load: chain }] : chain;
+      const leaf = levels.length ? levels[levels.length - 1].load : "";
+      return document(await renderBody(levels, inputs, chrome), base, v, reserved, pageName(leaf), perf, !!opts.dev);
     },
-    renderStream(pageLoad, inputs, ropts) {
+    renderStream(chain, inputs, ropts, chrome) {
       const enc = new TextEncoder();
       return new ReadableStream<Uint8Array>({
         async start(ctrl) {
@@ -301,8 +345,10 @@ export async function createRenderer(
             // await the body's onServerInit fetches (and, when INFRA_PERF is on, the
             // perf snippet's nav-start beacon fires while the body is still streaming).
             ctrl.enqueue(enc.encode(documentHead(base, v, perf)));
-            const body = await renderBody(pageLoad, inputs);
-            ctrl.enqueue(enc.encode(body + documentTail(base, v, reserved, pageName(pageLoad), perf)));
+            const levels = typeof chain === "string" ? [{ load: chain }] : chain;
+            const body = await renderBody(levels, inputs, chrome);
+            const leaf = levels.length ? levels[levels.length - 1].load : "";
+            ctrl.enqueue(enc.encode(body + documentTail(base, v, reserved, pageName(leaf), perf, !!opts.dev)));
           } catch {
             // headers + head are already on the wire, so a render failure can't become a
             // 500 — emit a marker and close (matches the renderDocument 500's no-leak rule).
@@ -402,7 +448,7 @@ function documentHead(base: string, version: string, perf: PerfConfig | null = n
 <body>
 `;
 }
-function documentTail(base: string, version: string, reserved: string[], page?: string, perf: PerfConfig | null = null): string {
+function documentTail(base: string, version: string, reserved: string[], page?: string, perf: PerfConfig | null = null, hmr = false): string {
   const client = `${base}/_assets/client.js?v=${version}`;
   // `page` (the matched page's basename) lets the client resolve an island's child
   // components against the same page-local registry the server used (registryForPage).
@@ -411,14 +457,18 @@ function documentTail(base: string, version: string, reserved: string[], page?: 
   // hidden INFRA perf: hand the client runtime the collector so SOFT navigations —
   // whose fetched documents never execute scripts — emit the same beacon pair.
   if (perf) cfg.perf = { url: perf.url, app: perf.app };
+  // dev-only: activate the loader's dormant HMR client. Emitted ONLY when the renderer is in
+  // dev mode (`sprig dev`); prod never sets it, so the bundle stays byte-identical — this is a
+  // runtime DATA flag, not a build variant. The client.js is the same bytes either way.
+  if (hmr) cfg.hmr = true;
   return `
 <script type="application/json" id="__sprig_config">${JSON.stringify(cfg).replace(/</g, "\\u003c")}</script>
 <script type="module" src="${client}"></script>
 </body>
 </html>`;
 }
-function document(body: string, base: string, version: string, reserved: string[], page?: string, perf: PerfConfig | null = null): string {
-  return documentHead(base, version, perf) + body + documentTail(base, version, reserved, page, perf);
+function document(body: string, base: string, version: string, reserved: string[], page?: string, perf: PerfConfig | null = null, hmr = false): string {
+  return documentHead(base, version, perf) + body + documentTail(base, version, reserved, page, perf, hmr);
 }
 
 export { join };

@@ -111,24 +111,34 @@ function openUrl(url: string): void {
   } catch { /* ignore */ }
 }
 
-/** A per-project file (in TMPDIR, not the project) where pinLocalSprig stashes the app's
- *  ORIGINAL deno.json, so a `sprig dev` killed mid-session can self-heal on the next run. */
-function sprigBackupPath(appDir: string): string {
+/** A per-project dir (in TMPDIR, not the project) where pinLocalSprig stashes the ORIGINAL of
+ *  every deno.json it rewrites. A monorepo pins @sprig/* in the WORKSPACE ROOT (a Deno workspace
+ *  member resolves its imports through the root, not the member) — so more than one config may be
+ *  swapped, and each gets a `{ path, original }` backup so a `sprig dev` killed mid-session
+ *  self-heals every one on the next run. */
+function sprigBackupDir(appDir: string): string {
   const tmp = Deno.env.get("TMPDIR") ?? "/tmp";
   const key = resolve(appDir).replace(/[^A-Za-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "app";
-  return join(tmp, "sprig-dev", key, "deno.json.orig");
+  return join(tmp, "sprig-dev", key, "pins");
 }
 
 /** If a previous `sprig dev` was killed (e.g. SIGKILL) before it could restore the app's
- *  deno.json, the backup still exists — put it back. */
+ *  deno.json(s), the backups still exist — put every one back. */
 async function healLocalSprig(appDir: string): Promise<void> {
-  const bak = sprigBackupPath(appDir);
+  const dir = sprigBackupDir(appDir);
+  let healed = 0;
   try {
-    const orig = await Deno.readTextFile(bak);
-    await Deno.writeTextFile(join(resolve(appDir), "deno.json"), orig);
-    await Deno.remove(bak).catch(() => {});
-    console.log("sprig: restored deno.json from an interrupted previous `sprig dev`.");
-  } catch { /* no backup → nothing to heal */ }
+    for await (const e of Deno.readDir(dir)) {
+      if (!e.isFile || !e.name.endsWith(".json")) continue;
+      try {
+        const { path, original } = JSON.parse(await Deno.readTextFile(join(dir, e.name))) as { path: string; original: string };
+        await Deno.writeTextFile(path, original);
+        healed++;
+      } catch { /* skip a corrupt/partial backup */ }
+    }
+    await Deno.remove(dir, { recursive: true }).catch(() => {});
+  } catch { /* no backup dir → nothing to heal */ }
+  if (healed) console.log(`sprig: restored ${healed} deno.json file(s) from an interrupted previous \`sprig dev\`.`);
 }
 
 /** Point the app's `@sprig/core` + `@sprig/keep` at the LOCAL install. The app pins them to
@@ -138,48 +148,69 @@ async function healLocalSprig(appDir: string): Promise<void> {
  *  so the swap must be in place before the dev child launches. We back the original up to
  *  TMPDIR (self-heal) and return a sync restore. No-op when already local / no deno.json. */
 async function pinLocalSprig(appDir: string): Promise<{ active: boolean; restore: () => void }> {
-  const inactive = { active: false, restore: () => {} };
-  const cfgPath = join(resolve(appDir), "deno.json");
-  let original: string;
-  try {
-    original = await Deno.readTextFile(cfgPath);
-  } catch {
-    return inactive;
-  }
-  let cfg: { imports?: Record<string, string> };
-  try {
-    cfg = JSON.parse(original);
-  } catch {
-    return inactive;
-  }
-  if (!cfg.imports) return inactive;
   const installDir = installRoot();
   const locals: Record<string, string> = {
     "@sprig/core": join(installDir, "framework", ".sprig", "core.ts"),
     "@sprig/keep": join(installDir, "packages", "keep", "mod.ts"),
   };
-  let changed = false;
-  for (const [k, local] of Object.entries(locals)) {
-    const v = cfg.imports[k];
-    if (typeof v === "string" && !/^(\.{0,2}\/|\/)/.test(v)) { // a non-local (jsr:/npm:/bare) map
-      cfg.imports[k] = local;
-      changed = true;
+  // Walk from the app dir up to the filesystem root, rewriting EVERY deno.json(c) that pins a
+  // non-local @sprig/* to the local checkout. Critically this reaches the WORKSPACE ROOT: a Deno
+  // workspace member resolves its imports through the ROOT's map, so a monorepo pins @sprig/core
+  // in the root (not the UI member). deno reads it at STARTUP, so without rewriting the root the
+  // SSR resolves @sprig/core to the pinned JSR build while the client bundle (forcedImportMap)
+  // uses local — a silent SSR/client sprig SPLIT (it surfaces the moment either side needs an
+  // export the other's version lacks). Force BOTH to the one local checkout. Each rewritten file
+  // is backed up to TMPDIR so a killed `sprig dev` self-heals every one (healLocalSprig).
+  const backupDir = sprigBackupDir(appDir);
+  const swaps: Array<{ path: string; original: string; rewritten: string }> = [];
+  let dir = resolve(appDir);
+  for (;;) {
+    for (const name of ["deno.json", "deno.jsonc"]) {
+      const cfgPath = join(dir, name);
+      let original: string;
+      try {
+        original = await Deno.readTextFile(cfgPath);
+      } catch {
+        continue; // no config here
+      }
+      let cfg: { imports?: Record<string, string> };
+      try {
+        cfg = JSON.parse(original);
+      } catch {
+        continue; // JSONC-with-comments / unparseable → can't safely rewrite; skip
+      }
+      if (!cfg.imports) continue;
+      let changed = false;
+      for (const [k, local] of Object.entries(locals)) {
+        const v = cfg.imports[k];
+        if (typeof v === "string" && !/^(\.{0,2}\/|\/)/.test(v)) { // a non-local (jsr:/npm:/bare) map
+          cfg.imports[k] = local;
+          changed = true;
+        }
+      }
+      if (changed) swaps.push({ path: cfgPath, original, rewritten: JSON.stringify(cfg, null, 2) });
     }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
   }
-  if (!changed) return inactive;
-  const bak = sprigBackupPath(appDir);
-  await Deno.mkdir(dirname(bak), { recursive: true });
-  await Deno.writeTextFile(bak, original);
-  await Deno.writeTextFile(cfgPath, JSON.stringify(cfg, null, 2));
+  if (!swaps.length) return { active: false, restore: () => {} };
+  await Deno.mkdir(backupDir, { recursive: true });
+  for (let i = 0; i < swaps.length; i++) {
+    await Deno.writeTextFile(join(backupDir, `${i}.json`), JSON.stringify({ path: swaps[i].path, original: swaps[i].original }));
+    await Deno.writeTextFile(swaps[i].path, swaps[i].rewritten);
+  }
   let done = false;
   const restore = () => {
     if (done) return;
     done = true;
+    for (const s of swaps) {
+      try {
+        Deno.writeTextFileSync(s.path, s.original); // sync → safe inside signal handlers
+      } catch { /* best effort */ }
+    }
     try {
-      Deno.writeTextFileSync(cfgPath, original); // sync → safe inside signal handlers
-    } catch { /* best effort */ }
-    try {
-      Deno.removeSync(bak);
+      Deno.removeSync(backupDir, { recursive: true });
     } catch { /* best effort */ }
   };
   return { active: true, restore };
@@ -236,7 +267,10 @@ async function withMergedConfig(appDir: string): Promise<void> {
     const { code } = await new Deno.Command(Deno.execPath(), {
       // import.meta.filename is the file:// path of THIS module — defined here because the early
       // `!import.meta.url.startsWith("file:")` guard already returned for a remote module.
-      args: ["run", "-A", "--config", mergedPath, import.meta.filename!, ...Deno.args],
+      // --unstable-kv: this merged-config child is the process that ends up running the server
+      // (it re-enters dev() past the SPRIG_MERGED guard), so it — not just the supervisor — needs
+      // Deno KV enabled for a keep backend that calls Deno.openKv.
+      args: ["run", "-A", "--unstable-kv", "--config", mergedPath, import.meta.filename!, ...Deno.args],
       env: { ...Deno.env.toObject(), SPRIG_MERGED: "1" },
       stdin: "inherit",
       stdout: "inherit",
@@ -259,15 +293,17 @@ function devCacheDir(appDir: string): string {
   return join(tmp, "sprig-dev", key, "static");
 }
 
-async function build(appDir = ".", dev = false, outDir = join(Deno.cwd(), "static"), rune = false): Promise<void> {
+async function build(appDir = ".", outDir = join(Deno.cwd(), "static"), rune = false): Promise<void> {
   // --rune: consolidate the workspace config FIRST (pin @sprig at the root, strip it from every
   // member) so the client build sees pin-free members that inherit the ONE root runtime — a
   // member's own pin would scope its islands to a second copy (dual-core). Must precede buildClient.
   if (rune) await emitRuneComposition(appDir, outDir);
   const srcDir = join(resolve(appDir), "src");
-  const r = await buildClient(srcDir, outDir, { dev });
+  // ONE build — `sprig dev` serves exactly these bytes (no dev variant). HMR rides on top as a
+  // runtime flag (cfg.hmr) + the dormant receiver, never a different bundle.
+  const r = await buildClient(srcDir, outDir);
   console.log(
-    `sprig build${dev ? " (dev)" : ""}: ${r.islands.length} island chunk(s) ` +
+    `sprig build: ${r.islands.length} island chunk(s) ` +
       `[${r.islands.join(", ")}] + ${r.chunks.length} shared chunk(s) → ${outDir} ` +
       `(${(r.bytes / 1024).toFixed(1)}kb, v=${r.hash})`,
   );
@@ -433,10 +469,12 @@ async function isSprigUiDir(dir: string): Promise<boolean> {
   return await pathExists(join(dir, "src", "mod.ts"));
 }
 
-/** Resolve the sprig UI package to build for `--rune`. If `appArg` itself is a UI package
- *  (run from ui/), use it; otherwise (run from the git root) find the one UI package among
- *  the workspace members / immediate subdirs. Errors clearly on none / ambiguous. */
-async function resolveRuneUiDir(appArg: string): Promise<string> {
+/** Resolve the sprig UI package for a command that may run from EITHER the UI package OR the
+ *  git root of a monorepo. If `appArg` is itself a UI package (has src/mod.ts), use it; otherwise
+ *  find the one UI package among the workspace members / immediate subdirs. Errors clearly on
+ *  none / ambiguous. `cmd` labels the message (e.g. "dev", "build --rune"), so the same resolver
+ *  serves `sprig dev` and `sprig build --rune` — you can run BOTH from the root or from ui/. */
+async function resolveSprigUiDir(appArg: string, cmd: string): Promise<string> {
   const abs = resolve(appArg);
   if (await isSprigUiDir(abs)) return abs;
   const found: string[] = [];
@@ -452,14 +490,14 @@ async function resolveRuneUiDir(appArg: string): Promise<string> {
   if (found.length === 1) return found[0];
   if (found.length > 1) {
     console.error(
-      `sprig build --rune: found ${found.length} sprig UI packages (${found.map((c) => relative(abs, c)).join(", ")}).\n` +
-        `  Run it from the one you mean, e.g.  cd ${relative(abs, found[0]) || "."} && sprig build --rune .`,
+      `sprig ${cmd}: found ${found.length} sprig UI packages (${found.map((c) => relative(abs, c)).join(", ")}).\n` +
+        `  Run it from the one you mean, e.g.  cd ${relative(abs, found[0]) || "."} && sprig ${cmd}`,
     );
     Deno.exit(1);
   }
   console.error(
-    `sprig build --rune: no sprig UI package found at or under ${abs} (a dir with src/mod.ts).\n` +
-      `  Run it from the git root of a sprig+rune monorepo, or from the UI package itself.`,
+    `sprig ${cmd}: no sprig UI package found at or under ${abs} (a dir with src/mod.ts).\n` +
+      `  Run it from the git root of a sprig monorepo, or from the UI package itself.`,
   );
   Deno.exit(1);
 }
@@ -562,31 +600,50 @@ async function writeRuneServe(gitRoot: string, uiRel: string, serverRel: string,
       Deno.exit(1);
     }
   }
-  const src = [
-    `// ${MARKER} — the single-origin composition root at the git root.`,
-    `//`,
-    `// serveSprig folds the rune/keep backend (${serverRel}/) and the sprig UI (${uiRel}/) into ONE`,
-    `// { fetch } default export that \`deno serve\` drives, reading the prebuilt ${assetsRel}/. The`,
-    `// Deno workspace in ./deno.json lets each half keep its own import map; serveSprig binds`,
-    `// keep's IN-PROCESS Backend so the UI's resolve.ts reads data with no TCP hop and no token.`,
-    `//`,
-    `//   deno serve -A serve.ts            (add --env-file=.env if your backend reads one)`,
-    `//`,
-    `//   /ui    → the SSR app        /api/* → the keep backend (token-gated)        /docs → Swagger`,
-    `//`,
-    `// Re-run \`sprig build --rune\` after changing pages/islands to refresh ${assetsRel}/.`,
-    `import { serveSprig } from "@sprig/keep";`,
-    `import { fromFileUrl } from "@std/path";`,
-    `import { api } from "./${serverRel}/bootstrap/mod.ts";`,
-    `import { sprigApp } from "./${uiRel}/src/mod.ts";`,
-    ``,
-    `// Pin assetsDir via import.meta (not the cwd-relative default) so the handler is correct`,
-    `// no matter what directory it is launched from (e.g. Deno Deploy).`,
-    `const assetsDir = fromFileUrl(new URL("./${assetsRel}", import.meta.url));`,
-    ``,
-    `export default serveSprig({ keep: api, app: sprigApp, base: "/ui", assetsDir });`,
-    ``,
-  ].join("\n");
+  // NEW convention: the app owns a small hand-written composition at <ui>/bootstrap/mod.ts
+  // (serveSprig + a pinned assetsDir). When present, serve.ts is a mere gitignored re-export
+  // shim — the wiring lives in ONE place, not regenerated boilerplate. Legacy apps with no
+  // ui/bootstrap/mod.ts still get the full generated composition below (back-compat).
+  const uiBootstrap = join(gitRoot, uiRel, "bootstrap", "mod.ts");
+  const src = (await pathExists(uiBootstrap))
+    ? [
+      `// ${MARKER} — a gitignored deploy shim; the composition lives in ${uiRel}/bootstrap/mod.ts.`,
+      `// That hand-owned file folds the keep backend (${serverRel}/) + the sprig UI into one`,
+      `// { fetch } handler with assetsDir pinned; this root re-exports it so \`deno serve serve.ts\``,
+      `// at the git root drives it. Regenerated every build; never committed.`,
+      `//`,
+      `//   deno serve -A serve.ts            (add --env-file=.env if your backend reads one)`,
+      `//`,
+      `//   /ui    → the SSR app        /api/* → the keep backend (token-gated)        /docs → Swagger`,
+      ``,
+      `export { default } from "./${uiRel}/bootstrap/mod.ts";`,
+      ``,
+    ].join("\n")
+    : [
+      `// ${MARKER} — the single-origin composition root at the git root.`,
+      `//`,
+      `// serveSprig folds the rune/keep backend (${serverRel}/) and the sprig UI (${uiRel}/) into ONE`,
+      `// { fetch } default export that \`deno serve\` drives, reading the prebuilt ${assetsRel}/. The`,
+      `// Deno workspace in ./deno.json lets each half keep its own import map; serveSprig binds`,
+      `// keep's IN-PROCESS Backend so the UI's resolve.ts reads data with no TCP hop and no token.`,
+      `//`,
+      `//   deno serve -A serve.ts            (add --env-file=.env if your backend reads one)`,
+      `//`,
+      `//   /ui    → the SSR app        /api/* → the keep backend (token-gated)        /docs → Swagger`,
+      `//`,
+      `// Re-run \`sprig build --rune\` after changing pages/islands to refresh ${assetsRel}/.`,
+      `import { serveSprig } from "@sprig/keep";`,
+      `import { fromFileUrl } from "@std/path";`,
+      `import { api } from "./${serverRel}/bootstrap/mod.ts";`,
+      `import { sprigApp } from "./${uiRel}/src/mod.ts";`,
+      ``,
+      `// Pin assetsDir via import.meta (not the cwd-relative default) so the handler is correct`,
+      `// no matter what directory it is launched from (e.g. Deno Deploy).`,
+      `const assetsDir = fromFileUrl(new URL("./${assetsRel}", import.meta.url));`,
+      ``,
+      `export default serveSprig({ keep: api, app: sprigApp, base: "/ui", assetsDir });`,
+      ``,
+    ].join("\n");
   await Deno.writeTextFile(servePath, src);
   // the composition root is never committed — the deploy build regenerates it and
   // dev composes it in-process, so keep it out of the repo's history entirely.
@@ -755,7 +812,9 @@ async function devSupervisor(rawArgs: string[]): Promise<void> {
   const entry = Deno.mainModule; // this CLI (file:// checkout or jsr: install) — re-run as the child
   for (;;) {
     const child = new Deno.Command(Deno.execPath(), {
-      args: ["run", "-A", entry, "dev", ...rawArgs],
+      // --unstable-kv: a keep backend may use Deno.openKv (the prod `deno serve` start task passes
+      // it too); without it the dev child throws "Deno.openKv is not a function" at first use.
+      args: ["run", "-A", "--unstable-kv", entry, "dev", ...rawArgs],
       env: { ...Deno.env.toObject(), SPRIG_DEV_CHILD: "1" },
       stdin: "inherit",
       stdout: "inherit",
@@ -792,7 +851,12 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   // edits stay in-process HMR and never restart. Skipped once we're already the child.
   if (Deno.env.get("SPRIG_DEV_CHILD") !== "1") return await devSupervisor(rawArgs);
   const positionals = rawArgs.filter((a) => !a.startsWith("-") && a !== annotateHtml);
-  const appDir = positionals[0] ?? ".";
+  // Resolve the sprig UI package so `sprig dev` runs from EITHER the UI folder OR the monorepo
+  // git root — parity with `build --rune`. If the arg isn't itself a UI package (a dir with
+  // src/mod.ts), locate the one under it (workspace members / subdirs). Everything below keys off
+  // this resolved dir, so the annotate port, build, rune detection, and mod.ts import all agree
+  // regardless of where you invoked it. (Runs in the child; the supervisor just forwards rawArgs.)
+  const appDir = await resolveSprigUiDir(positionals[0] ?? ".", "dev");
   const base = positionals[1] ?? "/ui";
   // Annotate gets a STABLE port hashed from the app folder name (PORT overrides) — same app, same
   // URL, every run; different apps don't collide. Reuse a same-app server; error on a foreign one
@@ -834,7 +898,10 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   // returning browser refetches instead of running a stale cached client.js. Set before the
   // app's src/mod.ts is imported below (createRenderer reads it at module-eval).
   Deno.env.set("SPRIG_ASSETS_DIR", outDir);
-  await build(appDir, true, outDir);
+  // ONE build — the SAME bytes prod serves. `sprig dev` differs from prod only by the
+  // out-of-band HMR activation: SPRIG_DEV (set above) makes the renderer emit cfg.hmr, which
+  // wakes the loader's dormant HMR client. The bundle itself is byte-identical to `sprig build`.
+  await build(appDir, outDir);
   // RUNE PARITY: when this UI is half of a rune monorepo (a keep backend beside it),
   // dev serves EXACTLY the prod composition — serveSprig folding the backend's /api +
   // /docs around the app — instead of a UI-only handler. The composition root is a
@@ -1291,17 +1358,18 @@ switch (cmd) {
     await init(rest[0]);
     break;
   case "build": {
-    const dev = rest.includes("--dev");
+    // NOTE: `--dev` is gone — there is no dev build variant. `sprig build` emits the ONE
+    // bundle; `sprig dev` serves those exact bytes and layers HMR on via a runtime flag.
     const rune = rest.includes("--rune");
     const appArg = rest.find((a) => !a.startsWith("-")) ?? ".";
     if (rune) {
       // --rune composes the whole monorepo, so it's natural to run from the git ROOT (not
       // just the UI package). Locate the sprig UI package at/under appArg, build IT to
       // <ui>/static (cwd-independent), then compose. Works from the root or from ui/.
-      const ui = await resolveRuneUiDir(appArg);
-      await build(ui, dev, join(ui, "static"), true);
+      const ui = await resolveSprigUiDir(appArg, "build --rune");
+      await build(ui, join(ui, "static"), true);
     } else {
-      await build(appArg, dev, join(Deno.cwd(), "static"), false);
+      await build(appArg, join(Deno.cwd(), "static"), false);
     }
     break;
   }

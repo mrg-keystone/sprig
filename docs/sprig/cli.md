@@ -24,8 +24,10 @@ tree with `shell/`, `pages/home/` (template + resolve + styles). See
 
 State-preserving HMR with **no Vite**. It:
 
-1. sets `SPRIG_DEV=1` and builds a **dev** client bundle (the HMR client + island chunks that
-   **fetch** their AST so a hard reload is fresh);
+1. sets `SPRIG_DEV=1` and builds the client bundle — the **byte-identical prod bundle** (there is
+   no dev variant). Every build compiles in a dormant HMR client; `SPRIG_DEV` makes the SSR emit
+   `cfg.hmr`, which wakes it. Island chunks bake their AST like prod; on a hard reload the woken
+   receiver refetches each island's AST from the dev server, so an edited template is still fresh;
 2. imports your `entry` (`serve.ts`) production handler and the app's `renderer`;
 3. wraps them in the compiler's dev server (`Deno.watchFs` + an SSE channel + a live AST
    endpoint) and serves on `PORT` (default 8000).
@@ -44,19 +46,21 @@ PORT=3000 deno task dev
 
 ## `build [appDir]`
 
-Production build of `appDir/src` → `static/` (and the sibling server-only manifest). See
-[architecture.md](./architecture.md) for the pipeline. Output:
+Production build of `appDir/src` → `static/`. See [architecture.md](./architecture.md) for the
+pipeline. Output:
 
 ```
 static/client.js           the eager loader (scans the DOM, lazy-loads islands by trigger)
-static/isl.<sel>.js        one tiny chunk per island
+static/isl.<sel>.js        one tiny chunk per island (its template AST baked in)
 static/chunk-<hash>.js     the shared runtime (@sprig/core + interpreter + hydrate), loaded once
 static/app.css             all component CSS, scoped + Tailwind-expanded + minified
-.sprig-manifest.json       server-only { v, client, css, islands, chunks } — v drives ?v= cache-busting
+static/templates.json      server-only prebuilt ASTs so the SSR renders without the tree-sitter parser
 ```
 
-`--dev` produces the AST-fetching dev variant. Both the CLI and the scaffolded `build.ts` call
-`buildClient(src, static, { dev })`.
+The build writes **no manifest**: `?v=` is the content hash of `static/`, recomputed by the SSR on
+demand (`readVersion`), so the output folder is self-contained. There is **no `--dev` variant** —
+`buildClient(src, static)` emits one bundle, and `sprig dev` serves those exact bytes (HMR rides on
+top via the `cfg.hmr` runtime flag, never a different build).
 
 ## `serve [entry]`
 

@@ -323,9 +323,10 @@ sprig serve [entry]            boot a serve.ts's default { fetch } handler (defa
 ```
 
 `framework/cli.ts` is the entry (`deno run -A framework/cli.ts <cmd>`; or `deno task sprig`
-in this repo). `dev` rebuilds the dev bundle and runs a watcher + SSE channel: editing a
-`template.html` or `styles.css` hot-swaps it **with island state preserved** (no full
-reload, no Vite); editing `logic.ts`/server code rebuilds and reloads.
+in this repo). `dev` builds the bundle — the **same bytes prod serves** (no dev variant) —
+and runs a watcher + SSE channel: editing a `template.html` or `styles.css` hot-swaps it
+**with island state preserved** (no full reload, no Vite); editing `logic.ts`/server code
+rebuilds and reloads.
 
 ---
 
@@ -357,7 +358,8 @@ over-nested JSON bodies, and malformed bodies with `4xx` (not `5xx`). A starter 
 backend can pass a no-op `keep` (see what `sprig init` scaffolds).
 
 The build writes `static/{client.js, isl.<sel>.js, chunk-*.js, app.css}` plus a server-only
-`.sprig-manifest.json` (the cache-buster `v`), which the renderer reads.
+`templates.json` (prebuilt ASTs so the SSR skips tree-sitter). There is no manifest — the
+cache-buster `v` is the content hash of `static/`, which the renderer recomputes on demand.
 
 ---
 

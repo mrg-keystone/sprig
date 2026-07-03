@@ -6,13 +6,82 @@
  * This is the whole composition root — the app author writes `serveSprig({...})`,
  * not a hand-rolled path dispatcher + globalThis bridge.
  */
-import { backendClient, type SprigApp } from "@sprig/core";
+import { backendClient, type Guard, isLayoutLoad, type Route, type RouteMeta, type SprigApp } from "@sprig/core";
+import { join, toFileUrl } from "@std/path";
 
 // The SSR renderer is server-only (Deno APIs) so it can't live in client-safe
 // @sprig/core; it belongs with the rest of the server glue. The actual COMPILER
 // (buildClient + the tree-sitter parser) is CLI-only and is NOT re-exported here.
 export { createRenderer, type SsrRenderer } from "../../framework/.sprig/compiler/mod.ts";
 import { assetsVersioner } from "../../framework/.sprig/compiler/hash.ts";
+
+// ───────────────────────────── JSON folder routing ─────────────────────────────
+// Routes as data: `src/root.json` is the entry table; a route whose `load` is a `routers/<name>`
+// pulls its children from `src/routers/<name>/routes.json`, and `guards: ["<name>"]` resolves to
+// `src/guards/<name>/guard.ts`'s exported guard. Declarative route tables (no imports) that compose
+// folder-first. `defineRoutes([...])` in TS still works — this just produces the same Route[].
+interface RawRoute {
+  path: string;
+  load?: string;
+  guards?: string[];
+  requiredGrant?: string;
+  meta?: RouteMeta;
+  children?: RawRoute[];
+}
+
+async function routeFileExists(p: string): Promise<boolean> {
+  try {
+    await Deno.stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveGuards(names: string[], srcDir: string): Promise<Guard[]> {
+  const guards: Guard[] = [];
+  for (const name of names) {
+    const path = join(srcDir, "guards", name, "guard.ts");
+    const mod = await import(toFileUrl(path).href) as Record<string, unknown>;
+    const fn = (mod.default ?? mod.guard ?? Object.values(mod).find((v) => typeof v === "function")) as Guard | undefined;
+    if (typeof fn !== "function") {
+      throw new Error(`sprig loadRoutes: guard "${name}" — ${path} must export a guard function (default or named).`);
+    }
+    guards.push(fn);
+  }
+  return guards;
+}
+
+async function mapRouteTable(entries: RawRoute[], srcDir: string): Promise<Route[]> {
+  const out: Route[] = [];
+  for (const e of entries) {
+    const route: Route = { path: e.path };
+    if (e.load) route.load = e.load;
+    if (e.requiredGrant) route.requiredGrant = e.requiredGrant;
+    if (e.meta) route.meta = e.meta;
+    if (e.guards?.length) route.guards = await resolveGuards(e.guards, srcDir);
+    // children = inline children (recursively) + a router's OWN routes.json (routers/<name>/…)
+    const children: Route[] = e.children ? await mapRouteTable(e.children, srcDir) : [];
+    if (isLayoutLoad(e.load)) {
+      const table = join(srcDir, e.load!, "routes.json");
+      if (await routeFileExists(table)) {
+        const sub = JSON.parse(await Deno.readTextFile(table)) as RawRoute[];
+        children.push(...await mapRouteTable(sub, srcDir));
+      }
+    }
+    if (children.length) route.children = children;
+    out.push(route);
+  }
+  return out;
+}
+
+/** Load the app's route tree from JSON folder tables: `<srcDir>/root.json` (the entry table), each
+ *  `routers/<name>/routes.json` (a layout's children), and `guards/<name>/guard.ts` (guards resolved
+ *  by name). Produces the same `Route[]` `bootstrap()` consumes — `defineRoutes([...])` still works. */
+export async function loadRoutes(srcDir: string): Promise<Route[]> {
+  const raw = JSON.parse(await Deno.readTextFile(join(srcDir, "root.json"))) as RawRoute[];
+  return await mapRouteTable(raw, srcDir);
+}
 
 /** The slice of keep's `bootstrapServer(...)` result that serveSprig consumes. */
 export interface KeepApi {
@@ -32,6 +101,12 @@ export interface ServeSprigConfig {
   docsPrefix?: string; // default "/docs"
   /** directory served at <base>/_assets/* (the build's client.js etc.); default "static". */
   assetsDir?: string;
+  /** Firebase/Google sign-in. When an infra URL is resolvable here (or via the INFRA_URL env),
+   *  serveSprig auto-mounts the same-origin /auth gateway that sprig's `loginWithGoogle()`
+   *  (@sprig/core) calls — proxying `/auth/firebase-config` + `/auth/login` to infra so the
+   *  browser never touches the control plane cross-origin. Omit (and unset INFRA_URL) to leave
+   *  /auth to the app. */
+  auth?: { infraUrl?: string };
 }
 
 const ASSET_TYPES: Record<string, string> = {
@@ -163,6 +238,66 @@ export interface ServeDefaultExport {
   fetch(req: Request, info: Deno.ServeHandlerInfo): Promise<Response>;
 }
 
+// ─────────────────────────────── /auth sign-in gateway ───────────────────────────────
+// The two same-origin endpoints sprig's `loginWithGoogle()` (@sprig/core) needs, proxied to
+// infra so the browser never calls the control plane cross-origin (infra's /api sets no CORS
+// headers) and never learns INFRA_URL:
+//   GET  /auth/firebase-config → <infra>/firebase-config.json   (public web config, 5-min cached)
+//   POST /auth/login           → <infra>/api/session/login      (Firebase idToken → session bearer)
+// Returns null for any other path so serveSprig falls through to /api + the SSR app. Sprig owns
+// this so apps stop hand-rolling it per-repo (the class of bug that silently issues no bearer).
+const MAX_LOGIN_BODY = 64_000; // an ID token is ~1–2 KB; anything larger is not a login request
+let firebaseConfigCache: { body: string; at: number } | null = null;
+
+async function serveAuthGateway(req: Request, infraUrl: string): Promise<Response | null> {
+  const path = new URL(req.url).pathname;
+  const infra = infraUrl.replace(/\/+$/, "");
+
+  if (path === "/auth/firebase-config") {
+    if (req.method !== "GET") return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET" } });
+    if (!firebaseConfigCache || Date.now() - firebaseConfigCache.at > 300_000) {
+      const res = await fetch(`${infra}/firebase-config.json`).catch(() => null);
+      if (!res?.ok) return new Response("firebase config unavailable", { status: 502 });
+      firebaseConfigCache = { body: await res.text(), at: Date.now() };
+    }
+    return new Response(firebaseConfigCache.body, {
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  }
+
+  if (path === "/auth/login") {
+    if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: { allow: "POST" } });
+    const raw = await req.text();
+    if (raw.length > MAX_LOGIN_BODY) return new Response("Payload Too Large", { status: 413 });
+    let idToken = "", email = "";
+    try {
+      const body = JSON.parse(raw) as { idToken?: unknown; email?: unknown };
+      if (typeof body.idToken === "string") idToken = body.idToken;
+      if (typeof body.email === "string") email = body.email;
+    } catch { /* handled by the 400 below */ }
+    if (!idToken) {
+      return new Response(JSON.stringify({ message: "idToken required" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    // Server-to-server exchange; infra verifies the ID token against its Firebase project and
+    // mints the offline-verifiable session bearer. Pass its verdict through verbatim.
+    const res = await fetch(`${infra}/api/session/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idToken, email }),
+    }).catch(() => null);
+    if (!res) return new Response("auth upstream unreachable", { status: 502 });
+    return new Response(await res.text(), {
+      status: res.status,
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  }
+
+  return null;
+}
+
 /**
  * Dispatch order (the author writes none of this):
  *   /api/*   → keep.handler with the prefix STRIPPED, info forwarded (token-gated,
@@ -176,6 +311,9 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
   const docsPrefix = config.docsPrefix ?? "/docs";
   const assetsDir = config.assetsDir ?? "static";
   const assetPrefix = `${base}/_assets`;
+  // Firebase/Google sign-in gateway (loginWithGoogle's server half) — mounted only when an
+  // infra URL is resolvable; else /auth is left to the app (backward compatible).
+  const authInfraUrl = config.auth?.infraUrl ?? Deno.env.get("INFRA_URL") ?? "";
 
   if (base === apiPrefix || base === docsPrefix) {
     throw new Error(`serveSprig: base "${base}" collides with a reserved keep prefix`);
@@ -202,6 +340,12 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
         });
       }
 
+      // same-origin /auth sign-in gateway (the server half of sprig's loginWithGoogle),
+      // when an infra URL is configured. Returns null for non-/auth paths → falls through.
+      if (authInfraUrl) {
+        const authRes = await serveAuthGateway(req, authInfraUrl);
+        if (authRes) return authRes;
+      }
       // built assets → static dir (immutable only for content-addressed requests)
       if (path.startsWith(assetPrefix + "/")) {
         return serveAsset(assetsDir, path.slice(assetPrefix.length + 1), req, version);

@@ -52,6 +52,10 @@ export interface SprigConfig {
    *  see compiler/perf.ts). Full document loads report via an inline <head> snippet;
    *  this config is what lets the runtime report SOFT navigations the same way. */
   perf?: PerfEndpoint;
+  /** Dev-only activation flag for the dormant HMR receiver. The SSR emits it ONLY under
+   *  `sprig dev` (mod.ts, gated by the renderer's dev option); prod never sets it, so the
+   *  compiled-in HMR client stays inert and the bundle is byte-identical dev↔prod. */
+  hmr?: boolean;
 }
 
 // ───────────────────── hidden INFRA perf reporting ──────────────────────────
@@ -255,6 +259,9 @@ export function teardownInside(root: ParentNode | null): void {
 // signals = its state) while its template AST is swapped under it. Tracking is off
 // unless the dev client calls enableHmr() before islands hydrate, so prod pays nothing.
 let hmrEnabled = false;
+// The app base (cfg.base) captured at bootstrap, so the dormant receiver's registerIsland
+// can address the dev server's /_sprig/ast endpoint when it refreshes a baked AST.
+let hmrBase = "/ui";
 interface LiveIsland {
   sel: string;
   el: HTMLElement;
@@ -300,10 +307,31 @@ export async function fetchAst(base: string, sel: string): Promise<SerializedTem
 
 // ───────────────────────── per-island chunk entry point ─────────────────────
 /** Called by each `isl.<sel>.js` chunk on load: register the island + hydrate any
- *  already-present, not-yet-hydrated instances. */
+ *  already-present, not-yet-hydrated instances.
+ *
+ *  DORMANT HMR RECEIVER: the chunk always ships the AST BAKED at build time (prod shape,
+ *  byte-identical dev↔prod). When HMR is active (dev only), the baked AST may be stale — the
+ *  developer edited the template since the build — so refresh it from the dev server's live
+ *  parse BEFORE hydrating, so a hard reload paints the CURRENT template on first render (this
+ *  is what the old `fetchAst`-in-the-chunk dev variant did, moved into the runtime so the chunk
+ *  itself no longer diverges). A fetch failure falls back to the baked AST — never block
+ *  hydration on the dev endpoint. In prod hmrEnabled is false → the baked AST is used
+ *  synchronously, exactly as before. */
 export function registerIsland(sel: string, entry: IslandEntry): void {
-  registry.set(sel, entry);
   loading.delete(sel); // the in-flight import has resolved → it is no longer loading
+  if (hmrEnabled) {
+    fetchAst(hmrBase, sel)
+      .then((template) => {
+        registry.set(sel, { ...entry, template });
+        hydratePending(sel);
+      })
+      .catch(() => {
+        registry.set(sel, entry); // dev endpoint unreachable → hydrate with the baked AST
+        hydratePending(sel);
+      });
+    return;
+  }
+  registry.set(sel, entry);
   hydratePending(sel);
 }
 
@@ -348,6 +376,9 @@ export function bootstrapIslands(cfg: SprigConfig, root: ParentNode = document):
   // record the matched page so islands without a data-page host attr still resolve their
   // child components against the right page-local registry (registryForPage parity).
   setCurrentPage(cfg.page);
+  // capture the base for the dormant HMR receiver (registerIsland refreshes baked ASTs from
+  // <base>/_sprig/ast when HMR is active). No-op cost in prod (never read when hmr is off).
+  if (cfg.base) hmrBase = cfg.base;
   root.querySelectorAll("sprig-island").forEach((el) => scheduleLoad(el as HTMLElement, cfg));
 }
 
@@ -420,6 +451,8 @@ export interface SoftNavDeps {
   fetch: (url: string, init: { signal: unknown }) => Promise<Response>;
   parse: (html: string) => Document;
   outletOf: (doc: ParentNode) => Element | null;
+  /** the NESTED <sprig-outlet> chain (outermost→inner) for nested-layout diffing. */
+  outletChainOf: (doc: ParentNode) => Element[];
   assign: (url: string) => void;
   scrollTo: (x: number, y: number) => void;
   scrollToTarget: (root: ParentNode, hash: string) => boolean;
@@ -431,6 +464,20 @@ export interface SoftNavDeps {
    *  page — is read off the parsed doc and threaded into the live cfg before bootstrap,
    *  so islands hydrated into the new outlet resolve children against the NEW page). */
   pageOf?: (doc: ParentNode) => string | undefined;
+}
+
+/** Walk a document/subtree's NESTED <sprig-outlet> chain, OUTERMOST→innermost: the first
+ *  outlet, then the first outlet inside it, and so on. Each carries a `data-level` (the load
+ *  rendered inside it), which soft-nav diffs to find the shallowest level whose content changed.
+ *  A plain (non-nested) page yields a length-1 chain — the pre-nesting single-outlet case. */
+export function outletChain(root: ParentNode): Element[] {
+  const chain: Element[] = [];
+  let cur: Element | null = root.querySelector("sprig-outlet");
+  while (cur) {
+    chain.push(cur);
+    cur = cur.querySelector("sprig-outlet");
+  }
+  return chain;
 }
 
 /** Should this navigate event be left to the browser (NOT soft-intercepted)?
@@ -512,12 +559,27 @@ export async function runSoftNav(e: NavEvent, cfg: SprigConfig, deps: SoftNavDep
   }
   if (e.signal?.aborted) return "aborted";
   const doc = deps.parse(html);
-  const next = deps.outletOf(doc);
-  const cur = deps.outletOf(document);
-  if (!next || !cur) {
+  // NESTED LAYOUTS: swap the DEEPEST outlet level whose content changed. Walk the current +
+  // fetched outlet chains (outermost→inner) comparing data-level (the load rendered inside each);
+  // swap at the shallowest level that DIFFERS — or, if every level matches, the deepest common one
+  // (same load, different params/query). A layout ABOVE the swap point stays mounted (its island +
+  // shared-state cycle survive); at/below it is torn down + re-hydrated. This is what keeps a
+  // dashboard layout live across overview⇄queue while login (a different outermost level) fully
+  // replaces it.
+  const curChain = deps.outletChainOf(document);
+  const nextChain = deps.outletChainOf(doc);
+  if (!curChain.length || !nextChain.length) {
     deps.assign(e.destination.url);
     return "fallback";
   }
+  let i = 0;
+  while (
+    i < curChain.length && i < nextChain.length &&
+    curChain[i].getAttribute("data-level") === nextChain[i].getAttribute("data-level")
+  ) i++;
+  const idx = i < curChain.length && i < nextChain.length ? i : Math.min(curChain.length, nextChain.length) - 1;
+  const cur = curChain[idx];
+  const next = nextChain[idx];
   const hash = (() => {
     try {
       return new URL(e.destination.url).hash;
@@ -529,8 +591,15 @@ export async function runSoftNav(e: NavEvent, cfg: SprigConfig, deps: SoftNavDep
   // islands resolve their child components against the NEW page (registryForPage parity).
   if (deps.pageOf) cfg.page = deps.pageOf(doc);
   const swap = () => {
-    deps.teardown(cur); // dispose islands/observers in the old outlet before discarding it
+    deps.teardown(cur); // dispose islands/observers at/below the swap point before discarding
     (cur as HTMLElement).innerHTML = (next as HTMLElement).innerHTML;
+    // keep THIS outlet's own data-level accurate for the NEXT diff — its inner content came
+    // from `next` (already correct); only this boundary's attribute would otherwise go stale.
+    const setAttr = (cur as { setAttribute?: (n: string, v: string) => void }).setAttribute;
+    if (typeof setAttr === "function") {
+      const lvl = (next as Element).getAttribute?.("data-level");
+      if (lvl != null) (cur as Element).setAttribute("data-level", lvl);
+    }
     deps.bootstrap(cur); // new islands re-arm + lazy-load on trigger (sets currentPage from cfg)
     softNavScroll(e.navigationType, hash, deps, cur);
   };
@@ -555,6 +624,7 @@ export function setupSoftNav(cfg: SprigConfig): void {
     fetch: (url, init) => fetch(url, init as RequestInit),
     parse: (html) => new DOMParser().parseFromString(html, "text/html"),
     outletOf: (doc) => doc.querySelector("sprig-outlet"),
+    outletChainOf: (doc) => outletChain(doc),
     assign: (url) => location.assign(url),
     scrollTo: (x, y) => globalThis.scrollTo(x, y),
     scrollToTarget: (root, hash) => {
@@ -756,6 +826,14 @@ function islandHostSel(node: Node): string | null {
   return el.getAttribute("data-sel");
 }
 
+/** A live <sprig-outlet> — the persistent nesting boundary a LAYOUT renders around its child
+ *  route. A layout is now an island (it has logic.ts), so it re-renders reactively; during that
+ *  re-render the outlet is OPAQUE — matched + pinned, its content (the child page, owned by
+ *  soft-nav) never re-synced. Without this a layout's re-paint would blow away the child page. */
+function isOutlet(node: Node): boolean {
+  return node.nodeType === 1 && (node as Element).tagName === "SPRIG-OUTLET";
+}
+
 /** Does the re-rendered node `n` CORRESPOND to the live child-island host `o` (same child)?
  *  After the render-side fix `n` is a <sprig-island data-sel> SHELL (same data-sel). As a
  *  belt-and-suspenders fallback we also match a BARE custom element whose tag equals the
@@ -818,14 +896,20 @@ function morphChildren(parent: Node, source: Node, hostLevel = false): void {
   // counterpart by key, pin the host in place (untouched), and drop BOTH from the positional
   // lists. The remaining (non-island) nodes morph positionally as before — a mispositioned
   // STATIC node just re-renders, but no hydrated island is ever lost.
-  const liveHosts = olds.filter((o) => islandHostSel(o) != null);
+  // Pin live <sprig-island> hosts AND <sprig-outlet>s: a layout is an island whose template
+  // contains the outlet, so its reactive re-render must never touch the outlet's child page
+  // (soft-nav owns that). An outlet corresponds to an outlet; matched, it's left untouched.
+  const isPinned = (o: Node) => islandHostSel(o) != null || isOutlet(o);
+  const liveHosts = olds.filter(isPinned);
   if (liveHosts.length) {
     const consumed = new Set<Node>();
     for (const host of liveHosts) {
-      const match = news.find((n) => !consumed.has(n) && correspondsToIslandHost(host, n));
+      const match = news.find((n) =>
+        !consumed.has(n) && (isOutlet(host) ? isOutlet(n) : correspondsToIslandHost(host, n))
+      );
       if (match) consumed.add(match); // host stays as-is; its re-render counterpart is absorbed
     }
-    olds = olds.filter((o) => islandHostSel(o) == null); // pinned hosts: left in the DOM, untouched
+    olds = olds.filter((o) => !isPinned(o)); // pinned hosts + outlets: left in the DOM, untouched
     news = news.filter((n) => !consumed.has(n));
   }
   const max = Math.max(olds.length, news.length);
@@ -855,6 +939,9 @@ function morphChildren(parent: Node, source: Node, hostLevel = false): void {
 function morphNode(o: Node, n: Node): void {
   if (o.nodeType === 1) {
     const oe = o as Element, ne = n as Element;
+    // a <sprig-outlet> is opaque: its content is the child route (owned by soft-nav), so a
+    // parent layout's re-render must not re-sync it (belt-and-suspenders — it's also pinned above).
+    if (oe.tagName === "SPRIG-OUTLET") return;
     // sync attributes (so [disabled], class, data-sprig-* indices, etc. update in place)
     for (const a of Array.from(ne.attributes)) {
       if (oe.getAttribute(a.name) !== a.value) oe.setAttribute(a.name, a.value);

@@ -133,7 +133,7 @@ export function createDevServer(cfg: DevConfig): {
         return;
       }
       try {
-        await buildClient(cfg.renderer.srcDir, cfg.outDir, { dev: true });
+        await buildClient(cfg.renderer.srcDir, cfg.outDir);
         send({ type: "reload" });
         console.log(`%c[sprig dev]%c reload (rebuilt)`, "color:#7c3aed", "");
       } catch (e) {

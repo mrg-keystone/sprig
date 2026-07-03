@@ -16,6 +16,7 @@
     "jsr:@dx/reflect@0.2.14": "0.2.14",
     "jsr:@hono/hono@4.6.3": "4.6.3",
     "jsr:@mrg-keystone/rune@1": "1.23.0",
+    "jsr:@sprig/core@0.15.1": "0.15.1",
     "jsr:@std/assert@*": "1.0.19",
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/encoding@^1.0.10": "1.0.10",
@@ -133,6 +134,15 @@
         "npm:jose",
         "npm:reflect-metadata@0.1.13",
         "npm:zod@3"
+      ]
+    },
+    "@sprig/core@0.15.1": {
+      "integrity": "f5e646c699936b9a09ad7e446fbf417ba83109c6a072835cd112a1f4b6a68d20",
+      "dependencies": [
+        "jsr:@std/fs",
+        "jsr:@std/path@1",
+        "npm:@preact/signals-core",
+        "npm:web-tree-sitter"
       ]
     },
     "@std/assert@1.0.19": {

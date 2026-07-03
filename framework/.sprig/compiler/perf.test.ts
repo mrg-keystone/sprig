@@ -119,16 +119,22 @@ Deno.test("perf: renderDocument ships snippet + config only when the env gate is
 });
 
 // ── soft-nav outcome semantics (what gates the pair's second report) ─────────
-type FakeOutlet = { innerHTML: string };
+type FakeOutlet = { innerHTML: string; getAttribute: (n: string) => string | null };
 function navEvent(url: string, aborted = false) {
   return { destination: { url }, signal: { aborted }, navigationType: "push", canIntercept: true } as never;
 }
 function deps(over: Partial<SoftNavDeps> & { assigned?: string[] }): SoftNavDeps {
   const assigned = over.assigned ?? [];
+  const outletOf = over.outletOf ?? ((_d) => ({ innerHTML: "next", getAttribute: () => null }) as never);
   return {
     fetch: over.fetch ?? (() => Promise.resolve(new Response("<x/>", { headers: { "content-type": "text/html" } }))),
     parse: over.parse ?? ((_h) => ({}) as never),
-    outletOf: over.outletOf ?? ((_d) => ({ innerHTML: "next" }) as never),
+    outletOf,
+    // nested-outlet chain: for these single-outlet perf mocks it's just [outletOf(d)] (or []).
+    outletChainOf: over.outletChainOf ?? ((d) => {
+      const o = outletOf(d);
+      return o ? [o as unknown as Element] : [];
+    }),
     assign: over.assign ?? ((u) => assigned.push(u)),
     scrollTo: () => {},
     scrollToTarget: () => false,
@@ -145,8 +151,8 @@ Deno.test("perf/soft-nav: runSoftNav reports swapped / fallback / aborted", asyn
   g.document = {}; // runSoftNav reads the current outlet off the document global
   try {
     // committed swap → "swapped" (the only outcome that earns a page-loaded report)
-    const cur: FakeOutlet = { innerHTML: "old" };
-    const next: FakeOutlet = { innerHTML: "new" };
+    const cur: FakeOutlet = { innerHTML: "old", getAttribute: () => null };
+    const next: FakeOutlet = { innerHTML: "new", getAttribute: () => null };
     let outcome = await runSoftNav(
       navEvent("http://localhost/ui/two"),
       { ...CFG },

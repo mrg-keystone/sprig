@@ -6,7 +6,7 @@
 // fetch() follows the guard's 302 transparently, so the ONLY signal is r.redirected.
 import { assert, assertEquals } from "@std/assert";
 import { DOMParser } from "jsr:@b-fuze/deno-dom";
-import { runSoftNav, type SoftNavDeps, softNavResponseOk, type SprigConfig } from "./hydrate.ts";
+import { outletChain, runSoftNav, type SoftNavDeps, softNavResponseOk, type SprigConfig } from "./hydrate.ts";
 
 /** A Response whose `redirected` reads true — what fetch() returns after transparently
  *  following a guard's 302 (status is the FINAL page's 200; the flag is the only trace). */
@@ -43,6 +43,10 @@ Deno.test("runSoftNav on a guard redirect: full navigation to the ORIGINAL desti
       calls.push("outletOf");
       return null;
     },
+    outletChainOf: () => {
+      calls.push("outletChainOf"); // must NOT be reached on a redirect (early assign+return)
+      return [];
+    },
     assign: (url) => calls.push("assign:" + url),
     scrollTo: () => calls.push("scrollTo"),
     scrollToTarget: () => false,
@@ -68,6 +72,7 @@ Deno.test("CONTROL: a committable (non-redirected) page still soft-swaps the out
       fetch: () => Promise.resolve(html(`<html><body><sprig-outlet><p>new</p></sprig-outlet></body></html>`)),
       parse: (h) => new DOMParser().parseFromString(h, "text/html") as unknown as Document,
       outletOf: (doc) => (doc as ParentNode).querySelector("sprig-outlet"),
+      outletChainOf: (doc) => outletChain(doc as ParentNode),
       assign: (url) => calls.push("assign:" + url),
       scrollTo: () => {},
       scrollToTarget: () => false,

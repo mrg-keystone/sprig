@@ -56,8 +56,9 @@ deno task dev          # = deno run -A <framework>/cli.ts dev .
 # sprig dev → http://localhost:8000/ui  (HMR on)
 ```
 
-`sprig dev` builds a dev bundle, then serves the app behind the compiler's dev server
-(`Deno.watchFs` + an SSE channel). Open <http://localhost:8000/ui>.
+`sprig dev` builds the client bundle (the **same bytes prod serves** — no dev variant), then
+serves the app behind the compiler's dev server (`Deno.watchFs` + an SSE channel), with HMR
+activated on top. Open <http://localhost:8000/ui>.
 
 ## 4. Edit and see HMR
 
@@ -115,7 +116,7 @@ Full island reference: [islands.md](./islands.md).
 ## 6. Build + serve for production
 
 ```bash
-deno task build        # → static/{client.js, isl.<sel>.js, chunk-*.js, app.css} + .sprig-manifest.json
+deno task build        # → static/{client.js, isl.<sel>.js, chunk-*.js, app.css, templates.json}
 deno serve -A serve.ts # → http://localhost:8000/ui
 ```
 
