@@ -12,7 +12,8 @@ framework-neutral **tokens + specs**.
 spec/ui/breakdown/
 ├── index.md              # page inventory, usage matrix, build order, interaction tiers, Unassigned list
 ├── design-tokens.md      # palette, type, spacing, radii, shadows, easing → Tailwind 4 @theme
-├── data-model.md         # the implied backend schema (entities, enums, relationships, cardinality)
+├── data-model.md         # LEGACY fallback only (no ratified contract) — the implied backend schema;
+│                         #   with a contract, the data seam is spec/contract/binding.md instead (see Shape)
 ├── assets/               # images/fonts/svgs lifted from source
 ├── shared-components/<name>/   # used on >1 page
 │   ├── <name>.md         # the component spec (see "Each component spec carries")
@@ -24,6 +25,14 @@ spec/ui/breakdown/
 ```
 
 ## Shape (what `build` can rely on)
+- **The data seam is a BINDING, not a re-derived schema** (bridge 2 of the cross-repo
+  [`contract.md`](../../../contract.md)): when a ratified contract exists at the git root
+  (`spec/contract/openapi.json`, or `spec/runes/*.rune` / a running keep's `/docs/<m>/json`),
+  breakdown writes **`spec/contract/binding.md`** — every component/page data-need bound to a
+  real endpoint + DTO (reads → **query** endpoints, writes → **command** verbs). A data-need
+  with **no matching endpoint/DTO is a drift error**, listed in the binding and surfaced in
+  `index.md` — checkable at breakdown time, not a runtime surprise. `data-model.md` is the
+  **legacy fallback**, written only when no contract exists (standalone mock breakdowns).
 - **Tokens are Tailwind v4 `@theme` custom properties** — NOT a `tailwind.config.js`, NOT daisyUI.
   Build puts them in a `:global(...)` `@theme` block (usually `shell/styles.css`) and styles with
   **Tailwind utilities** + component-scoped `styles.css` (the daisyUI→Tailwind translation already
@@ -44,9 +53,11 @@ spec/ui/breakdown/
   compositions), the interaction-tier summary, and an **Unassigned list that ships even empty**.
 
 ## Invariants
-- **Location:** `spec/ui/breakdown/` (sibling to `spec/ui/design-system/` and `spec/ui/<app>-prototype.html`).
+- **Location:** `spec/ui/breakdown/` (sibling to `spec/ui/design-system/` and the
+  `spec/ui/<app>-prototype/` folder — or the legacy `spec/ui/<app>-prototype.html`).
 - A reader could rebuild from the spec alone, without the source.
-- Schema only in `data-model.md` / prose; real data rows live **only** in case JSON.
+- Schema only in the binding (`spec/contract/binding.md`) or legacy `data-model.md` / prose;
+  real data rows live **only** in case JSON.
 - The full `fixture.json` / `capture(page)` format is the `breakdown` skill's own
   `references/isolate-format.md`.
 
@@ -54,4 +65,5 @@ spec/ui/breakdown/
 `sprig isolate` discovers every proposal; each component **and page** diffs clean vs its
 `screenshots/` and its `isolate/` cases are green before anything builds on it; every component/page
 carries an **Isolate build plan** the builder can follow without the source; `index.md` Unassigned
-is empty.
+is empty; with a ratified contract, the binding exists and its **Drift list is empty** (or every
+entry is a deliberate, user-acknowledged gap).

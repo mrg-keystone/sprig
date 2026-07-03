@@ -2,7 +2,9 @@
 name: "sprig:breakdown"
 description: >-
   Decompose a UI mock into a build-ready spec — page inventory, shared/page-local
-  components, design tokens, the implied data model, the interaction-tier map
+  components, design tokens, the contract binding (component → endpoint → DTO
+  against the ratified backend contract; the implied data model only when no
+  contract exists), the interaction-tier map
   (which regions are static vs islands) with feedback and
   liveness, motion specs with jank findings, cropped screenshots and animation
   filmstrips, and ready-to-drop-in isolate fixture proposals — so a sprig +
@@ -37,7 +39,7 @@ source JS/CSS is reference ground truth, not deliverable.
 
 | Agent | Pass | Returns |
 |---|---|---|
-| **`sprig-breakdown-analyst`** | survey, page+component census, static/island classification + tiers, `design-tokens.md`, `data-model.md` (opening); `index.md` + completeness audit (closing) | the written docs + a structured **inventory** of pages/components |
+| **`sprig-breakdown-analyst`** | survey, page+component census, static/island classification + tiers, `design-tokens.md`, the contract **binding** (`spec/contract/binding.md`; legacy `data-model.md` when no contract) (opening); `index.md` + completeness audit (closing) | the written docs + a structured **inventory** of pages/components |
 | **`sprig-breakdown-capture`** | render the mock: cropped stills, breakpoint/theme shots, motion extraction, filmstrips, `jank.md`, jank lints, extracted `js/`/`css/` | evidence files + extracted motion specs, jank findings, real data values |
 | **`sprig-breakdown-spec-writer`** | per component/page: the `.md` anatomy + the real runnable `isolate/` fixtures | the unit's spec files + case list |
 
@@ -47,9 +49,12 @@ capture recipes, or component anatomy here.** They live in the agents and in
 
 ## Input & output
 
-- **Input** — the prototype this skill consumes: by default `spec/ui/<app>-prototype.html`
-  (glob `spec/ui/*-prototype.html`). If the user points at a different mock (any
-  HTML/screenshot/PDF), use that.
+- **Input** — the prototype this skill consumes: by default the two-seam
+  `spec/ui/<app>-prototype/` folder (glob `spec/ui/*-prototype/`; legacy
+  `spec/ui/*-prototype.html`). If the user points at a different mock (any
+  HTML/screenshot/PDF), use that. When a ratified contract exists at the git root
+  (`spec/contract/`, or `spec/runes/*.rune`), it is ALSO input — the data seam binds
+  against it (bridge 2).
 - **Output** — always `spec/ui/breakdown/` (relative to the **git root**; create
   `spec/ui/` if absent). Derive the path automatically; never ask. The directory shape is
   the `ui-breakdown` contract (`../interfaces/ui-breakdown.md`).
@@ -59,8 +64,9 @@ capture recipes, or component anatomy here.** They live in the agents and in
 1. **Analyze (opening).** Delegate to **`sprig-breakdown-analyst`** (phase `opening`) with
    the source + output dir → it surveys, does the page/component census, classifies every
    region (static vs island vs page-composition, with tiers), and writes `design-tokens.md`
-   + `data-model.md`. Take its **inventory** (every page/component with classification,
-   tier, shared/local, renderable?).
+   + the contract **binding** (`spec/contract/binding.md`; legacy `data-model.md` when no
+   contract exists). Take its **inventory** (every page/component with classification,
+   tier, shared/local, renderable?) and surface any **drift errors** it reports.
 2. **Capture** (renderable sources only). For the renderable units in the inventory,
    delegate to **`sprig-breakdown-capture`** (fan out per unit in one message, multiple
    Task calls) → stills/breakpoints/themes, extracted motion specs, filmstrips, `jank.md`,
@@ -93,7 +99,11 @@ Independent units within steps 2 and 3 run concurrently; respect that step 3 nee
   justify every island, spec server writes as **optimistic UI** (snapshot → mutate → call
   → roll back). Performance is the build's job; here only flag expensive data *shapes*.
 - Page-local by default; promote to `shared-components/` only with evidence.
+- **Bind, don't re-derive** (bridge 2): with a ratified contract at the git root, every
+  data-need binds to a real endpoint + DTO in `spec/contract/binding.md`; a mismatch is a
+  **drift error** surfaced in `index.md`, never papered over with an invented schema.
 - **Extract over describe** wherever the source is readable; schema (never data rows) in
-  `data-model.md` and prose — case JSON is the one place real captured values belong.
+  the binding / legacy `data-model.md` and prose — case JSON is the one place real
+  captured values belong.
 - Proposed `isolate/` folders are **real files** `sprig isolate` discovers, not docs.
 - The `index.md` audit list ships even when empty ("Unassigned: none").

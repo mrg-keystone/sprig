@@ -16,14 +16,23 @@ Strictly **linear** — each stage consumes **only** its immediate predecessor's
 | Contract | Producer | Consumer | The artifact |
 |---|---|---|---|
 | [`design-system`](design-system.md) | design | prototype | `spec/ui/design-system/` — a brand-themed design-system folder |
-| [`prototype`](prototype.md) | prototype | breakdown | `spec/ui/<app>-prototype.html` — one self-contained mock |
+| [`prototype`](prototype.md) | prototype | breakdown | `spec/ui/<app>-prototype/` — the two-seam prototype folder (legacy: one `*-prototype.html`) |
 | [`ui-breakdown`](ui-breakdown.md) | breakdown | build | `spec/ui/breakdown/` — the build spec |
 | [`sprig-app`](sprig-app.md) | build | audit | a running sprig app |
 
 The first three artifacts share one home — **`spec/ui/`** at the **git root** (the dir
 containing `.git`; falls back to the project dir outside a git repo) — so each stage
-finds its input at a known path (`design-system/`, `<app>-prototype.html`, `breakdown/`). The
+finds its input at a known path (`design-system/`, `<app>-prototype/`, `breakdown/`). The
 `build` stage reads `spec/ui/breakdown/` and emits the app; `audit` exercises the running app.
+
+**The cross-boundary contract** is the one first-class artifact that isn't stage-to-stage:
+the **waist** of the frontend/backend diamond — **queries + commands, never an editable
+record** — declared in `contract.md` at the sprig repo root (sibling to `coms.md` /
+`coordinate.md`). The prototype's two seams (`objects/` + `commands.json`) **seed** it
+(bridge 1); the rune pipeline **ratifies** it and generates `spec/contract/` at the git
+root (OpenAPI + typed client); breakdown **binds** against it and build **imports** its
+client (bridge 2). A change to it is breaking for **both repos** — update producer,
+consumer, and `contract.md` together.
 
 ## Rules
 

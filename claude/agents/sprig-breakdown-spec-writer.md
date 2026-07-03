@@ -24,7 +24,7 @@ The `sprig:breakdown` playbook reaches **spec-writing**, after the analyst's cla
 
 - **THE UNIT** — folder name, kebab-case selector (basename), classification (`static` | `island` | `page-composition`), interaction tier, shared vs page-local (+ evidence), data source, liveness, any data-shape hazard — from the analyst.
 - **THE EVIDENCE** — from capture: this unit's `screenshots/`, extracted `js/`/`css/`, motion specs, jank findings + rebuild fixes, and the real captured data values its stills show.
-- **CONTEXT** — the relevant slice of `data-model.md` / `design-tokens.md`, and the output dir for this unit.
+- **CONTEXT** — the relevant slice of the binding (`spec/contract/binding.md` — this unit's bound endpoints + DTOs; or legacy `data-model.md`) / `design-tokens.md`, and the output dir for this unit.
 
 ## Procedure
 
@@ -56,4 +56,4 @@ Return, for this unit: the files written (`<name>.md`, `fixture.json`, each `cas
 - Re-classify the unit or override the analyst's static/island call.
 - Invent case values — they must be the real captured data the screenshot shows (case JSON is the one place real data rows belong).
 - Emit a `.tsx`, or a `fixture.json` that violates `isolate-format.md`.
-- Write `index.md`, `design-tokens.md`, or `data-model.md` (those are the analyst's).
+- Write `index.md`, `design-tokens.md`, the binding, or `data-model.md` (those are the analyst's).

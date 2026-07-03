@@ -19,7 +19,9 @@ description: >-
 # Building sprig apps — orchestration playbook
 
 > **Pipeline stage — build.** Consumes the `ui-breakdown` contract
-> (`../interfaces/ui-breakdown.md`); produces the `sprig-app` contract
+> (`../interfaces/ui-breakdown.md`) — and, when the backend is spec-driven, the ratified
+> cross-repo contract (`spec/contract/` at the git root: OpenAPI + the generated typed
+> client — bridge 2 of the sprig repo's `contract.md`); produces the `sprig-app` contract
 > (`../interfaces/sprig-app.md`), consumed by `audit`. Full chain:
 > design → prototype → breakdown → build → audit.
 
@@ -61,8 +63,10 @@ one its input contract and summarize what it returns.
 
 1. **Skeleton first.** If the app isn't stood up (or routes/serving/tokens need wiring),
    delegate to **`sprig-build-scaffolder`** with the project root, the routes to register
-   (from the breakdown `index.md` build order, or the user's ask), the base path, and
-   whether a `spec/ui/design-system/css-variables.json` exists to copy in.
+   (from the breakdown `index.md` build order, or the user's ask), the base path, whether
+   a `spec/ui/design-system/css-variables.json` exists to copy in, and whether
+   `spec/contract/openapi.json` exists at the git root (→ it generates/refreshes the
+   **typed client** in `spec/contract/client/`).
 2. **Build each unit in isolation, in build order.** Walk the breakdown `index.md` build
    order — **tokens → shared components (primitives before composites) → page-local
    components → page compositions** — and for each unit delegate to **`sprig-build-component`**
@@ -119,6 +123,11 @@ component specialist applies them as behavior/scoped-styles and strips them from
 - **Server writes are optimistic by default** (mandatory): update the UI now, call in the
   background, roll back on failure — never spinner-and-`location.reload()`. Spinner-and-wait
   only when the result is unknowable client-side or a `data-note` says so.
+- **Data crosses the waist through the generated typed client** when one exists
+  (`spec/contract/client/`, generated from the rune OpenAPI): `resolve.ts`/services and
+  islands import its DTO types and endpoint wrappers — no hand-typed DTO shapes, no bare
+  string routes. Reads are **queries**, writes are **commands** (intent verbs) — never an
+  edit-this-record call (the waist rule; the sprig repo's `contract.md`).
 - **A component is a folder, not a `.tsx`**; **`logic.ts` = island** (static folders ship
   no JS and their `(event)` bindings never fire).
 - **`inject()` synchronously**, serializable island props/state only, **`static key`** on a

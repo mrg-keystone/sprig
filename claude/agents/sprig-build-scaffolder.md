@@ -27,6 +27,7 @@ The orchestrator passes:
 - The **routes to register** (page folder + path each) — from the breakdown `index.md` build order, or the user's ask.
 - **BASE path** (default `/ui`) and whether the app **fronts a keep backend** (→ `serveSprig`) or mounts under an existing host (→ `sprigUi`).
 - **DESIGN-SYSTEM presence** — if `spec/ui/design-system/css-variables.json` exists, its path (to copy into `src/css-variables.json`).
+- **CONTRACT presence** — whether `spec/contract/openapi.json` exists at the git root (→ generate/refresh the typed client, step 6).
 
 ## Procedure
 
@@ -37,7 +38,8 @@ sprig is a **Deno SSR** framework — a component is a **folder** (`template.htm
 3. **Wire `serve.ts`** — `serveSprig({ keep, app, base })` is the single-origin default (`/api/*`+`/docs*` → keep, token-gated; else → SSR with keep's in-process client on the `Backend` DI token), driven by `deno serve serve.ts` (no `Deno.serve`/`app.listen` of your own). To mount under an existing host, use `sprigUi({ app, base })`. Detail: `references/serving.md`.
 4. **Shell** — `shell/template.html` holds `<router-outlet>`; non-token base CSS (document `html`/`body`, headings) lives in `shell/styles.css` as `:global(...)`.
 5. **Design tokens** — define once in `src/css-variables.json` (optional). **Variables only**: keys must be custom properties (`--*`) or the reserved `color-scheme` — the build *fails* on anything else. Shape: `{ "default": "<theme>", "themes": { "<name>": { "color-scheme": "…", "--color-…": "…" } } }`. The build splits static utility-namespace tokens (`--color-*`/`--font-*`/`--text-*`/`--radius-*`/`--ease-*`) into a Tailwind `@theme` block (→ `bg-primary`/`rounded-box` utilities), everything else into `:root`, and each non-default theme into `[data-theme="name"]`. Resets come from Tailwind Preflight. **From a design system:** copy `spec/ui/design-system/css-variables.json` → `src/css-variables.json` verbatim.
-6. **Prod-build smoke** — `deno task build` (code-splits islands + scopes CSS → `static/`) then `deno task start` (or `deno serve -A --unstable-kv serve.ts`) and hit a real URL. A passing `sprig dev` ≠ production working (minified `StateService` keys, CSS scoping, env differ). Report what you saw.
+6. **Typed client (bridge 2)** — when `spec/contract/openapi.json` exists at the git root, generate/refresh the typed client at `spec/contract/client/`: run **`contract client`** (the `@dev-tools/contract` CLI; installed as a global `contract` command) — it emits `dtos.ts` (one TS type per DTO schema, names verbatim) + `client.ts` (one wrapper per endpoint — **queries** as reads, **commands** as intent posts — each taking a `{ fetch }` backend so SSR passes `inject(Backend)` and islands pass a `/api/*`-prefixed fetch). If the CLI is unavailable, hand-generate the same shape **mechanically from the OpenAPI** — no hand-typing, no invented endpoints; regeneration is idempotent (same OpenAPI → same client). Wire an import alias (e.g. `"@contract/": "../spec/contract/client/"`) so pages/islands import the real DTO types. Detail: `references/serving.md` (the typed client).
+7. **Prod-build smoke** — `deno task build` (code-splits islands + scopes CSS → `static/`) then `deno task start` (or `deno serve -A --unstable-kv serve.ts`) and hit a real URL. A passing `sprig dev` ≠ production working (minified `StateService` keys, CSS scoping, env differ). Report what you saw.
 
 ## Resources
 
@@ -45,11 +47,12 @@ sprig is a **Deno SSR** framework — a component is a **folder** (`template.htm
 
 ## Output contract
 
-Return a summary: files created/edited (paths), the routes registered (`path` → `load`), the host wiring chosen (`serveSprig`/`sprigUi`), the token setup (file + theme names), and the **prod-build smoke result** (built? booted? the URL you hit and what rendered). Note anything left for `sprig-build-component`. Return ONLY this summary.
+Return a summary: files created/edited (paths), the routes registered (`path` → `load`), the host wiring chosen (`serveSprig`/`sprigUi`), the token setup (file + theme names), the typed client generated/refreshed (or "no contract — skipped"), and the **prod-build smoke result** (built? booted? the URL you hit and what rendered). Note anything left for `sprig-build-component`. Return ONLY this summary.
 
 ## Never
 
 - Author a component/page/island's `template.html`/`logic.ts`/`styles.css` body or its `isolate/` cases — that's `sprig-build-component`.
 - Put non-`--*` rules in `src/css-variables.json` (the build rejects them) or non-token base CSS anywhere but the shell's `:global(...)`.
+- Hand-type a DTO shape or bare-string an endpoint route when `spec/contract/openapi.json` exists — regenerate the typed client instead.
 - Declare done on a green `sprig dev` alone — the prod build must boot.
 - Reach for a Fresh/Next/Angular pattern (`.tsx`, filesystem routes, a module map, Vite).

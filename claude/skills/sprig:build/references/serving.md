@@ -58,6 +58,23 @@ Oak (`ctx.request.source`), or Hono (`(await ui(c.req.raw)) ?? next()`). Pass `b
 `assetsDir` defaults to `"static"`. Prefer `serveSprig` unless you're embedding under a host
 you don't control.
 
+## The typed client — data across the waist (bridge 2)
+
+When the backend is spec-driven (a ratified contract at the git root), the scaffold
+generates a **typed client** from the rune OpenAPI (`spec/contract/openapi.json`) into
+`spec/contract/client/` — via the `contract client` CLI (`@dev-tools/contract`) —
+`dtos.ts` (one TS type per DTO) + `client.ts` (one wrapper per
+endpoint: **queries** are reads, **commands** are intent writes — never an
+edit-this-record call; the waist rule of the sprig repo's `contract.md`). Every wrapper
+takes a `{ fetch }` backend, so both channels reuse it:
+
+- **SSR** (`resolve.ts` / services) passes `inject(Backend)` — in-process, no HTTP.
+- **Islands** pass a `/api/*`-prefixed `fetch` — the one unavoidable HTTP hop.
+
+Import the generated DTO types — no hand-typed shapes, no bare string routes. When the
+backend contract changes, regenerate the client (the OpenAPI is the source); type errors
+at the import sites are the drift alarm doing its job.
+
 ## The build output
 
 `sprig build` (or `deno task build`) writes `static/`: `client.js` (the hydration runtime),
