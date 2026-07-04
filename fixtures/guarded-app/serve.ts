@@ -3,7 +3,7 @@
 // guards run).
 //   deno task build && deno task start     — prod-style, prebuilt templates
 //   deno task dev                          — dev server + HMR (also mounts /ui)
-import { sprigUi } from "@sprig/keep";
+import { sprigUi } from "@mrg-keystone/sprig/keep";
 import { sprigApp } from "./src/mod.ts";
 
 const ui = sprigUi({ app: sprigApp }); // default base "/ui"

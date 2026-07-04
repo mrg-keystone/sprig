@@ -5,7 +5,7 @@
 // matched route renders at the default HTTP 200. A missing page reads as real
 // to crawlers and the browser. The fix would import { setResponseStatus } and
 // set 404 on the miss.
-import { currentInjector, setResponseStatus, type Resolve } from "@sprig/core";
+import { currentInjector, setResponseStatus, type Resolve } from "@mrg-keystone/sprig";
 
 const WIDGETS: Record<string, { name: string; blurb: string }> = {
   a: { name: "Sprocket", blurb: "A fine widget." },

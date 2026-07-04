@@ -84,4 +84,4 @@ jobs:
             --title "sprig runtime $VERSION" \
             --notes "version: $VERSION
 
-          Source runtime bundle (framework + packages + claude/ [skills + agents] + grammar.bin + isolate workbench: app/server/cli/serve.ts) from $SHA. Installed by 'sprig install' / 'sprig update' → ~/.sprig (deno install runs on the machine). Lockstepped with the @sprig/core $VERSION release on JSR."
+          Source runtime bundle (framework + packages + claude/ [skills + agents] + grammar.bin + isolate workbench: app/server/cli/serve.ts) from $SHA. Installed by 'sprig install' / 'sprig update' → ~/.sprig (deno install runs on the machine). Lockstepped with the @mrg-keystone/sprig $VERSION release on JSR."

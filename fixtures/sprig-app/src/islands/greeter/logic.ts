@@ -1,4 +1,4 @@
-import { signal } from "@sprig/core";
+import { signal } from "@mrg-keystone/sprig";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 

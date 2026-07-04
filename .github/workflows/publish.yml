@@ -1,4 +1,4 @@
-# Push to main → publish @sprig/core to JSR via the org's reusable workflow.
+# Push to main → publish @mrg-keystone/sprig to JSR via the org's reusable workflow.
 # It validates, computes the next version from the JSR registry, bumps deno.json,
 # and publishes (watched against the registry). Needs a JSR_TOKEN repo secret.
 name: publish

@@ -2,7 +2,7 @@
 // (click)="like()" hydrates and fires on the client. Pure client state via a
 // signal — no server write, so no optimistic pattern needed. Mirrors the
 // healthy counter island (src/islands/counter/logic.ts).
-import { signal } from "@sprig/core";
+import { signal } from "@mrg-keystone/sprig";
 
 export default class LikeButton {
   count = signal(0);

@@ -57,8 +57,8 @@ Deno.test("gate: ZERO sentinel chunks → does NOT block (sentinel moved = frame
   }
 });
 
-Deno.test("forcedImportMap: FORCES @sprig/core to the CLI runtime, preserves + absolutizes app imports", async () => {
-  // an app whose deno.json pins @sprig/core to its OWN copy (the drift source) plus an
+Deno.test("forcedImportMap: FORCES @mrg-keystone/sprig to the CLI runtime, preserves + absolutizes app imports", async () => {
+  // an app whose deno.json pins @mrg-keystone/sprig to its OWN copy (the drift source) plus an
   // app-specific relative import and a bare jsr specifier
   const app = await Deno.makeTempDir({ prefix: "sprig-fmap-" });
   const src = join(app, "src");
@@ -67,7 +67,7 @@ Deno.test("forcedImportMap: FORCES @sprig/core to the CLI runtime, preserves + a
     join(app, "deno.json"),
     JSON.stringify({
       imports: {
-        "@sprig/core": "jsr:@sprig/core@0.9.9", // WRONG on purpose — must be overridden
+        "@mrg-keystone/sprig": "jsr:@mrg-keystone/sprig@0.9.9", // WRONG on purpose — must be overridden
         "@preact/signals-core": "npm:@preact/signals-core@0.0.1", // also overridden
         "$.services/": "./src/services/", // app import — must survive, made absolute
         "@mrg-keystone/rune": "jsr:@mrg-keystone/rune@^3", // bare — must survive as-is
@@ -77,8 +77,8 @@ Deno.test("forcedImportMap: FORCES @sprig/core to the CLI runtime, preserves + a
   try {
     const { imports } = await forcedImportMap(src);
     // the runtime is forced to the CLI's own core.ts (this checkout), NOT the app's 0.9.9 pin
-    assert(imports["@sprig/core"].endsWith("/framework/.sprig/core.ts"), imports["@sprig/core"]);
-    assert(!imports["@sprig/core"].includes("0.9.9"), "app's @sprig/core pin must be overridden");
+    assert(imports["@mrg-keystone/sprig"].endsWith("/framework/.sprig/core.ts"), imports["@mrg-keystone/sprig"]);
+    assert(!imports["@mrg-keystone/sprig"].includes("0.9.9"), "app's @mrg-keystone/sprig pin must be overridden");
     assertEquals(imports["@preact/signals-core"], "npm:@preact/signals-core@^1.8.0");
     // app imports survive; relative ones become absolute file URLs, bare ones stay
     assert(imports["$.services/"].startsWith("file://") && imports["$.services/"].endsWith("/src/services/"), imports["$.services/"]);

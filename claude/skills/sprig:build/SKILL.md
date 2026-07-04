@@ -3,12 +3,12 @@ name: "sprig:build"
 description: >-
   Expert guidance for building web apps with sprig — a Deno SSR framework with
   Angular-flavored HTML templates and selective island hydration, published on JSR as
-  @sprig/core. Use this whenever the user is scaffolding, building, or modifying a sprig
+  @mrg-keystone/sprig. Use this whenever the user is scaffolding, building, or modifying a sprig
   app: adding pages or components, islands (interactive components), wiring data with a
   page's logic.ts class or resolve, routes, route guards (auth redirects), persisted state,
   dependency injection, or
   previewing/testing a component in isolation with `sprig isolate`; or when working in a
-  repo with sprig markers (a deno.json importing "jsr:@sprig/core", folder-components made
+  repo with sprig markers (a deno.json importing "jsr:@mrg-keystone/sprig", folder-components made
   of template.html + optional logic.ts, a src/ tree with pages/ + a shell, or main.ts
   calling bootstrap()/createRenderer()). sprig is NOT Fresh/Preact, Next.js, or Angular —
   it borrows Angular's template syntax but is its own runtime, so prefer this skill over

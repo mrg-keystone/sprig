@@ -2,7 +2,7 @@
 
 # Hosting
 
-`serveSprig` (from `@sprig/keep`) is the one-origin composition root: it folds a keep backend
+`serveSprig` (from `@mrg-keystone/sprig/keep`) is the one-origin composition root: it folds a keep backend
 and the sprig UI into a single `{ fetch }` handler (a `Deno.ServeDefaultExport`) and binds
 keep's in-process client to the `Backend` token. The app author writes `serveSprig({...})`,
 not a hand-rolled path dispatcher.
@@ -11,7 +11,7 @@ not a hand-rolled path dispatcher.
 
 ```ts
 // serve.ts
-import { serveSprig } from "@sprig/keep";
+import { serveSprig } from "@mrg-keystone/sprig/keep";
 import { api } from "./server/bootstrap/mod.ts";   // a keep backend: { backend, handler }
 import { app } from "./app/src/main.ts";           // the sprig app from bootstrap()
 

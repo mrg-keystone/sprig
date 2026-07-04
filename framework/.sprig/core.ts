@@ -1,5 +1,5 @@
 /**
- * @sprig/core — the runtime contract for the folder-component model.
+ * @mrg-keystone/sprig — the runtime contract for the folder-component model.
  *
  * This is the SERVER spine: dependency injection, the keep in-process `Backend`
  * bridge, and `bootstrap()` (routing → guards → resolve → SSR). It is backend-agnostic —
@@ -839,8 +839,8 @@ function escapeHtml(s: string): string {
 // Firebase/Google sign-in + the session-bearer transport — sprig OWNS the auth flow so apps
 // don't hand-roll (and misbuild) it. `loginWithGoogle()` is the sign-in primitive; the rest is
 // the bearer lifecycle (store, auto-attach to /api, seed from a `?token=` magic link, drop on a
-// stale 401). Pairs with the same-origin /auth gateway serveSprig auto-mounts (@sprig/keep).
-// Re-exported here so an island simply does `import { loginWithGoogle } from "@sprig/core"`.
+// stale 401). Pairs with the same-origin /auth gateway serveSprig auto-mounts (@mrg-keystone/sprig/keep).
+// Re-exported here so an island simply does `import { loginWithGoogle } from "@mrg-keystone/sprig"`.
 // (auth.ts is SSR-safe — its on-load side effects are typeof-guarded, so this is inert server-side.)
 export {
   apiPost,

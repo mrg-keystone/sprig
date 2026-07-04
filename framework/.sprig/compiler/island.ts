@@ -1,7 +1,7 @@
 // Builds the ComponentCtx an island's setup() receives. On the SERVER the inputs
 // are static (initial SSR); the client hydrate runtime builds an equivalent ctx
 // with the bridge inputs and live output wiring.
-import { type Accessor, type ComponentCtx, Injector, runInInjector, signal, type WritableAccessor } from "@sprig/core";
+import { type Accessor, type ComponentCtx, Injector, runInInjector, signal, type WritableAccessor } from "@mrg-keystone/sprig";
 import type { Scope } from "./expr.ts";
 
 /** Run an island's setup() with a fresh SERVER component injector active, so

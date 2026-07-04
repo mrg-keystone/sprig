@@ -6,8 +6,8 @@ its data.
 
 ```ts
 // src/main.ts
-import { bootstrap, defineRoutes } from "@sprig/core";
-import { createRenderer } from "@sprig/keep";
+import { bootstrap, defineRoutes } from "@mrg-keystone/sprig";
+import { createRenderer } from "@mrg-keystone/sprig/keep";
 import { dirname, fromFileUrl } from "@std/path";
 
 export const routes = defineRoutes([
@@ -38,7 +38,7 @@ Two ways, both auto-discovered by the route's `load` — you don't register eith
 
    ```ts
    // pages/user/logic.ts
-   import { inject, Backend } from "@sprig/core";
+   import { inject, Backend } from "@mrg-keystone/sprig";
    export default class User {
      user: { name: string } | null = null;
      async onServerInit() {
@@ -53,7 +53,7 @@ Two ways, both auto-discovered by the route's `load` — you don't register eith
 
    ```ts
    // pages/home/resolve.ts
-   import type { Resolve } from "@sprig/core";
+   import type { Resolve } from "@mrg-keystone/sprig";
    export const resolve: Resolve = ({ params, url }) => ({ name: "sprig" });
    ```
    `resolve` receives `{ params, url }` and runs inside the DI injector (so `inject(Backend)`
@@ -69,7 +69,7 @@ path). Attach via `guards: [...]` on a route — a parent's guards protect its w
 (chain runs parent-first, before `resolve`, so a denied page does no data work).
 
 ```ts
-import { type Guard, inject } from "@sprig/core";
+import { type Guard, inject } from "@mrg-keystone/sprig";
 
 const requireAuth: Guard = (ctx) => {
   if (!inject(Session).user) return ["login"];  // → 302 /login

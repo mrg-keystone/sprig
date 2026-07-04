@@ -17,8 +17,8 @@
     "./app"
   ],
   "imports": {
-    "@sprig/core": "./framework/.sprig/core.ts",
-    "@sprig/keep": "./packages/keep/mod.ts",
+    "@mrg-keystone/sprig": "./framework/.sprig/core.ts",
+    "@mrg-keystone/sprig/keep": "./packages/keep/mod.ts",
     "@preact/signals-core": "npm:@preact/signals-core@^1.8.0",
     "web-tree-sitter": "npm:web-tree-sitter@^0.25",
     "@std/path": "jsr:@std/path@^1",
@@ -27,14 +27,14 @@
   },
   "tasks": {
     "sprig": "deno run -A framework/cli.ts",
-    "install": "deno run -A jsr:@sprig/core/cli install",
+    "install": "deno run -A jsr:@mrg-keystone/sprig/cli install",
     "install:dev": "deno run -A framework/cli.ts install --dev",
     "dev": "deno run -A framework/cli.ts dev app",
     "build": "deno run -A framework/cli.ts build app",
     "start": "deno serve -A --unstable-kv serve.ts",
     "sync:rune": "deno run -A scripts/sync-rune.ts"
   },
-  "name": "@sprig/core",
+  "name": "@mrg-keystone/sprig",
   "version": "0.20.1",
   "license": "MIT",
   "exports": {

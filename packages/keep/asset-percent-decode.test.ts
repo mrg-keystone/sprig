@@ -7,7 +7,7 @@
 // Also: a malformed "%" path → 400, and a "..%2f" traversal is still blocked (403).
 import { assert, assertEquals } from "jsr:@std/assert";
 import { sprigUi } from "./mod.ts";
-import type { SprigApp } from "@sprig/core";
+import type { SprigApp } from "@mrg-keystone/sprig";
 
 const fakeApp: SprigApp = {
   fetch: () => Promise.resolve(new Response("SSR", { status: 200 })),

@@ -1,16 +1,16 @@
 /**
- * @sprig/keep — composes a keep backend and a sprig UI into ONE single-origin
+ * @mrg-keystone/sprig/keep — composes a keep backend and a sprig UI into ONE single-origin
  * `{ fetch }` handler (a Deno.ServeDefaultExport), and binds keep's in-process
  * client to the `Backend` token so `resolve.ts` reads data with no token, no TCP.
  *
  * This is the whole composition root — the app author writes `serveSprig({...})`,
  * not a hand-rolled path dispatcher + globalThis bridge.
  */
-import { backendClient, type Guard, isLayoutLoad, type Route, type RouteMeta, type SprigApp } from "@sprig/core";
+import { backendClient, type Guard, isLayoutLoad, type Route, type RouteMeta, type SprigApp } from "@mrg-keystone/sprig";
 import { join, toFileUrl } from "@std/path";
 
 // The SSR renderer is server-only (Deno APIs) so it can't live in client-safe
-// @sprig/core; it belongs with the rest of the server glue. The actual COMPILER
+// @mrg-keystone/sprig; it belongs with the rest of the server glue. The actual COMPILER
 // (buildClient + the tree-sitter parser) is CLI-only and is NOT re-exported here.
 export { createRenderer, type SsrRenderer } from "../../framework/.sprig/compiler/mod.ts";
 import { assetsVersioner } from "../../framework/.sprig/compiler/hash.ts";
@@ -103,7 +103,7 @@ export interface ServeSprigConfig {
   assetsDir?: string;
   /** Firebase/Google sign-in. When an infra URL is resolvable here (or via the INFRA_URL env),
    *  serveSprig auto-mounts the same-origin /auth gateway that sprig's `loginWithGoogle()` and
-   *  `?token=` seeding (@sprig/core) call — proxying `/auth/firebase-config`, `/auth/login`
+   *  `?token=` seeding (@mrg-keystone/sprig) call — proxying `/auth/firebase-config`, `/auth/login`
    *  (Firebase idToken → bearer) and `/auth/exchange` (opaque `?token=` → bearer) to infra so the
    *  browser never touches the control plane cross-origin. Omit (and unset INFRA_URL) to leave
    *  /auth to the app.
@@ -244,7 +244,7 @@ export interface ServeDefaultExport {
 }
 
 // ─────────────────────────────── /auth sign-in gateway ───────────────────────────────
-// The two same-origin endpoints sprig's `loginWithGoogle()` (@sprig/core) needs, proxied to
+// The two same-origin endpoints sprig's `loginWithGoogle()` (@mrg-keystone/sprig) needs, proxied to
 // infra so the browser never calls the control plane cross-origin (infra's /api sets no CORS
 // headers) and never learns INFRA_URL:
 //   GET  /auth/firebase-config → <infra>/firebase-config.json   (public web config, 5-min cached)

@@ -3,7 +3,7 @@
 // props arrive as URL query overrides (the bridge reloads the iframe with them),
 // so the page re-renders the target with the edited value. Island signals are
 // edited live and never reach here.
-import type { ResolveCtx } from "@sprig/core";
+import type { ResolveCtx } from "@mrg-keystone/sprig";
 
 interface Meta {
   name: string;
