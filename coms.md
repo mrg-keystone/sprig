@@ -269,3 +269,26 @@ serve.ts`. Dropped `@danet/core`. **Also fixed a latent bug:** the shell was wri
   for a `spec/runes/` spec — unchanged; the only fix was the cwd-based runtime seam keep
   `fixturesDir()` `fixtures-store/mod.ts` (now walks to `.git`, prefers `<gitRoot>/spec/misc`; pure
   helper + 2 unit tests). lint's per-`deno.json` root stays; split-package output via `--root`.
+
+- 2026-07-03 — **Fresh/Vite dead-code sweep (the 2026-06-26 cutover's stragglers). keep `3.1.0` →
+  `4.0.0` (breaking export removal).** The `embed`-era purge missed four Fresh/Vite survivors; all
+  had ZERO consumers in either repo (verified by grep across rune + sprig, tests excluded):
+  - Deleted `keep/src/vite/dev-reconnect.ts` + the `./vite` package export — a **Vite HMR plugin for
+    Fresh+Vite apps**. sprig reloads via `KEEP_DEV` + `assetsVersioner`, never Vite HMR.
+  - Deleted `keep/src/foundation/domain/business/no-code-cache/` (`noCodeCache` + `NoCodeCache*`
+    types) — a **Fresh middleware**; `serveSprig`/`serveAsset` own cache-control now (immutable vs
+    `no-cache` by content-address). Removed from both export barrels.
+  - Removed the `@deprecated` `SESSION_BEARER_HEADER` / `SESSION_BEARER_CONTEXT_KEY` consts
+    (token-auth) — "kept only for import stability"; nothing imported them.
+  - De-Freshed stale docstrings (bootstrap-server `handler`, emulator-ui, map-ui, swagger-builder,
+    exercise-harness): "mounted under Fresh" → "under a host" / `serveSprig`/`sprigUi`.
+  `withBasePath` stays (framework-agnostic, as decided 2026-06-26). Verified: keep `deno check` clean,
+  token-auth + mount tests 46/0. **Pin note:** supersedes "still open #2" — keep is now staged at
+  `4.0.0`; after publish, bump `@mrg-keystone/rune` pins to `@^4`. Still no impact on sprig (needs
+  only `{backend,handler}`).
+  - **OPEN (behavior, not dead code): `rune dev` still runs the OLD serving path.** `dev/mod.ts:232`
+    spawns `deno run bootstrap/mod.ts` → `api.listen()` (backend + emulator only, NO sprig UI at `/`),
+    while `rune init` scaffolds `deno serve serve.ts` (serveSprig, the full app) as the `start`/`dev`
+    tasks. So `rune dev`'s live-reload loop never serves the modern composed app. Fold `rune dev` onto
+    `deno serve serve.ts` (falling back to `bootstrap/mod.ts` when no `serve.ts`/UI exists)? Awaiting
+    decision — flagged to the user.
