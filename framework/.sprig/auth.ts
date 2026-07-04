@@ -1,179 +1,93 @@
-// @mrg-keystone/sprig auth — the client half of sprig's Firebase/Google sign-in, owned by the
-// framework so apps don't hand-roll (and subtly misbuild) the popup → exchange → bearer
-// transport dance. Pairs with the server /auth gateway that serveSprig auto-mounts
-// (packages/keep/mod.ts): the gateway proxies to infra, this attaches the resulting
-// infra-signed session bearer to every /api call.
+// @mrg-keystone/sprig auth — the CLIENT half of sprig's single-path sign-in, owned by the framework
+// so apps never hand-roll (and subtly misbuild) it. Auth is a server-managed **httpOnly cookie**
+// now: the browser holds NOTHING — no bearer, no localStorage, no JS-readable cookie. The client
+// surface is just three actions plus the Google primitive:
 //
-// THE PRIMITIVE: `loginWithGoogle()` runs the whole flow and returns the signed-in user;
-// the caller decides where to go next. Everything else here is the bearer lifecycle the
-// framework now owns: store it (localStorage + the `sprig_session` cookie the SSR guard
-// verifies), auto-attach it via `authFetch`, drop it on a real 401, and seed it from a
-// `?token=` link — which is EXCHANGED server-side for a real bearer (see below), not stored raw.
+//   login(token?)  → token → POST /auth/exchange (opaque magic link); none → Google popup →
+//                    POST /auth/login (Firebase). The SERVER mints the session and sets the httpOnly
+//                    `sprig_session` cookie; this resolves once it's set. Returns {name,email}.
+//   getUserData()  → GET /auth/me → {name,email,grants} | null (null when signed out). Async, because
+//                    the profile lives server-side (JS can't read the httpOnly bearer).
+//   logout()       → POST /auth/logout (server destroys the session + clears the cookie), idempotent.
 //
-// CLIENT SURFACE: `authFetch(input, init)` (fetch-shaped, bearer auto-attached),
-// `getUserData() -> {name,email,grants} | null`, `logout()`, `loginWithGoogle() -> {name,email}`.
-// `apiPost` remains as a thin POST-only wrapper over `authFetch` for back-compat.
+// The cookie rides every same-origin request automatically, so there is NO request wrapper for auth
+// — plain `fetch` works. `authFetch`/`apiPost` remain as credential-FREE convenience helpers (base
+// path + JSON) for back-compat; they attach nothing. `grants` from `getUserData()` are **UX-only**,
+// never a trust boundary: rune verifies the signed bearer and checks grants deny-by-default on every
+// call, so a tampered client only lies to its own UI. Pairs with the /auth gateway serveSprig mounts
+// (packages/keep/mod.ts), backed by keep's Deno-KV session store (silent refresh, off-client secrecy).
 //
-// NOTE — the httpOnly-cookie + silent-refresh half of the single-path design (holding the
-// original credential server-side and re-minting the ~1h bearer transparently) belongs in
-// keep's Deno-KV session store; see tooling/rune/feedback/keep-session-store. Until it ships,
-// a lapsed bearer signs out and the next navigation re-authenticates.
-//
-// SSR-SAFE: this module is re-exported from @mrg-keystone/sprig, which the SERVER imports too, so
-// every browser-API access (document / localStorage / location) is typeof-guarded and the
-// on-load side effects no-op outside the browser.
+// SSR-SAFE: re-exported from @mrg-keystone/sprig, which the SERVER imports too, so every browser-API
+// access (document / location) is typeof-guarded and the on-load side effect no-ops outside the browser.
 
-// ─────────────────────────────── bearer transport ───────────────────────────────
-const TOKEN_KEY = "sprig.bearer";
-/** The bearer envelope carries the identity (`creator`) + grants (`claims`), but not a display
- *  name — infra's Firebase login doesn't fold it in. We capture it from the sign-in and stash it
- *  here so `getUserData()` can surface `{name}` alongside the decoded email + grants. */
-const PROFILE_KEY = "sprig.profile";
-/** The cookie the SSR route guard reads + verifies (holds the SAME bearer as localStorage).
- *  A server-side guard sees only cookies on a document navigation — never an Authorization
- *  header — so the bearer travels here too. It is the real, signature-verifiable credential,
- *  not a presence marker. A guard MUST read this exact name. */
+/** The httpOnly session cookie the server sets and keep's SSR guard resolves. Exported so a guard
+ *  can key on the exact name (it can only check PRESENCE — the value is server-side and opaque). */
 export const SESSION_COOKIE = "sprig_session";
-const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 days — a storage hint; the guard checks real expiry
 /** Prefix the network backend is mounted under (serveSprig's apiPrefix, default "/api"). */
 const API_PREFIX = "/api";
 
-function hasDoc(): boolean {
-  return typeof document !== "undefined";
-}
-
-function writeSessionCookie(bearer: string): void {
-  if (!hasDoc()) return;
-  const secure = location.protocol === "https:" ? "; secure" : "";
-  document.cookie = `${SESSION_COOKIE}=${encodeURIComponent(bearer)}; path=/; max-age=${SESSION_MAX_AGE}; samesite=lax${secure}`;
-}
-
-function clearSessionCookie(): void {
-  if (!hasDoc()) return;
-  document.cookie = `${SESSION_COOKIE}=; path=/; max-age=0; samesite=lax`;
-}
-
-/** Store the infra session bearer in BOTH the localStorage copy `apiPost` attaches to /api
- *  calls AND the cookie the SSR guard verifies. Keeping them in lockstep is what lets the
- *  next document navigation authenticate. */
-export function setBearer(token: string): void {
+/** The signed-in user for the UI: `{name, email, grants}`, or `null` when there's no session.
+ *  Reads `GET /auth/me`, which resolves the httpOnly cookie server-side — the browser can no longer
+ *  decode the bearer, so the profile must come from the server. `grants` are UX-only (see header). */
+export async function getUserData(): Promise<{ name: string; email: string; grants: string[] } | null> {
   try {
-    localStorage.setItem(TOKEN_KEY, token);
-  } catch { /* private mode / storage disabled — the bearer just won't persist */ }
-  writeSessionCookie(token);
+    const res = await fetch("/auth/me", { headers: { accept: "application/json" } });
+    if (!res.ok) return null; // 401 → no session
+    const body = await res.json().catch(() => null) as
+      | { name?: unknown; email?: unknown; grants?: unknown }
+      | null;
+    if (!body || typeof body !== "object") return null;
+    const grants = Array.isArray(body.grants) ? body.grants.filter((g): g is string => typeof g === "string") : [];
+    return {
+      name: typeof body.name === "string" ? body.name : "",
+      email: typeof body.email === "string" ? body.email : "",
+      grants,
+    };
+  } catch {
+    return null; // gateway unreachable → treat as signed out
+  }
 }
 
-/** Full sign-out: forget the bearer in BOTH stores (localStorage + the guard's cookie) and the
- *  cached profile. `logout()` is the public, server-aware surface; this is the local half it
- *  shares with the auto-signout on a lapsed 401. */
-export function signOut(): void {
-  try {
-    localStorage.removeItem(TOKEN_KEY);
-  } catch { /* ignore */ }
-  clearProfile();
-  clearSessionCookie();
-}
-
-/** Full sign-out including a best-effort server teardown. The server session revoke (delete the
- *  keep session-store entry + optional infra revoke) lands with tooling/rune/feedback/keep-session-store;
- *  until that route exists the call is a harmless no-op and only the local state is cleared. */
+/** Full sign-out: the server destroys the session and clears the httpOnly cookie; there is no local
+ *  credential to wipe anymore. Idempotent — a no-session logout still resolves cleanly. */
 export async function logout(): Promise<void> {
   try {
     await fetch("/auth/logout", { method: "POST" });
-  } catch { /* route may not exist yet — the local clear below is the real teardown today */ }
-  signOut();
+  } catch { /* gateway unreachable — the cookie will lapse on its own TTL */ }
 }
 
-function storeProfile(name: string): void {
-  try {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify({ name }));
-  } catch { /* private mode — profile just won't persist */ }
+/** THE single sign-in intake.
+ *  - `login(token)` → `POST /auth/exchange { token }` (opaque `?token=` magic-link path).
+ *  - `login()`      → Google popup → Firebase idToken → `POST /auth/login { idToken, email }`.
+ *  In BOTH cases the SERVER mints the session and sets the httpOnly `sprig_session` cookie; the
+ *  client stores nothing. Resolves to `{name, email}` once the cookie is set. Throws `AuthError`
+ *  (see its codes) on failure. */
+export function login(token?: string): Promise<{ name: string; email: string }> {
+  if (typeof token === "string" && token.length > 0) return exchangeToken(token);
+  return loginWithGoogle();
 }
 
-function readProfileName(): string {
-  try {
-    const raw = localStorage.getItem(PROFILE_KEY);
-    if (!raw) return "";
-    const p = JSON.parse(raw) as { name?: unknown };
-    return typeof p.name === "string" ? p.name : "";
-  } catch {
-    return "";
-  }
-}
-
-function clearProfile(): void {
-  try {
-    localStorage.removeItem(PROFILE_KEY);
-  } catch { /* ignore */ }
-}
-
-/** The identity + grants half of the profile, read straight off the stored bearer. keep verifies
- *  the signature; the client only DECODES for display, so no verification runs here. Accepts
- *  infra's envelope as raw JSON or base64url(JSON) (the two wire forms keep's parser accepts). */
-type BearerClaim = { key?: unknown; value?: unknown };
-function decodeBearer(token: string): { creator: string; claims: BearerClaim[] } | null {
-  const trimmed = (token ?? "").trim();
-  if (!trimmed) return null;
-  const asObject = (s: string): { creator: string; claims: BearerClaim[] } | null => {
-    try {
-      const o = JSON.parse(s) as { creator?: unknown; claims?: unknown };
-      if (!o || typeof o !== "object") return null;
-      return {
-        creator: typeof o.creator === "string" ? o.creator : "",
-        claims: Array.isArray(o.claims) ? o.claims as BearerClaim[] : [],
-      };
-    } catch {
-      return null;
-    }
+/** Opaque `?token=` → server exchange → httpOnly cookie. The server returns the profile it decoded
+ *  from the freshly-minted bearer (the browser never sees the bearer). */
+async function exchangeToken(token: string): Promise<{ name: string; email: string }> {
+  const res = await fetch("/auth/exchange", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token }),
+  }).catch(() => null);
+  if (res && res.status === 401) throw new AuthError("not-authorized", "This link isn't authorized.");
+  if (!res || !res.ok) throw new AuthError("failed", `Sign-in failed${res ? ` (${res.status})` : ""}. Try again.`);
+  const body = await res.json().catch(() => null) as { name?: unknown; email?: unknown } | null;
+  return {
+    name: typeof body?.name === "string" ? body.name : "",
+    email: typeof body?.email === "string" ? body.email : "",
   };
-  const direct = asObject(trimmed);
-  if (direct) return direct;
-  try {
-    const pad = "=".repeat((4 - (trimmed.length % 4)) % 4);
-    const bin = atob(trimmed.replaceAll("-", "+").replaceAll("_", "/") + pad);
-    const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
-    return asObject(new TextDecoder().decode(bytes));
-  } catch {
-    return null;
-  }
 }
 
-/** The signed-in user for the UI: `{name, email, grants}`, or `null` when there's no session.
- *  `email` + `grants` come from the stored bearer's envelope (`creator` + `claims`); `name` from
- *  the profile captured at sign-in. A grant is rendered `key` (or `key:value` when scoped). */
-export function getUserData(): { name: string; email: string; grants: string[] } | null {
-  const t = bearer();
-  if (!t) return null;
-  const env = decodeBearer(t);
-  const grants = (env?.claims ?? [])
-    .map((c) => {
-      const key = typeof c.key === "string" ? c.key : "";
-      if (!key) return "";
-      const value = typeof c.value === "string" ? c.value : "";
-      return value ? `${key}:${value}` : key;
-    })
-    .filter(Boolean);
-  return { name: readProfileName(), email: env?.creator ?? "", grants };
-}
-
-function bearer(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-/** True when a bearer is stashed (for a login page's "already signed in" self-heal). */
-export function hasSession(): boolean {
-  return bearer() !== null;
-}
-
-/** Seed the infra bearer from a first-navigation `?token=…` magic link. The opaque handle is
- *  EXCHANGED server-side (`POST /auth/exchange` → infra → real bearer) before it's stored — a raw
- *  handle is NOT a bearer and would 401 keep's JWKS verification on every /api call. Strips the
- *  token from the address bar first (never leave a credential in a shareable URL) and STAYS on the
- *  current page — no navigation. Runs once on load, below. */
+/** Seed a session from a first-navigation `?token=…` magic link, then STRIP the token from the
+ *  address bar and STAY on the page (never leave a credential in a shareable URL, never navigate).
+ *  Runs once on load, below. A bad/expired handle leaves the session unset — the SSR guard sends the
+ *  next navigation to login, exactly as a bounced magic link should. */
 async function seedTokenFromUrl(): Promise<void> {
   if (typeof location === "undefined") return;
   const url = new URL(location.href);
@@ -185,66 +99,27 @@ async function seedTokenFromUrl(): Promise<void> {
     history.replaceState(null, "", url.toString());
   } catch { /* restricted history — ignore */ }
   try {
-    const res = await fetch("/auth/exchange", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token: t }),
-    });
-    if (res.ok) {
-      const out = await res.json().catch(() => null) as { token?: string } | null;
-      if (out?.token) setBearer(out.token);
-    }
-    // A non-ok exchange (bad/expired handle) leaves the session unset — the SSR guard sends the
-    // next navigation to the login route, exactly as a bounced magic link should.
-  } catch { /* exchange upstream unreachable — stay unauthenticated */ }
+    await exchangeToken(t);
+  } catch { /* bounced link — stay unauthenticated; the guard redirects on the next navigation */ }
 }
 
-// Runs once when this module loads in the browser: exchange a magic-link token, then self-heal
-// a browser that kept the localStorage bearer but lost the guard cookie (expired / predates
-// the cookie) by re-writing it, so the SSR guard can verify again instead of bouncing.
+// Runs once when this module loads in the browser: exchange a magic-link token for a server session.
 if (typeof location !== "undefined") {
-  void (async () => {
-    await seedTokenFromUrl();
-    const b = bearer();
-    if (b) writeSessionCookie(b);
-  })();
+  void seedTokenFromUrl();
 }
 
-/** True when a request targets this origin — a relative URL, or an absolute one whose origin
- *  matches. We attach the bearer ONLY to same-origin requests so `authFetch(thirdPartyUrl)` can
- *  never exfiltrate the credential. Outside the browser (SSR) everything is treated same-origin. */
-function isSameOrigin(input: RequestInfo | URL): boolean {
-  if (!hasDoc()) return true;
-  const href = input instanceof Request ? input.url : String(input);
-  try {
-    return new URL(href, location.href).origin === location.origin;
-  } catch {
-    return true; // unparseable → treat as relative/same-origin
-  }
+/** Fetch-shaped convenience wrapper. Auth is the httpOnly cookie now — it rides every same-origin
+ *  request automatically — so this attaches NO credential; it's plain `fetch`, kept only for
+ *  back-compat with callers that imported it. A 401 means the session is genuinely gone (keep already
+ *  tried silent refresh server-side); the caller decides whether to send the user to login. */
+export function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return fetch(input, init);
 }
 
-/** Fetch-shaped, session-aware request. Auto-attaches the bearer (same-origin only) unless the
- *  caller already set an Authorization header, then behaves like `fetch`. On a 401 that CARRIED a
- *  bearer (a lapsed ~1h session) it signs out so the next navigation re-authenticates — an
- *  anonymous 401 is left alone (it isn't an expiry, and must not clear a session another tab / the
- *  sign-in flow just set). Silent refresh from a stored credential slots in here once keep's
- *  session store ships (tooling/rune/feedback/keep-session-store); today a lapse means re-login. */
-export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const t = bearer();
-  const headers = new Headers(init?.headers);
-  if (t && isSameOrigin(input) && !headers.has("authorization")) {
-    headers.set("authorization", `Bearer ${t}`);
-  }
-  const res = await fetch(input, { ...init, headers });
-  if (res.status === 401 && t) signOut();
-  return res;
-}
-
-/** POST a keep endpoint over the network backend and return its JSON body. A thin POST-only
- *  wrapper over `authFetch` (kept for back-compat; new code can call `authFetch` for any method).
- *  Throws on any non-2xx. */
+/** POST a keep endpoint over the network backend and return its JSON body. A thin POST-only helper
+ *  (base path + JSON); the session cookie rides along automatically. Throws on any non-2xx. */
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  const res = await authFetch(`${API_PREFIX}${path}`, {
+  const res = await fetch(`${API_PREFIX}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body ?? {}),
@@ -256,7 +131,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return await res.json() as T;
 }
 
-// ─────────────────────────── loginWithGoogle (the primitive) ───────────────────────────
+// ─────────────────────────── loginWithGoogle (the Google primitive) ───────────────────────────
 
 /** A typed sign-in failure so the UI can branch: `cancelled` (user closed the popup),
  *  `not-authorized` (infra rejected the account), `unconfigured` (no Firebase config on this
@@ -302,17 +177,15 @@ function prepareAuth(): Promise<{ auth: unknown; fb: any }> {
 }
 
 /** Warm the SDK + config ahead of the click (call from an island's onBrowserInit). Optional;
- *  a failure surfaces on the actual `loginWithGoogle()` call, not here. */
+ *  a failure surfaces on the actual `login()` call, not here. */
 export function warmAuth(): void {
   prepareAuth().catch(() => {/* retried on the click */});
 }
 
-/** THE sign-in primitive. Runs the whole Google flow — popup → Firebase ID token → exchange
- *  at the same-origin /auth/login gateway for the infra-signed session bearer → store it for
- *  every /api call + the SSR guard — and returns the signed-in user `{name, email}`. The caller
- *  decides where to navigate next (e.g. `location.assign("/ui")`). Throws `AuthError` (see its
- *  codes). The `name` is captured here (the bearer envelope doesn't carry it) so `getUserData()`
- *  can surface it. */
+/** The Google sign-in primitive (also reached via `login()` with no argument). Runs the whole flow —
+ *  popup → Firebase ID token → the same-origin /auth/login gateway, which mints the server session
+ *  and sets the httpOnly cookie — and returns `{name, email}`. The caller decides where to navigate
+ *  next (e.g. `location.assign("/ui")`). Throws `AuthError` (see its codes). */
 export async function loginWithGoogle(): Promise<{ name: string; email: string }> {
   let idToken: string, email: string, name: string;
   try {
@@ -339,10 +212,11 @@ export async function loginWithGoogle(): Promise<{ name: string; email: string }
   }).catch(() => null);
   if (res && res.status === 401) throw new AuthError("not-authorized", "This account isn't authorized.");
   if (!res || !res.ok) throw new AuthError("failed", `Sign-in failed${res ? ` (${res.status})` : ""}. Try again.`);
-  const session = await res.json().catch(() => null) as { token?: string } | null;
-  if (!session?.token) throw new AuthError("failed", "Login succeeded but no session bearer was issued.");
-
-  setBearer(session.token);
-  storeProfile(name);
-  return { name, email };
+  // Server minted the session + set the httpOnly cookie. It echoes the profile it decoded; prefer the
+  // server's name/email, falling back to what the popup gave us (e.g. the display name infra omits).
+  const body = await res.json().catch(() => null) as { name?: unknown; email?: unknown } | null;
+  return {
+    name: typeof body?.name === "string" && body.name ? body.name : name,
+    email: typeof body?.email === "string" && body.email ? body.email : email,
+  };
 }

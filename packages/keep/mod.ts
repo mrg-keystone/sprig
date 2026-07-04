@@ -83,6 +83,28 @@ export async function loadRoutes(srcDir: string): Promise<Route[]> {
   return await mapRouteTable(raw, srcDir);
 }
 
+/** A credential handed to keep's session engine: a Firebase idToken or an opaque `?token=` handle. */
+export interface SessionIntake {
+  credential: string;
+  credentialKind: "firebase" | "opaque";
+  email?: string;
+}
+/** What `keep.intakeSession` returns — the opaque session id (goes in the httpOnly cookie) plus the
+ *  decoded profile the gateway surfaces to the browser (the bearer NEVER leaves the server). */
+export interface SessionMinted {
+  id: string;
+  creator: string;
+  email?: string;
+  grants: string[];
+}
+/** The cached profile `/auth/me` reads back off a resolved session (grants are UX-only here — the
+ *  request-path guard still enforces them deny-by-default from the verified bearer). */
+export interface SessionProfile {
+  name?: string;
+  email?: string;
+  grants?: string[];
+}
+
 /** The slice of keep's `bootstrapServer(...)` result that serveSprig consumes. */
 export interface KeepApi {
   /** the IN-PROCESS client: typeof fetch, dispatches relative paths through the
@@ -90,6 +112,13 @@ export interface KeepApi {
   backend: { fetch: typeof fetch };
   /** the NETWORK handler: token-gated; forward Deno.ServeHandlerInfo into it. */
   handler: (req: Request, info?: Deno.ServeHandlerInfo) => Response | Promise<Response>;
+  /** keep's cookie-session engine — present only when keep enabled `KEEP_SESSION_KV`. When it is,
+   *  the /auth gateway mints an httpOnly `sprig_session` id via `intakeSession` (the bearer stays
+   *  server-side) and reads/clears it via `sessions.read` / `destroySession`; when it is absent the
+   *  gateway degrades to the legacy proxy that hands the bearer to the browser. */
+  intakeSession?: (input: SessionIntake) => Promise<SessionMinted>;
+  destroySession?: (id: string) => Promise<void>;
+  sessions?: { read(id: string): Promise<SessionProfile | null> };
 }
 
 export interface ServeSprigConfig {
@@ -244,23 +273,84 @@ export interface ServeDefaultExport {
 }
 
 // ─────────────────────────────── /auth sign-in gateway ───────────────────────────────
-// The two same-origin endpoints sprig's `loginWithGoogle()` (@mrg-keystone/sprig) needs, proxied to
-// infra so the browser never calls the control plane cross-origin (infra's /api sets no CORS
-// headers) and never learns INFRA_URL:
+// The same-origin endpoints sprig's client auth (@mrg-keystone/sprig) needs. Everything is
+// server-side: the browser never calls infra cross-origin (infra's /api sets no CORS headers) and,
+// once keep's cookie-session engine is on, never holds a bearer at all.
 //   GET  /auth/firebase-config → <infra>/firebase-config.json   (public web config, 5-min cached)
-//   POST /auth/login           → <infra>/api/session/login      (Firebase idToken → session bearer)
-//   POST /auth/exchange        → <infra><exchangePath>          (opaque ?token= → session bearer)
-// Returns null for any other path so serveSprig falls through to /api + the SSR app. Sprig owns
-// this so apps stop hand-rolling it per-repo (the class of bug that silently issues no bearer).
+//   POST /auth/login           → Firebase idToken  → session     (`login()` no-arg / Google popup)
+//   POST /auth/exchange        → opaque ?token=     → session     (`login(token)` / magic link)
+//   GET  /auth/me              → the session cookie → {name,email,grants} | 401
+//   POST /auth/logout          → destroy the session + clear the cookie
+//
+// SESSION MODE (keep.intakeSession present — `KEEP_SESSION_KV` on): login/exchange mint an opaque
+// session id, keep stores the ORIGINAL credential + bearer + profile server-side, and the gateway
+// sets it in an **httpOnly** `sprig_session` cookie. The bearer NEVER reaches the browser; the
+// cookie rides same-origin on every request and keep resolves it (with silent refresh) server-side.
+// LEGACY MODE (no intakeSession): login/exchange proxy to infra and return the bearer verbatim, for
+// older non-KV deployments whose client still stores it. Sprig owns this so apps stop hand-rolling
+// it per-repo (the class of bug that silently issues no bearer).
 const MAX_LOGIN_BODY = 64_000; // an ID token is ~1–2 KB; anything larger is not a login request
 // infra's opaque-token → bearer exchange. Mirrors `/api/session/login`'s `/api/<domain>/<action>`
 // shape; the one value to confirm against your infra deployment (override via serveSprig's
 // `auth.exchangePath` or the INFRA_EXCHANGE_PATH env var).
 const DEFAULT_EXCHANGE_PATH = "/api/authz/exchange";
+/** The httpOnly cookie the session id lives in (keep's guard resolves this exact name). */
+const SESSION_COOKIE = "sprig_session";
 let firebaseConfigCache: { body: string; at: number } | null = null;
+
+/** Read a cookie value off the request's Cookie header (undecoded); "" when absent. */
+function readCookie(req: Request, name: string): string {
+  const header = req.headers.get("cookie") ?? "";
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return "";
+}
+
+/** Build the `Set-Cookie` for the session id. `Secure` only over https so localhost dev (http)
+ *  still gets the cookie; `HttpOnly` keeps it out of JS reach; `SameSite=Lax` rides top-level nav. */
+function sessionCookie(id: string, req: Request, maxAge: number): string {
+  const secure = new URL(req.url).protocol === "https:" ? "; Secure" : "";
+  return `${SESSION_COOKIE}=${encodeURIComponent(id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+}
+
+/** keep throws this exact shape when the session store is off (no `KEEP_SESSION_KV`) — the signal
+ *  to fall back to legacy bearer proxying rather than treat it as a credential rejection. */
+function isSessionStoreDisabled(e: unknown): boolean {
+  return e instanceof Error && /session store is disabled/i.test(e.message);
+}
+
+const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days — matches keep's default idle TTL
+
+/** Mint a session in SESSION MODE, or return null to fall back to legacy bearer proxying (when the
+ *  store is disabled / unavailable). Sets the httpOnly cookie and returns the profile — no bearer. */
+async function mintSession(keep: KeepApi, req: Request, input: SessionIntake): Promise<Response | null> {
+  if (!keep.intakeSession) return null;
+  try {
+    const { id, creator, email, grants } = await keep.intakeSession(input);
+    return new Response(JSON.stringify({ name: creator, email: email ?? "", grants }), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        "cache-control": "no-store",
+        "set-cookie": sessionCookie(id, req, SESSION_MAX_AGE),
+      },
+    });
+  } catch (e) {
+    if (isSessionStoreDisabled(e)) return null; // → legacy proxy below
+    // A real credential rejection (infra said no) — surface as 401, don't leak the store to the app.
+    return new Response(JSON.stringify({ message: "not authorized" }), {
+      status: 401,
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  }
+}
 
 async function serveAuthGateway(
   req: Request,
+  keep: KeepApi,
   infraUrl: string,
   exchangePath: string,
 ): Promise<Response | null> {
@@ -269,6 +359,7 @@ async function serveAuthGateway(
 
   if (path === "/auth/firebase-config") {
     if (req.method !== "GET") return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET" } });
+    if (!infra) return new Response("auth not configured", { status: 404 });
     if (!firebaseConfigCache || Date.now() - firebaseConfigCache.at > 300_000) {
       const res = await fetch(`${infra}/firebase-config.json`).catch(() => null);
       if (!res?.ok) return new Response("firebase config unavailable", { status: 502 });
@@ -281,6 +372,7 @@ async function serveAuthGateway(
 
   if (path === "/auth/login") {
     if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: { allow: "POST" } });
+    if (!infra) return new Response("auth not configured", { status: 404 });
     const raw = await req.text();
     if (raw.length > MAX_LOGIN_BODY) return new Response("Payload Too Large", { status: 413 });
     let idToken = "", email = "";
@@ -295,8 +387,11 @@ async function serveAuthGateway(
         headers: { "content-type": "application/json" },
       });
     }
-    // Server-to-server exchange; infra verifies the ID token against its Firebase project and
-    // mints the offline-verifiable session bearer. Pass its verdict through verbatim.
+    // Preferred: keep mints a server-side session from the idToken and we set the httpOnly cookie.
+    const minted = await mintSession(keep, req, { credential: idToken, credentialKind: "firebase", email });
+    if (minted) return minted;
+    // Legacy fallback (no session store): server-to-server exchange; infra verifies the ID token and
+    // mints the offline-verifiable session bearer. Pass its verdict — and the bearer — through verbatim.
     const res = await fetch(`${infra}/api/session/login`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -311,6 +406,7 @@ async function serveAuthGateway(
 
   if (path === "/auth/exchange") {
     if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: { allow: "POST" } });
+    if (!infra) return new Response("auth not configured", { status: 404 });
     const raw = await req.text();
     if (raw.length > MAX_LOGIN_BODY) return new Response("Payload Too Large", { status: 413 });
     let token = "";
@@ -324,9 +420,12 @@ async function serveAuthGateway(
         headers: { "content-type": "application/json" },
       });
     }
-    // Server-to-server exchange: infra swaps the opaque handle for the offline-verifiable session
-    // bearer. Without this an opaque `?token=` was stored VERBATIM as the bearer and failed keep's
-    // JWKS verification → 401 on every /api call. Pass infra's verdict through verbatim.
+    // Preferred: keep swaps the opaque handle for a bearer, stores it server-side, sets the cookie.
+    const minted = await mintSession(keep, req, { credential: token, credentialKind: "opaque" });
+    if (minted) return minted;
+    // Legacy fallback (no session store): server-to-server exchange returning the bearer verbatim.
+    // Without this an opaque `?token=` was stored VERBATIM as the bearer and failed keep's JWKS
+    // verification → 401 on every /api call.
     const res = await fetch(`${infra}${exchangePath}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -336,6 +435,31 @@ async function serveAuthGateway(
     return new Response(await res.text(), {
       status: res.status,
       headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  }
+
+  if (path === "/auth/me") {
+    if (req.method !== "GET") return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET" } });
+    const unauth = () =>
+      new Response("null", { status: 401, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    const id = decodeURIComponent(readCookie(req, SESSION_COOKIE));
+    if (!id || !keep.sessions) return unauth();
+    const rec = await keep.sessions.read(id).catch(() => null);
+    if (!rec) return unauth();
+    // grants are UX-only here (the guard still enforces them from the verified bearer per request).
+    return new Response(JSON.stringify({ name: rec.name ?? "", email: rec.email ?? "", grants: rec.grants ?? [] }), {
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  }
+
+  if (path === "/auth/logout") {
+    if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: { allow: "POST" } });
+    const id = decodeURIComponent(readCookie(req, SESSION_COOKIE));
+    if (id && keep.destroySession) await keep.destroySession(id).catch(() => {});
+    // Clear the cookie regardless (idempotent) — Max-Age=0 expires it immediately.
+    return new Response(null, {
+      status: 204,
+      headers: { "set-cookie": sessionCookie("", req, 0), "cache-control": "no-store" },
     });
   }
 
@@ -385,10 +509,11 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
         });
       }
 
-      // same-origin /auth sign-in gateway (the server half of sprig's loginWithGoogle),
-      // when an infra URL is configured. Returns null for non-/auth paths → falls through.
-      if (authInfraUrl) {
-        const authRes = await serveAuthGateway(req, authInfraUrl, authExchangePath);
+      // same-origin /auth gateway (the server half of sprig's client auth). Active when an infra
+      // URL is configured (login/exchange/firebase-config) OR keep exposes the cookie-session engine
+      // (me/logout work without infra). Returns null for non-/auth paths → falls through.
+      if (authInfraUrl || config.keep.sessions || config.keep.destroySession) {
+        const authRes = await serveAuthGateway(req, config.keep, authInfraUrl, authExchangePath);
         if (authRes) return authRes;
       }
       // built assets → static dir (immutable only for content-addressed requests)

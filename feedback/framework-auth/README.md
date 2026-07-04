@@ -170,3 +170,94 @@ single path only works if both ship.
 
 Provide `INFRA_URL`, `TOKEN` (an opaque infra token), and `BACKEND` (a rune-3 `/api` base with a
 non-`@Public` endpoint) via env — no secrets committed.
+
+---
+
+## AUDIT (2026-07-04): keep shipped its half. sprig did not wire it. Stop deferring — finish it.
+
+keep landed **all four pieces** of the session engine and **told you exactly what was owed**
+(`tooling/rune/feedback/keep-session-store/README.md` → "Resolution", and its closing line: *"Still
+owed by sprig: the gateway routes calling `keep.intakeSession` and setting/clearing the httpOnly
+cookie"*). `bootstrapServer` now exposes `.intakeSession(input)` and `.destroySession(id)`, the
+Deno-KV store is real, and the guard already resolves auth from the `sprig_session` cookie. **The
+only missing work is on the sprig side, and it wasn't done.** Worse — the two halves are wired to be
+**incompatible**. This is not "deferred pending keep." keep shipped.
+
+### Evidence — it is not wired, and it is inconsistent
+
+1. **`intakeSession` has zero callers.** `grep -rn "Set-Cookie.*sprig_session=" tooling/{sprig,rune}`
+   → nothing sets the session-id cookie anywhere. `bootstrapServer.intakeSession()` is dead code
+   from the caller's side.
+2. **The gateway returns the raw bearer instead of minting a session.** `packages/keep/mod.ts`
+   `/auth/login` and `/auth/exchange` both end in `return new Response(await res.text(), …)` — they
+   hand the **bearer** back to the browser. They never call `keep.intakeSession` and never
+   `Set-Cookie: sprig_session=<id>`.
+3. **The client stores the bearer client-side — the exact thing the design deletes.** `auth.ts`
+   `setBearer()` writes the **full bearer** into `localStorage` AND a **JS-readable** (non-httpOnly)
+   `sprig_session` cookie; `getUserData()` `decodeBearer()`s it in the browser; `authFetch()`
+   attaches it as an `Authorization` header and `signOut()`s on 401 (no silent refresh).
+4. **`sprig_session` means two different things on the two sides.** keep's guard resolves it as an
+   **opaque session id** → KV lookup → fresh bearer (with silent refresh). sprig writes it as the
+   **whole bearer**. Turn on `KEEP_SESSION_KV` and keep will look up the bearer-string as a session
+   id, miss, and cookie auth fails. They cannot interoperate as written.
+5. **The "until it ships" comments are now false.** `auth.ts:17-20` still says the httpOnly-cookie +
+   silent-refresh half *"belongs in keep's Deno-KV session store … Until it ships, a lapsed bearer
+   signs out."* It shipped. That comment **is** the deferral, in code.
+
+### Do this — the whole thing is ~40 lines of glue plus deletions
+
+**Gateway (`packages/keep/mod.ts`), stop returning the bearer:**
+- `/auth/login`  → `const { id, ...profile } = await keep.intakeSession({ credential: idToken, credentialKind: "firebase", email })` → respond `Set-Cookie: sprig_session=<id>; HttpOnly; Secure; SameSite=Lax; Path=/` + the profile JSON. **Never** put the bearer in the body.
+- `/auth/exchange` → same, `credentialKind: "opaque"`.
+- **Add** `GET /auth/me` → resolve the cookie via keep → `{ name, email, grants }`.
+- **Add** `POST /auth/logout` → `keep.destroySession(id)` + clear the cookie.
+
+**Client (`auth.ts`), delete the bearer storage:**
+- Remove `setBearer`, the `localStorage` bearer, and the JS cookie write. The server owns the
+  httpOnly cookie now. `seedTokenFromUrl`/`loginWithGoogle` just POST the gateway and rely on the
+  `Set-Cookie` it returns.
+- `authFetch` → drop the header/`localStorage` logic; the httpOnly cookie rides same-origin
+  automatically. A 401 now means the session is genuinely gone (keep already tried silent refresh
+  server-side) → send to login.
+- `getUserData` → read `/auth/me` (the bearer is httpOnly; JS can't decode it) or SSR-inject the
+  profile. `decodeBearer` in the browser is dead code after this.
+
+**Turn it on:** the store is opt-in behind `KEEP_SESSION_KV`. A default `serveSprig` app must set it
+(or flip the default) or none of this activates.
+
+keep did its half and handed you the exact seam. This is the last wire. Wire it end-to-end and
+delete the client-side bearer — no more "belongs in / until it ships." Until then the single-path
+auth is **not** shipped; it's two finished halves that don't touch.
+
+---
+
+## APPLIED (2026-07-04): sprig wired its half end-to-end.
+
+The last wire is in. sprig now owns the client surface as a server-managed httpOnly cookie; the
+client stores **nothing**.
+
+**Gateway (`packages/keep/mod.ts`):**
+- `KeepApi` extended with the optional session engine (`intakeSession` / `destroySession` /
+  `sessions.read`), typed structurally so sprig doesn't import keep internals.
+- `/auth/login` + `/auth/exchange` now call `keep.intakeSession({credential, credentialKind, email})`
+  when the store is on → `Set-Cookie: sprig_session=<id>; HttpOnly; SameSite=Lax; Path=/`
+  (`Secure` over https) and return **`{name,email,grants}`** — the bearer never reaches the browser.
+  When the store is off (`intakeSession` throws "session store is disabled") they fall back to the
+  legacy bearer proxy, so non-KV deployments keep working (and the existing test still passes).
+- **Added** `GET /auth/me` → resolves the cookie via `keep.sessions.read` → `{name,email,grants}`,
+  `401`/`null` when signed out. **Added** `POST /auth/logout` → `keep.destroySession(id)` +
+  clears the cookie (204). Both work even with no `INFRA_URL` (KV-only).
+
+**Client (`framework/.sprig/auth.ts`), bearer storage deleted:**
+- Removed `setBearer`, the `localStorage` bearer, the JS cookie write, `decodeBearer`, `signOut`,
+  `hasSession`. New surface: `login(token?)` (magic-link exchange or Google popup), async
+  `getUserData()` reading `/auth/me`, `logout()`. `authFetch`/`apiPost` are now credential-free
+  plain-`fetch` helpers (the cookie rides same-origin). `loginWithGoogle` remains as the Google
+  primitive; `login()` no-arg delegates to it.
+- The "until it ships" deferral comments are gone.
+
+**Turn it on:** the store stays opt-in behind keep's `KEEP_SESSION_KV`; the gateway auto-detects it
+(`keep.intakeSession` present) and mints cookie sessions, else degrades to the legacy bearer.
+
+Tests: `packages/keep/auth-exchange.test.ts` now covers both modes + `/auth/me` + `/auth/logout`
+(9 green). See the companion `feedback/auth-client-surface/` for the collapsed client API this lands.
