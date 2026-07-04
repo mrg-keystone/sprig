@@ -12,8 +12,8 @@
 import { basename, join } from "@std/path";
 import { copy } from "@std/fs";
 
-const REPO = "theTechGoose/sprig";
-const UA = { "user-agent": "sprig-skills; https://github.com/theTechGoose/sprig" };
+const REPO = "mrg-keystone/sprig";
+const UA = { "user-agent": "sprig-skills; https://github.com/mrg-keystone/sprig" };
 
 function home(): string {
   return Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? "";

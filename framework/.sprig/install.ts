@@ -10,9 +10,9 @@ import { dirname, join } from "@std/path";
 import { copy } from "@std/fs";
 import { installAgents, installSkills } from "./skills.ts";
 
-const REPO = "theTechGoose/sprig";
+const REPO = "mrg-keystone/sprig";
 const RUNTIME_TAG = "runtime-latest"; // the rolling release tag release.yml maintains
-const UA = { "user-agent": "sprig-install; https://github.com/theTechGoose/sprig" };
+const UA = { "user-agent": "sprig-install; https://github.com/mrg-keystone/sprig" };
 
 function home(): string {
   return Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? "";
