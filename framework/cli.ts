@@ -1099,7 +1099,7 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   // annotate (serve that one HTML file standalone); a bare `--annotate` is now a harmless no-op
   // since annotate is the default. Only `sprig build` produces annotate-free output.
   const ai = rawArgs.indexOf("--annotate");
-  const open = !rawArgs.includes("--no-open"); // annotate auto-opens the UI; --no-open suppresses
+  const open = rawArgs.includes("--open"); // opt-in: only pop the browser when --open is passed (a stray --no-open stays a harmless no-op)
   let annotateHtml = "";
   if (ai >= 0 && rawArgs[ai + 1] && /\.html?$/i.test(rawArgs[ai + 1])) annotateHtml = rawArgs[ai + 1];
   if (annotateHtml) return await devAnnotateHtml(annotateHtml, open);
@@ -1597,10 +1597,10 @@ async function install(dev: boolean): Promise<void> {
 const USAGE = `sprig — the framework CLI
 
   sprig init  [dir]              scaffold a minimal, runnable sprig app (default: .)
-  sprig dev   [appDir] [--annotate <html>] [--no-open]  HMR dev server → /ui — ALWAYS serves the click-to-edit
+  sprig dev   [appDir] [--annotate <html>] [--open]  HMR dev server → /ui — ALWAYS serves the click-to-edit
                                   overlay + the isolate workbench (full app). --annotate <html>: annotate one
                                   prototype file instead. Annotate picks a STABLE port hashed from the app name
-                                  (PORT overrides) and opens the UI in the browser (--no-open suppresses).
+                                  (PORT overrides); prints the URL and, only with --open, pops it in the browser.
   sprig build [appDir] [--rune]  code-split islands + scope CSS + Tailwind → static/ (default: .; never annotate)
                                   --rune also folds the sibling keep backend + this UI into a git-root
                                   serve.ts (serveSprig) and makes the root deno.json a Deno workspace
