@@ -55,9 +55,19 @@ capture recipes, or component anatomy here.** They live in the agents and in
   HTML/screenshot/PDF), use that. When a ratified contract exists at the git root
   (`spec/contract/`, or `spec/runes/*.rune`), it is ALSO input — the data seam binds
   against it (bridge 2).
-- **Output** — always `spec/ui/breakdown/` (relative to the **git root**; create
-  `spec/ui/` if absent). Derive the path automatically; never ask. The directory shape is
-  the `ui-breakdown` contract (`../interfaces/ui-breakdown.md`).
+- **Output** — always `<git-root>/spec/ui/breakdown/`, and nowhere else. Resolve the git
+  root **once** with `git rev-parse --show-toplevel` and build the path from it
+  (`"$(git rev-parse --show-toplevel)"/spec/ui/breakdown`); create `spec/ui/` if absent.
+  Derive the path automatically; never ask. Every artifact this skill and its agents
+  produce — the `.md` specs, `isolate/` folders, and **every screenshot / filmstrip PNG** —
+  lives under that one directory. The directory shape is the `ui-breakdown` contract
+  (`../interfaces/ui-breakdown.md`).
+- **NEVER search the filesystem for a breakdown artifact.** You always know where it is:
+  under `<git-root>/spec/ui/breakdown/`. Do not run `find /`, `find ~`, or any whole-disk
+  / home-dir scan to locate a screenshot or output file — that pins every CPU core for
+  minutes. If a file you expect isn't at its known path, it wasn't written there; re-derive
+  the path from the git root or re-run the step that writes it. Scope any legitimate lookup
+  to `<git-root>/spec/ui/breakdown` (e.g. `find "$(git rev-parse --show-toplevel)/spec/ui/breakdown" -name '*.png'`).
 
 ## The flow
 

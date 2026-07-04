@@ -30,7 +30,7 @@ You read the source code; you do not render the mock or write per-component `.md
 ## Input contract
 
 - **SOURCE** — the mock path(s) (default the two-seam `spec/ui/<app>-prototype/` folder — its `objects/` + `commands.json` are the declared data seams, read them; legacy `spec/ui/<app>-prototype.html`; or any HTML/folder/image/PDF).
-- **OUTPUT DIR** — `spec/ui/breakdown/` (at the git root).
+- **OUTPUT DIR** — always `<git-root>/spec/ui/breakdown/`. Resolve the root with `git rev-parse --show-toplevel`; never search the filesystem for it or for anything under it (no `find /` / whole-disk scans — they pin every CPU core for minutes).
 - **PHASE** — `opening` or `closing`. For closing, the list of component/page `.md` files the spec-writers produced.
 
 ## Procedure

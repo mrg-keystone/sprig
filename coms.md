@@ -286,9 +286,36 @@ serve.ts`. Dropped `@danet/core`. **Also fixed a latent bug:** the shell was wri
   token-auth + mount tests 46/0. **Pin note:** supersedes "still open #2" — keep is now staged at
   `4.0.0`; after publish, bump `@mrg-keystone/rune` pins to `@^4`. Still no impact on sprig (needs
   only `{backend,handler}`).
-  - **OPEN (behavior, not dead code): `rune dev` still runs the OLD serving path.** `dev/mod.ts:232`
-    spawns `deno run bootstrap/mod.ts` → `api.listen()` (backend + emulator only, NO sprig UI at `/`),
-    while `rune init` scaffolds `deno serve serve.ts` (serveSprig, the full app) as the `start`/`dev`
-    tasks. So `rune dev`'s live-reload loop never serves the modern composed app. Fold `rune dev` onto
-    `deno serve serve.ts` (falling back to `bootstrap/mod.ts` when no `serve.ts`/UI exists)? Awaiting
-    decision — flagged to the user.
+  - **RESOLVED (behavior, by design): `rune dev` stays backend-only.** `dev/mod.ts:232` spawns
+    `deno run bootstrap/mod.ts` → `api.listen()` (backend + emulator + `/docs` live-reload via
+    `KEEP_DEV`, NO sprig UI at `/`) — this is deliberate: `rune dev` is the spec→emulator loop. For the
+    full composed app + UI, users run `rune init`'s scaffolded `deno task dev` (`deno serve --watch
+    serve.ts` = serveSprig). Two intentional dev paths; not folding them. (User decision 2026-07-03.)
+
+- 2026-07-04 — **reconcile: the ship-bot (`b48f112`, `infra-ship-mrg-keystone[bot]`) independently
+  landed the Fresh/Vite sweep + keep `4.0.0` + the keep→rune ENGINE retarget while the above was
+  in-flight.** So the two items above are IN `develop`, and the `@^4` pin note is moot for now: the
+  engine now emits `@mrg-keystone/rune@^3` for ALL generated code (`REQUIRED_IMPORTS`, `renderMain`,
+  the manifest/stubs/e2e emitters) — `@^3` resolves against the PUBLISHED `rune@3.1.0`; `keep/deno.json`
+  is staged at `4.0.0` but unpublished, so pins stay `@^3` (correct publish-before-pin posture). This
+  also **retires coms.md's BLOCKER** (package-name mismatch): generated backends no longer import the
+  abandoned `@mrg-keystone/keep@1.22.0` — they import `@mrg-keystone/rune`, the same name sprig's
+  scaffold + serve.ts + fixtures use. One framework, one name.
+
+- 2026-07-04 — **`rune init` now DELEGATES the UI to the sprig CLI (branch
+  `feat/rune-init-delegate-sprig-cli`).** sprig is CLI-compilation now, and rune's hand-rolled sprig
+  scaffold had gone stale (pinned `@sprig/core@^0.12`, hand-written createRenderer `serve.ts`, **no
+  build step** → islands never got a client bundle). Fix: `rune init` runs `sprig init <dir>` (sprig
+  owns serve.ts + the src/ UI + the `sprig dev`/`sprig build` tasks + its own pins), then OVERLAYS the
+  spec-driven keep backend — replaces the empty `bootstrap/mod.ts` with the registry-driven `renderMain`
+  (its `api` export is what the sprig-written `serve.ts` imports; the `import.meta.main` listen keeps
+  `rune dev` backend-only), adds the module registry + config + `spec/` layout, and merges rune's engine
+  import map into sprig's `deno.json` additively (sprig's `@mrg-keystone/rune` pin preserved).
+  **Corrects the line above:** the composed UI dev task is now `sprig dev` (via `deno task dev`), NOT
+  `deno serve --watch`. Requires the sprig CLI installed (errors with `deno run -A jsr:@sprig/core/cli
+  install` guidance; sprig can't run from `jsr:` — needs the on-disk `~/.sprig` runtime). The pure
+  overlay is `overlayRuneBackend()`, unit-tested against a fixture sprig scaffold (no CLI/network).
+  Verified end-to-end: `rune init` → `deno check serve.ts` clean → `sprig build .` emits
+  `static/{client.js, isl.*.js, chunk-*.js, templates.json, app.css}` vs published
+  `@sprig/core@0.20.2` + `@mrg-keystone/rune@3.1.0`; init tests 4/4. **Sprig-side note:** no change
+  needed — this consumes `sprig init` + `sprig dev`/`sprig build` as-is.

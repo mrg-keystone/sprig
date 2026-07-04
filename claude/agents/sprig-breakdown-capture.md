@@ -27,6 +27,14 @@ The `sprig:breakdown` playbook reaches the **capture pass**, after the analyst's
 - **UNITS** — the components/pages to capture (from the analyst's inventory): each with its selector/DOM region and target output dirs (`<unit>/screenshots/`, `<unit>/js/`, `<unit>/css/`).
 - **BREAKPOINTS / THEMES** — the source's real `@media` widths (read them from the CSS; don't guess) and any theme attribute (e.g. `[data-theme="dark"]`).
 
+**Output location — you always know it; never search for it.** Every file you write goes under
+`<git-root>/spec/ui/breakdown/<unit>/…`. Resolve the root once with `git rev-parse --show-toplevel`
+and write each screenshot to an **explicit, absolute path** you construct — pass it to Playwright's
+`page.screenshot({ path })` / your Node writer so you know exactly where it landed. **Do NOT run
+`find /`, `find ~`, or any whole-disk scan to locate a PNG you just wrote** — that pegs every CPU
+core for minutes. If a file isn't at the path you wrote it to, it wasn't written; fix the write, don't
+hunt the disk. Any legitimate lookup stays inside `<git-root>/spec/ui/breakdown`.
+
 ## Procedure
 
 **Read `references/capture-recipes.md` before writing any capture code** — it has verified, copy-adaptable Node/Playwright recipes for everything below, plus how to find a Playwright install (the isolate-runner's bundled `playwright-core` first).

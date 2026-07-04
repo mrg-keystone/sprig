@@ -203,10 +203,33 @@ function gitRepoRoot(startAbs: string): string | null {
     d = parent;
   }
 }
-/** The registry key: the git repo's folder name (or the target's, outside a repo), sanitized. */
+/** The current git branch of `root`, sanitized (empty outside a repo / on detached HEAD). Keys the
+ *  dev registry + workbench per BRANCH: two branches of one repo (or two worktrees) get separate
+ *  ports, logs, and — critically — separate workbench dirs, so their generated previews can never
+ *  clobber each other. */
+function gitBranch(root: string): string {
+  try {
+    const out = new Deno.Command("git", {
+      args: ["-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
+      stdout: "piped",
+      stderr: "null",
+    }).outputSync();
+    if (!out.success) return "";
+    const b = new TextDecoder().decode(out.stdout).trim();
+    return b && b !== "HEAD" ? b.replace(/[^A-Za-z0-9._-]+/g, "-") : "";
+  } catch {
+    return ""; // git absent / not a repo
+  }
+}
+
+/** The registry key: the git repo's folder name + branch (or the target's basename, outside a
+ *  repo), sanitized. Branch is included so `sprig dev` on two branches/worktrees of the same repo
+ *  never shares a lock, ports, or the workbench working dir. */
 function repoKey(target: string): string {
   const root = gitRepoRoot(target) ?? target;
-  return basename(root).replace(/[^A-Za-z0-9._-]+/g, "-") || "app";
+  const name = basename(root).replace(/[^A-Za-z0-9._-]+/g, "-") || "app";
+  const branch = gitBranch(root);
+  return branch ? `${name}-${branch}` : name;
 }
 
 async function readDevLock(): Promise<Record<string, DevLockEntry>> {
@@ -1462,6 +1485,14 @@ async function init(dir = "."): Promise<void> {
  *  build the app → serve serve.ts (UI + keep backend) under ISOLATE_PROJECT, on `port`. Used by
  *  `sprig isolate` (which awaits it) and `sprig dev --annotate` (which runs it alongside the dev
  *  server). The same flow that powers the live workbench; we just point it at `appAbs`. */
+/** The per-repo-branch workbench working dir (`~/.sprig/work/<repo-branch>`). Keyed by repoKey so
+ *  two projects — or two branches/worktrees of one — get physically separate generated previews +
+ *  build output. Nothing can leak between them (the cross-project `_preview` pollution that made a
+ *  `sprig dev` build a foreign app's islands). */
+function workbenchRoot(appAbs: string): string {
+  return join(sprigStateRoot(), "work", repoKey(appAbs));
+}
+
 function spawnWorkbench(appAbs: string, port: number, open: boolean): Deno.ChildProcess {
   const root = installRoot();
   return new Deno.Command(Deno.execPath(), {
@@ -1470,7 +1501,7 @@ function spawnWorkbench(appAbs: string, port: number, open: boolean): Deno.Child
       "dev", "--root", appAbs, ...(open ? [] : ["--no-open"]),
     ],
     cwd: root,
-    env: { ...Deno.env.toObject(), PORT: String(port) },
+    env: { ...Deno.env.toObject(), PORT: String(port), SPRIG_WB_ROOT: workbenchRoot(appAbs) },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",

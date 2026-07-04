@@ -26,6 +26,8 @@ The orchestrator passes:
 - **DATA OWNERSHIP** — `owns-data` | `fronts keep backend (Backend token / /api) at <dir>`.
 - **USER STORIES** — the contents of `user-stories.md`, or `"none — derive from the route table + islands"`.
 - **EVIDENCE DIR** — `<project>/fixes-evidence/` (write screenshots/JSON here).
+
+**Finding a Playwright-MCP screenshot — read the returned path, never search for the file.** `browser_take_screenshot` writes to the **MCP's own output directory** (default `.playwright-mcp/`), not a path you choose, and **returns the saved absolute path in its tool result**. Take the path from that result — it is authoritative. To land a shot in the EVIDENCE DIR, `cp` it there from the returned path. **NEVER run `find /`, `find ~`, or any whole-disk / home-dir scan to locate a screenshot** — it pins every CPU core for minutes. Lost a path? Look only in `.playwright-mcp/`, or just re-shoot — do not scan the disk.
 - **REFERENCES DIR** — absolute path to the audit skill's `references/` dir.
 
 Assume nothing beyond this.

@@ -27,6 +27,8 @@ The orchestrator passes:
 - **USER STORIES** — the contents of `user-stories.md`, or the derived list.
 - **REFERENCES DIR** — absolute path to the audit skill's `references/` dir.
 
+**Finding a Playwright-MCP screenshot — read the returned path, never search for the file.** `browser_take_screenshot` writes to the **MCP's own output directory** (default `.playwright-mcp/`), not a path you choose, and **returns the saved absolute path in its tool result**. Use that returned path — it is authoritative. **NEVER run `find /`, `find ~`, or any whole-disk / home-dir scan to locate a screenshot** — it pins every CPU core for minutes. Lost a path? Look only in `.playwright-mcp/`, or just re-shoot — do not scan the disk.
+
 ## Procedure
 
 Think step by step (`mcp__sequential-thinking__sequentialthinking`): run each issue's own Verify check, record the real result, then sweep for collateral damage. If `mcp__playwright__*` or `mcp__sequential-thinking__sequentialthinking` aren't directly callable, ToolSearch-load them first.

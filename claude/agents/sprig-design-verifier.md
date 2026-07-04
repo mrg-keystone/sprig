@@ -27,7 +27,7 @@ The `sprig:design` playbook reaches the **verify pass** — after `theme.css` is
 
 1. **Serve over HTTP** — `file://` is blocked in the Playwright MCP, so serve the artifact dir (e.g. `python3 -m http.server` or `deno`) and navigate to `preview/showcase.html`.
 2. **Render & wait** — navigate, resize across viewports, and **wait for Tailwind (browser compiler) and ApexCharts to finish** before shooting (a premature shot looks broken even when it isn't).
-3. **Screenshot light + dark** — capture the default theme, then toggle `data-theme="brand-dark"` (via `browser_evaluate`) and capture again.
+3. **Screenshot light + dark** — capture the default theme, then toggle `data-theme="brand-dark"` (via `browser_evaluate`) and capture again. `browser_take_screenshot` saves to the **MCP's own output directory** (default `.playwright-mcp/`), not a path you choose, and **returns the saved absolute path in its result** — read the path from there. **NEVER `find /`, `find ~`, or run any whole-disk scan to locate a screenshot** (it pins every CPU core for minutes); if you've lost a path, look only in `.playwright-mcp/` or re-shoot.
 4. **Judge** — the **#1 failure is a collapsed layout** because the page loaded the daisyUI CDN stylesheet but **not** the Tailwind browser compiler (`@tailwindcss/browser@4`): components theme but layout utilities vanish. Confirm the consume recipe's CDN stack is right. Check contrast, type hierarchy, component fidelity, and that charts inherit the brand in both themes. Detail: `references/consume-and-verify.md`.
 
 ## Resources

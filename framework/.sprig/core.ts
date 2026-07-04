@@ -844,9 +844,12 @@ function escapeHtml(s: string): string {
 // (auth.ts is SSR-safe — its on-load side effects are typeof-guarded, so this is inert server-side.)
 export {
   apiPost,
+  authFetch,
   AuthError,
+  getUserData,
   hasSession,
   loginWithGoogle,
+  logout,
   SESSION_COOKIE,
   setBearer,
   signOut,

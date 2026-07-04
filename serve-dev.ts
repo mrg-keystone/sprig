@@ -11,14 +11,26 @@
 import { serveSprig } from "@sprig/keep";
 import { createDevServer } from "./framework/.sprig/compiler/dev.ts";
 import { api } from "./server/bootstrap/mod.ts";
-import { app, renderer } from "./app/src/main.ts";
 import { discover } from "./server/src/core/business/discover/mod.ts";
 import { generatePreviews } from "./cli/lib/generate-previews.ts";
-import { basename, dirname, fromFileUrl, join, relative } from "@std/path";
+import { basename, dirname, fromFileUrl, join, relative, toFileUrl } from "@std/path";
+import type { SprigApp } from "@sprig/core";
+import type { SsrRenderer } from "@sprig/keep";
 
 const root = dirname(fromFileUrl(import.meta.url)); // the install root (repo or ~/.sprig)
-const appSrc = join(root, "app", "src");
-const outDir = join(root, "static");
+// The WORKBENCH working dir is per repo-branch (`~/.sprig/work/<repo-branch>`), so two projects —
+// or two branches/worktrees — can never share `app/src/_preview` or the build output. `sprig dev`
+// sets SPRIG_WB_ROOT; a bare `deno serve serve-dev.ts` falls back to the legacy shared install dir.
+const wbRoot = Deno.env.get("SPRIG_WB_ROOT") ?? root;
+const appSrc = join(wbRoot, "app", "src");
+const outDir = join(wbRoot, "static");
+
+// The workbench app is generated per-key OUTSIDE this module's dir, so import it by absolute URL
+// (a static `./app/src/main.ts` would always be the install copy, defeating the isolation).
+const { app, renderer } = await import(toFileUrl(join(appSrc, "main.ts")).href) as {
+  app: SprigApp;
+  renderer: SsrRenderer;
+};
 
 const handler = serveSprig({ keep: api, app, base: "" });
 const dev = createDevServer({ renderer, base: "", outDir, handler });

@@ -102,11 +102,16 @@ export interface ServeSprigConfig {
   /** directory served at <base>/_assets/* (the build's client.js etc.); default "static". */
   assetsDir?: string;
   /** Firebase/Google sign-in. When an infra URL is resolvable here (or via the INFRA_URL env),
-   *  serveSprig auto-mounts the same-origin /auth gateway that sprig's `loginWithGoogle()`
-   *  (@sprig/core) calls — proxying `/auth/firebase-config` + `/auth/login` to infra so the
+   *  serveSprig auto-mounts the same-origin /auth gateway that sprig's `loginWithGoogle()` and
+   *  `?token=` seeding (@sprig/core) call — proxying `/auth/firebase-config`, `/auth/login`
+   *  (Firebase idToken → bearer) and `/auth/exchange` (opaque `?token=` → bearer) to infra so the
    *  browser never touches the control plane cross-origin. Omit (and unset INFRA_URL) to leave
-   *  /auth to the app. */
-  auth?: { infraUrl?: string };
+   *  /auth to the app.
+   *
+   *  `exchangePath` is infra's opaque-token exchange endpoint (default `/api/authz/exchange`,
+   *  mirroring the `/api/session/login` convention). The default is the one value to confirm
+   *  against your infra deployment; override here or via the `INFRA_EXCHANGE_PATH` env var. */
+  auth?: { infraUrl?: string; exchangePath?: string };
 }
 
 const ASSET_TYPES: Record<string, string> = {
@@ -244,12 +249,21 @@ export interface ServeDefaultExport {
 // headers) and never learns INFRA_URL:
 //   GET  /auth/firebase-config → <infra>/firebase-config.json   (public web config, 5-min cached)
 //   POST /auth/login           → <infra>/api/session/login      (Firebase idToken → session bearer)
+//   POST /auth/exchange        → <infra><exchangePath>          (opaque ?token= → session bearer)
 // Returns null for any other path so serveSprig falls through to /api + the SSR app. Sprig owns
 // this so apps stop hand-rolling it per-repo (the class of bug that silently issues no bearer).
 const MAX_LOGIN_BODY = 64_000; // an ID token is ~1–2 KB; anything larger is not a login request
+// infra's opaque-token → bearer exchange. Mirrors `/api/session/login`'s `/api/<domain>/<action>`
+// shape; the one value to confirm against your infra deployment (override via serveSprig's
+// `auth.exchangePath` or the INFRA_EXCHANGE_PATH env var).
+const DEFAULT_EXCHANGE_PATH = "/api/authz/exchange";
 let firebaseConfigCache: { body: string; at: number } | null = null;
 
-async function serveAuthGateway(req: Request, infraUrl: string): Promise<Response | null> {
+async function serveAuthGateway(
+  req: Request,
+  infraUrl: string,
+  exchangePath: string,
+): Promise<Response | null> {
   const path = new URL(req.url).pathname;
   const infra = infraUrl.replace(/\/+$/, "");
 
@@ -295,6 +309,36 @@ async function serveAuthGateway(req: Request, infraUrl: string): Promise<Respons
     });
   }
 
+  if (path === "/auth/exchange") {
+    if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: { allow: "POST" } });
+    const raw = await req.text();
+    if (raw.length > MAX_LOGIN_BODY) return new Response("Payload Too Large", { status: 413 });
+    let token = "";
+    try {
+      const body = JSON.parse(raw) as { token?: unknown };
+      if (typeof body.token === "string") token = body.token;
+    } catch { /* handled by the 400 below */ }
+    if (!token) {
+      return new Response(JSON.stringify({ message: "token required" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    // Server-to-server exchange: infra swaps the opaque handle for the offline-verifiable session
+    // bearer. Without this an opaque `?token=` was stored VERBATIM as the bearer and failed keep's
+    // JWKS verification → 401 on every /api call. Pass infra's verdict through verbatim.
+    const res = await fetch(`${infra}${exchangePath}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    }).catch(() => null);
+    if (!res) return new Response("auth upstream unreachable", { status: 502 });
+    return new Response(await res.text(), {
+      status: res.status,
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  }
+
   return null;
 }
 
@@ -314,6 +358,7 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
   // Firebase/Google sign-in gateway (loginWithGoogle's server half) — mounted only when an
   // infra URL is resolvable; else /auth is left to the app (backward compatible).
   const authInfraUrl = config.auth?.infraUrl ?? Deno.env.get("INFRA_URL") ?? "";
+  const authExchangePath = config.auth?.exchangePath ?? Deno.env.get("INFRA_EXCHANGE_PATH") ?? DEFAULT_EXCHANGE_PATH;
 
   if (base === apiPrefix || base === docsPrefix) {
     throw new Error(`serveSprig: base "${base}" collides with a reserved keep prefix`);
@@ -343,7 +388,7 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
       // same-origin /auth sign-in gateway (the server half of sprig's loginWithGoogle),
       // when an infra URL is configured. Returns null for non-/auth paths → falls through.
       if (authInfraUrl) {
-        const authRes = await serveAuthGateway(req, authInfraUrl);
+        const authRes = await serveAuthGateway(req, authInfraUrl, authExchangePath);
         if (authRes) return authRes;
       }
       // built assets → static dir (immutable only for content-addressed requests)
