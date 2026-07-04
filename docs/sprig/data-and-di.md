@@ -13,7 +13,7 @@ injector and returns the page's `@inputs`:
 
 ```ts
 // pages/workbench/resolve.ts
-import { inject, type Resolve } from "@sprig/core";
+import { inject, type Resolve } from "@mrg-keystone/sprig";
 import { DiscoveryService } from "../../services/discovery/mod.ts";
 
 export const resolve: Resolve = async (ctx) => {
@@ -44,7 +44,7 @@ A service is a class decorated with `@Injectable`. The `scope` controls which si
 it:
 
 ```ts
-import { Backend, inject, Injectable } from "@sprig/core";
+import { Backend, inject, Injectable } from "@mrg-keystone/sprig";
 
 @Injectable({ scope: "server" })   // "server" | "client" | "both" (default "both")
 export class DiscoveryService {
@@ -70,7 +70,7 @@ injecting a token whose scope doesn't match the current side throws —
 For non-class providers (config objects, factories), use `token`:
 
 ```ts
-import { token } from "@sprig/core";
+import { token } from "@mrg-keystone/sprig";
 export const ApiBase = token<string>("ApiBase", { scope: "both", factory: () => "/api" });
 // inject(ApiBase) → "/api"
 ```
@@ -99,7 +99,7 @@ A resolver/service can set the response status for a matched route whose resourc
 Capture the request injector synchronously (at construction), then call `setResponseStatus`:
 
 ```ts
-import { Backend, currentInjector, inject, Injectable, setResponseStatus } from "@sprig/core";
+import { Backend, currentInjector, inject, Injectable, setResponseStatus } from "@mrg-keystone/sprig";
 
 @Injectable({ scope: "server" })
 export class IssueService {

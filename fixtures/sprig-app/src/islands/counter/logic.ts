@@ -1,6 +1,6 @@
 // counter — a sprig island with a real `count` signal (the editable control the
 // preview harness picks up via onIslandMounted + isSignal).
-import { defineComponent, signal } from "@sprig/core";
+import { defineComponent, signal } from "@mrg-keystone/sprig";
 
 export default defineComponent({
   setup: () => {

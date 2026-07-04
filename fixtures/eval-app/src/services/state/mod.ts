@@ -2,7 +2,7 @@
 // (pages, islands). The framework serializes it to localStorage on every navigation
 // and on reload, and restores it on load — so state survives both. state.reset()
 // restores these defaults AND clears the saved copy in localStorage.
-import { Injectable, StateService } from "@sprig/core";
+import { Injectable, StateService } from "@mrg-keystone/sprig";
 
 @Injectable({ providedIn: "root", scope: "both" })
 export default class State extends StateService {

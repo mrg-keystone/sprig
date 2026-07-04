@@ -3,8 +3,8 @@
 //   /admin/danger         — requireAuth (inherited) THEN requireAdmin (own, async)
 //   /go/login/:user, /go/logout — "action" routes: no `load`, their guard always
 //                                 redirects, so the guard IS the whole behavior
-import { bootstrap, defineRoutes, type Route, type SprigApp } from "@sprig/core";
-import { createRenderer } from "@sprig/keep";
+import { bootstrap, defineRoutes, type Route, type SprigApp } from "@mrg-keystone/sprig";
+import { createRenderer } from "@mrg-keystone/sprig/keep";
 import { dirname, fromFileUrl } from "@std/path";
 import { loginAs, logout, requireAdmin, requireAuth } from "./guards.ts";
 

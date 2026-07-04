@@ -8,7 +8,7 @@
 // to the stub keep (which answers 200).
 import { assert, assertEquals } from "jsr:@std/assert";
 import { serveSprig } from "./mod.ts";
-import type { SprigApp } from "@sprig/core";
+import type { SprigApp } from "@mrg-keystone/sprig";
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024; // mirrors the (unexported) source constant
 

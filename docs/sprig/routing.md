@@ -9,7 +9,7 @@ table (`defineRoutes`), an SSR renderer (`createRenderer`), and `bootstrap`.
 
 ```ts
 // src/main.ts
-import { bootstrap, defineRoutes, type Route, type SprigApp } from "@sprig/core";
+import { bootstrap, defineRoutes, type Route, type SprigApp } from "@mrg-keystone/sprig";
 import { dirname, fromFileUrl } from "@std/path";
 import { createRenderer, type SsrRenderer } from "../../framework/.sprig/compiler/mod.ts";
 import { resolve as workbenchResolve } from "./pages/workbench/resolve.ts";
@@ -64,7 +64,7 @@ there instead (bare path, prefixed with `base`). Guards attach to routes; a pare
 protect its whole subtree.
 
 ```ts
-import { defineRoutes, type Guard, inject } from "@sprig/core";
+import { defineRoutes, type Guard, inject } from "@mrg-keystone/sprig";
 import { Session } from "./services/session.ts";
 
 const requireAuth: Guard = (ctx) => {

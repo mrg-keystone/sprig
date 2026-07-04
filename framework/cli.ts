@@ -24,8 +24,8 @@ import { specRootOf } from "./.sprig/spec-root.ts";
 // machinery onto their load path, and a future top-level hazard in it can't poison every command.
 
 // the published-package version range a scaffolded app pins (core + its /keep + /cli
-// sub-exports all ship from @sprig/core). Bump in lockstep with the published version.
-/** The @sprig/core version range `sprig init` pins into a scaffolded app — the running CLI's OWN
+// sub-exports all ship from @mrg-keystone/sprig). Bump in lockstep with the published version.
+/** The @mrg-keystone/sprig version range `sprig init` pins into a scaffolded app — the running CLI's OWN
  *  version (from its deno.json), so a fresh app never targets a stale sprig. This was a frozen
  *  "^0.12.0" that silently scaffolded seven versions behind. */
 function sprigRange(): string {
@@ -136,7 +136,7 @@ function openUrl(url: string): void {
 }
 
 /** A per-project dir (in TMPDIR, not the project) where pinLocalSprig stashes the ORIGINAL of
- *  every deno.json it rewrites. A monorepo pins @sprig/* in the WORKSPACE ROOT (a Deno workspace
+ *  every deno.json it rewrites. A monorepo pins @mrg-keystone/sprig/* in the WORKSPACE ROOT (a Deno workspace
  *  member resolves its imports through the root, not the member) — so more than one config may be
  *  swapped, and each gets a `{ path, original }` backup so a `sprig dev` killed mid-session
  *  self-heals every one on the next run. */
@@ -367,23 +367,23 @@ async function attachShared(repo: string, e: DevLockEntry): Promise<void> {
   Deno.removeSignalListener("SIGTERM", stop);
 }
 
-/** Point the app's `@sprig/core` + `@sprig/keep` at the LOCAL install. The app pins them to
- *  JSR (`jsr:@sprig/core@…`) for portability, but importing its mod.ts with a JSR pin pulls a
- *  SECOND @sprig/core — the JSR build — into the process, and two web-tree-sitter wasm
+/** Point the app's `@mrg-keystone/sprig` + `@mrg-keystone/sprig/keep` at the LOCAL install. The app pins them to
+ *  JSR (`jsr:@mrg-keystone/sprig@…`) for portability, but importing its mod.ts with a JSR pin pulls a
+ *  SECOND @mrg-keystone/sprig — the JSR build — into the process, and two web-tree-sitter wasm
  *  instances can't co-exist (`Import #0 "./env"`). deno reads the app's deno.json at STARTUP,
  *  so the swap must be in place before the dev child launches. We back the original up to
  *  TMPDIR (self-heal) and return a sync restore. No-op when already local / no deno.json. */
 async function pinLocalSprig(appDir: string): Promise<{ active: boolean; restore: () => void }> {
   const installDir = installRoot();
   const locals: Record<string, string> = {
-    "@sprig/core": join(installDir, "framework", ".sprig", "core.ts"),
-    "@sprig/keep": join(installDir, "packages", "keep", "mod.ts"),
+    "@mrg-keystone/sprig": join(installDir, "framework", ".sprig", "core.ts"),
+    "@mrg-keystone/sprig/keep": join(installDir, "packages", "keep", "mod.ts"),
   };
   // Walk from the app dir up to the filesystem root, rewriting EVERY deno.json(c) that pins a
-  // non-local @sprig/* to the local checkout. Critically this reaches the WORKSPACE ROOT: a Deno
-  // workspace member resolves its imports through the ROOT's map, so a monorepo pins @sprig/core
+  // non-local @mrg-keystone/sprig/* to the local checkout. Critically this reaches the WORKSPACE ROOT: a Deno
+  // workspace member resolves its imports through the ROOT's map, so a monorepo pins @mrg-keystone/sprig
   // in the root (not the UI member). deno reads it at STARTUP, so without rewriting the root the
-  // SSR resolves @sprig/core to the pinned JSR build while the client bundle (forcedImportMap)
+  // SSR resolves @mrg-keystone/sprig to the pinned JSR build while the client bundle (forcedImportMap)
   // uses local — a silent SSR/client sprig SPLIT (it surfaces the moment either side needs an
   // export the other's version lacks). Force BOTH to the one local checkout. Each rewritten file
   // is backed up to TMPDIR so a killed `sprig dev` self-heals every one (healLocalSprig).
@@ -445,7 +445,7 @@ async function pinLocalSprig(appDir: string): Promise<{ active: boolean; restore
 /** `dev`/`isolate` import the app's SSR renderer in-process, and that renderer dynamically
  *  imports the app's logic.ts — whose `$.*` aliases live in the APP's deno.json, not the
  *  installed CLI's (~/.sprig) config. So re-run under a MERGED config: the install's compiler
- *  deps (web-tree-sitter + node_modules for grammar.wasm, the local @sprig/core) PLUS the
+ *  deps (web-tree-sitter + node_modules for grammar.wasm, the local @mrg-keystone/sprig) PLUS the
  *  app's own imports (the `$` aliases, @danet/core, …), with the app's relative paths made
  *  absolute. No-op once merged, or when run from somewhere without an install deno.json. */
 async function withMergedConfig(appDir: string): Promise<void> {
@@ -466,7 +466,7 @@ async function withMergedConfig(appDir: string): Promise<void> {
   }
   const imports: Record<string, unknown> = { ...(rtCfg.imports as Record<string, unknown> ?? {}) };
   for (const [k, v] of Object.entries(appCfg.imports ?? {})) {
-    if (k === "@sprig/core" || k === "@sprig/keep") continue; // keep the install's local sprig + compiler
+    if (k === "@mrg-keystone/sprig" || k === "@mrg-keystone/sprig/keep") continue; // keep the install's local sprig + compiler
     if (typeof v === "string" && /^\.\.?\//.test(v)) {
       let abs = toFileUrl(join(appAbs, v)).href;
       if (v.endsWith("/") && !abs.endsWith("/")) abs += "/"; // preserve prefix-mapping trailing slash
@@ -477,7 +477,7 @@ async function withMergedConfig(appDir: string): Promise<void> {
   }
   const mergedPath = join(installDir, ".sprig-app.json");
   await Deno.writeTextFile(mergedPath, JSON.stringify({ ...rtCfg, imports }, null, 2));
-  // Pin the app's @sprig/* to the LOCAL install for the child run (deno reads the app's
+  // Pin the app's @mrg-keystone/sprig/* to the LOCAL install for the child run (deno reads the app's
   // deno.json at startup, so the swap must precede the launch). Restore on normal exit AND on
   // Ctrl-C; a SIGKILL is caught by healLocalSprig on the next run.
   const pin = await pinLocalSprig(appDir);
@@ -520,7 +520,7 @@ function devCacheDir(appDir: string): string {
 }
 
 async function build(appDir = ".", outDir = join(Deno.cwd(), "static"), rune = false): Promise<void> {
-  // --rune: consolidate the workspace config FIRST (pin @sprig at the root, strip it from every
+  // --rune: consolidate the workspace config FIRST (pin @mrg-keystone/sprig at the root, strip it from every
   // member) so the client build sees pin-free members that inherit the ONE root runtime — a
   // member's own pin would scope its islands to a second copy (dual-core). Must precede buildClient.
   if (rune) await emitRuneComposition(appDir, outDir);
@@ -551,9 +551,9 @@ async function collectTs(dir: string, out: string[] = []): Promise<string[]> {
 }
 
 /** `sprig check` — typecheck the app under the SAME forced import map the build uses
- *  (@sprig/core → the CLI's one runtime). This REPLACES a standalone `deno check` once an app
- *  drops its @sprig/core pin (the CLI is the sole runtime owner): the app authors against the
- *  @sprig/core interface, the CLI supplies the one implementation, so what typechecks is
+ *  (@mrg-keystone/sprig → the CLI's one runtime). This REPLACES a standalone `deno check` once an app
+ *  drops its @mrg-keystone/sprig pin (the CLI is the sole runtime owner): the app authors against the
+ *  @mrg-keystone/sprig interface, the CLI supplies the one implementation, so what typechecks is
  *  exactly what builds — there is no second copy to drift against. */
 async function check(appDir = "."): Promise<void> {
   const srcDir = join(resolve(appDir), "src");
@@ -858,7 +858,7 @@ async function writeRuneServe(gitRoot: string, uiRel: string, serverRel: string,
       `//   /ui    → the SSR app        /api/* → the keep backend (token-gated)        /docs → Swagger`,
       `//`,
       `// Re-run \`sprig build --rune\` after changing pages/islands to refresh ${assetsRel}/.`,
-      `import { serveSprig } from "@sprig/keep";`,
+      `import { serveSprig } from "@mrg-keystone/sprig/keep";`,
       `import { fromFileUrl } from "@std/path";`,
       `import { api } from "./${serverRel}/bootstrap/mod.ts";`,
       `import { sprigApp } from "./${uiRel}/src/mod.ts";`,
@@ -877,7 +877,7 @@ async function writeRuneServe(gitRoot: string, uiRel: string, serverRel: string,
 }
 
 /** Make the git-root deno.json a Deno workspace over the UI + backend packages, and give it
- *  the two imports serve.ts itself needs (@sprig/keep + @std/path) — matched to the UI's
+ *  the two imports serve.ts itself needs (@mrg-keystone/sprig/keep + @std/path) — matched to the UI's
  *  versions so keep's `Backend` token is the SAME module instance (a version skew → "Backend
  *  is not bound"). Merges into an existing config; never drops the user's other fields. */
 async function ensureRuneWorkspace(gitRoot: string, uiRel: string, serverRel: string): Promise<void> {
@@ -897,22 +897,22 @@ async function ensureRuneWorkspace(gitRoot: string, uiRel: string, serverRel: st
   cfg.workspace = ws;
   // 2. workspace-root imports, matched to the UI member's exact versions so keep's `Backend`
   //    token is the SAME module instance (a version skew → "Backend is not bound"):
-  //      · @sprig/keep + @std/path — what serve.ts itself imports.
-  //      · @sprig/core + @preact/signals-core — needed only when the build runs from a
+  //      · @mrg-keystone/sprig/keep + @std/path — what serve.ts itself imports.
+  //      · @mrg-keystone/sprig + @preact/signals-core — needed only when the build runs from a
   //        working-tree (dev-installed) sprig: the generated island entries import the
-  //        compiler's hydrate.ts by a file:// path OUTSIDE every member, so its `@sprig/core`
+  //        compiler's hydrate.ts by a file:// path OUTSIDE every member, so its `@mrg-keystone/sprig`
   //        resolves against the ROOT map, not a member's. (Harmless under a JSR sprig, where
-  //        hydrate.ts resolves @sprig/core within its own package.)
+  //        hydrate.ts resolves @mrg-keystone/sprig within its own package.)
   const uiCfg = await readJson(join(gitRoot, uiRel, "deno.json"));
   const uiImports = (uiCfg?.imports ?? {}) as Record<string, string>;
   const imports = (cfg.imports && typeof cfg.imports === "object") ? cfg.imports as Record<string, string> : {};
-  imports["@sprig/core"] ??= uiImports["@sprig/core"] ?? "jsr:@sprig/core@0.12";
-  imports["@sprig/keep"] ??= uiImports["@sprig/keep"] ?? "jsr:@sprig/core@0.12/keep";
+  imports["@mrg-keystone/sprig"] ??= uiImports["@mrg-keystone/sprig"] ?? "jsr:@mrg-keystone/sprig@0.12";
+  imports["@mrg-keystone/sprig/keep"] ??= uiImports["@mrg-keystone/sprig/keep"] ?? "jsr:@mrg-keystone/sprig@0.12/keep";
   imports["@std/path"] ??= uiImports["@std/path"] ?? "jsr:@std/path@^1";
   imports["@preact/signals-core"] ??= uiImports["@preact/signals-core"] ?? "npm:@preact/signals-core@^1";
   cfg.imports = imports;
-  // 2b. @sprig/* belongs at the ROOT only — strip it from every member (like `unstable` below).
-  //     A workspace member with its OWN @sprig/core pin scopes its files to that copy; if it
+  // 2b. @mrg-keystone/sprig/* belongs at the ROOT only — strip it from every member (like `unstable` below).
+  //     A workspace member with its OWN @mrg-keystone/sprig pin scopes its files to that copy; if it
   //     drifts from the root, the client bundle carries TWO runtimes (dead islands) AND, on the
   //     server, an OLD core whose bootstrap silently ignores route guards — an auth bypass we hit
   //     in practice. With the pin at the root only, members INHERIT the one runtime: single-core,
@@ -923,7 +923,7 @@ async function ensureRuneWorkspace(gitRoot: string, uiRel: string, serverRel: st
     if (!mCfg || typeof mCfg.imports !== "object") continue;
     const mImports = mCfg.imports as Record<string, string>;
     let changed = false;
-    for (const k of ["@sprig/core", "@sprig/core/", "@sprig/keep"]) {
+    for (const k of ["@mrg-keystone/sprig", "@mrg-keystone/sprig/", "@mrg-keystone/sprig/keep"]) {
       if (k in mImports) {
         delete mImports[k];
         changed = true;
@@ -1318,8 +1318,8 @@ async function init(dir = "."): Promise<void> {
     "$.pages/": "./src/pages/",
     "$.shared-components/": "./src/shared-components/",
     "$.services/": "./src/services/",
-    "@sprig/core": "jsr:@sprig/core@${range}",
-    "@sprig/keep": "jsr:@sprig/core@${range}/keep",
+    "@mrg-keystone/sprig": "jsr:@mrg-keystone/sprig@${range}",
+    "@mrg-keystone/sprig/keep": "jsr:@mrg-keystone/sprig@${range}/keep",
     "@mrg-keystone/rune": "jsr:@mrg-keystone/rune@${runeSpec}",
     "reflect-metadata": "npm:reflect-metadata@0.1.13",
     "@std/path": "jsr:@std/path@^1",
@@ -1340,7 +1340,7 @@ async function init(dir = "."): Promise<void> {
       `//   /api/* + /docs*  → the keep backend (token-gated; the channel browser islands use).`,
       `//   everything else  → the SSR app, with keep's in-process client bound to the Backend`,
       `//                      DI token — pages read data via inject(Backend), no TCP, no token.`,
-      `import { serveSprig } from "@sprig/keep";`,
+      `import { serveSprig } from "@mrg-keystone/sprig/keep";`,
       `import { api } from "./bootstrap/mod.ts";`,
       `import { sprigApp } from "$";`,
       ``,
@@ -1370,8 +1370,8 @@ async function init(dir = "."): Promise<void> {
       `  defineRoutes,`,
       `  type Route,`,
       `  type SprigApp,`,
-      `} from "@sprig/core";`,
-      `import { createRenderer } from "@sprig/keep";`,
+      `} from "@mrg-keystone/sprig";`,
+      `import { createRenderer } from "@mrg-keystone/sprig/keep";`,
       `import { dirname, fromFileUrl } from "@std/path";`,
       ``,
       `export const routes: Route[] = defineRoutes([`,
@@ -1412,7 +1412,7 @@ async function init(dir = "."): Promise<void> {
       `// A page is its template + this class. onServerInit runs on the server before the`,
       `// page renders — set fields here (fetch data via inject(Backend)) and the template`,
       `// binds to them. The instance is snapshotted to the browser; onBrowserInit runs there.`,
-      `import { inject } from "@sprig/core";`,
+      `import { inject } from "@mrg-keystone/sprig";`,
       `import State from "$.services/state/mod.ts";`,
       ``,
       `export default class Home {`,
@@ -1431,7 +1431,7 @@ async function init(dir = "."): Promise<void> {
       `// (pages, islands). The framework serializes it to localStorage on every navigation`,
       `// and on reload, and restores it on load — so state survives both. state.reset()`,
       `// restores these defaults AND clears the saved copy in localStorage.`,
-      `import { Injectable, StateService } from "@sprig/core";`,
+      `import { Injectable, StateService } from "@mrg-keystone/sprig";`,
       ``,
       `@Injectable({ providedIn: "root", scope: "both" })`,
       `export default class State extends StateService {`,
@@ -1635,7 +1635,7 @@ const USAGE = `sprig — the framework CLI
   sprig build [appDir] [--rune]  code-split islands + scope CSS + Tailwind → static/ (default: .; never annotate)
                                   --rune also folds the sibling keep backend + this UI into a git-root
                                   serve.ts (serveSprig) and makes the root deno.json a Deno workspace
-  sprig check [appDir]           typecheck the app under the CLI runtime (the @sprig/core-pin-free
+  sprig check [appDir]           typecheck the app under the CLI runtime (the pin-free
                                   replacement for deno check — the CLI owns the one runtime)
   sprig isolate [appDir]         component/page workbench — develop in isolation (default: .)
   sprig serve [entry]            run the app's host entry under its deno.json (default: serve.ts)

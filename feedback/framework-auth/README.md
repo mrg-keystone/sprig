@@ -93,18 +93,18 @@ bearer. (`repro.sh` demonstrates raw-token → 401 vs exchanged-bearer → autho
 
 ## Evidence the surface is incomplete: apps still hand-roll it
 
-alfred does **not** use `@sprig/core`'s auth — it ships its own fork
+alfred does **not** use `@mrg-keystone/sprig`'s auth — it ships its own fork
 (`ui/src/services/backend/client.ts` + `ui/src/guards.ts` + `ui/bootstrap/auth-gateway.ts`), and
 the fork has **diverged**: it uses a different cookie name (`alfred_session` vs sprig's
 `sprig_session`), and its `seedTokenFromUrl` hard-codes `location.replace("/ui")`. That an app
 re-implemented the whole thing (worse) is the strongest signal the framework surface isn't
 complete/opinionated enough to just adopt. Goal: alfred deletes all three files and imports
-`authFetch` / `getUserData` / `logout` from `@sprig/core`, and a sprig-provided guard.
+`authFetch` / `getUserData` / `logout` from `@mrg-keystone/sprig`, and a sprig-provided guard.
 
 ## Proposed surface
 
 ```ts
-// @sprig/core (client)
+// @mrg-keystone/sprig (client)
 authFetch(input: RequestInfo, init?: RequestInit): Promise<Response>  // fetch-shaped; cookie rides along; 401 → refresh once → retry
 getUserData(): { name: string; email: string; grants: string[] } | null   // null when unauthenticated
 logout(): Promise<void>                                              // clears server session + cookie (+ infra revoke)

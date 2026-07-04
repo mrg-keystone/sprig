@@ -18,7 +18,7 @@ import { makeServerCtx, withServerInjector } from "./island.ts";
 import { versionOf } from "./hash.ts";
 import { componentScopeId } from "./scope.ts";
 import { perfConfig, type PerfConfig, perfHeadSnippet } from "./perf.ts";
-import type { ComponentDef as CoreComponentDef, MatchedLevel, Resolve } from "@sprig/core";
+import type { ComponentDef as CoreComponentDef, MatchedLevel, Resolve } from "@mrg-keystone/sprig";
 
 export interface SsrRenderer {
   /** Render the matched CHAIN (outer layouts → leaf page) nested inside the shell, return a

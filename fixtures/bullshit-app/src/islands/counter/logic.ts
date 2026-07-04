@@ -1,7 +1,7 @@
 // A HEALTHY island (the control): it has a logic.ts, so it hydrates and its
 // (click) handlers fire. Pure client state via a signal — no server write, so
 // no optimistic pattern needed. The audit should NOT flag this one.
-import { signal } from "@sprig/core";
+import { signal } from "@mrg-keystone/sprig";
 
 export default class Counter {
   count = signal(0);

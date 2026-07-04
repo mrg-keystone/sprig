@@ -1,4 +1,4 @@
-// @sprig/core auth — the client half of sprig's Firebase/Google sign-in, owned by the
+// @mrg-keystone/sprig auth — the client half of sprig's Firebase/Google sign-in, owned by the
 // framework so apps don't hand-roll (and subtly misbuild) the popup → exchange → bearer
 // transport dance. Pairs with the server /auth gateway that serveSprig auto-mounts
 // (packages/keep/mod.ts): the gateway proxies to infra, this attaches the resulting
@@ -19,7 +19,7 @@
 // keep's Deno-KV session store; see tooling/rune/feedback/keep-session-store. Until it ships,
 // a lapsed bearer signs out and the next navigation re-authenticates.
 //
-// SSR-SAFE: this module is re-exported from @sprig/core, which the SERVER imports too, so
+// SSR-SAFE: this module is re-exported from @mrg-keystone/sprig, which the SERVER imports too, so
 // every browser-API access (document / localStorage / location) is typeof-guarded and the
 // on-load side effects no-op outside the browser.
 

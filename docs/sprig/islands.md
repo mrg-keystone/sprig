@@ -11,7 +11,7 @@ on its trigger.
 
 ```ts
 // shared-components/counter/logic.ts
-import { defineComponent, signal } from "@sprig/core";
+import { defineComponent, signal } from "@mrg-keystone/sprig";
 
 export default defineComponent({
   trigger: "visible",          // "load" (default) | "idle" | "visible" | "interaction"
@@ -41,7 +41,7 @@ export default defineComponent({
 </div>
 ```
 
-## Reactive primitives (from `@sprig/core`)
+## Reactive primitives (from `@mrg-keystone/sprig`)
 
 Templates read **both** signals and computeds as `name()`.
 

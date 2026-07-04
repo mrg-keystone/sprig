@@ -4,7 +4,7 @@
 // tiny entry `isl.<sel>.ts` that imports just that island's logic + AST and calls
 // registerIsland(). It also generates the eager loader `client.ts`. All entries are
 // bundled in ONE `deno bundle --code-splitting` pass, so esbuild dedups the shared
-// runtime (@sprig/core + interpreter + hydrate) into a single content-hashed chunk
+// runtime (@mrg-keystone/sprig + interpreter + hydrate) into a single content-hashed chunk
 // referenced by every entry — never duplicated. Output:
 //   <out>/client.js          the eager loader (scans DOM, lazy-loads islands by trigger)
 //   <out>/isl.<sel>.js       one tiny chunk per island (dynamic-imported on its trigger)
@@ -177,7 +177,7 @@ export async function buildClient(srcDir: string, outDir: string): Promise<Build
     }
   }
   const entries = [join(genDir, "client.ts"), ...islands.map((i) => join(genDir, `isl.${i.sel}.ts`))];
-  // Run the bundle under a map that forces @sprig/core to the CLI's ONE runtime (see
+  // Run the bundle under a map that forces @mrg-keystone/sprig to the CLI's ONE runtime (see
   // forcedImportMap): this is what makes single-core structural rather than merely gated. The
   // map lives in genDir, which is removed right after the bundle.
   const mapPath = join(genDir, "import-map.json");
@@ -193,8 +193,8 @@ export async function buildClient(srcDir: string, outDir: string): Promise<Build
   await Deno.remove(genDir, { recursive: true }).catch(() => {});
 
   // 3b. GATE: the bundle MUST carry exactly one copy of the runtime. Code-splitting dedups
-  // @sprig/core into a single shared chunk ONLY when every entry resolves it to the SAME
-  // module; a version/pin drift (the CLI's runtime vs the app's @sprig/core) yields TWO runtime
+  // @mrg-keystone/sprig into a single shared chunk ONLY when every entry resolves it to the SAME
+  // module; a version/pin drift (the CLI's runtime vs the app's @mrg-keystone/sprig) yields TWO runtime
   // chunks — a "dual-core" bundle whose islands all die at hydration with `inject() must be
   // called synchronously` (the module-global DI context can't cross two copies). That failure is
   // silent at build + typecheck and only shows in the browser after deploy, so catch it HERE,
@@ -397,7 +397,7 @@ async function cssFromVariables(srcDir: string): Promise<string> {
 /** Build the import map the client bundle runs under: the APP's own imports (so island
  *  logic resolves its app specifiers — `$.services/…`, etc.) with the sprig runtime FORCED
  *  to the CLI's own copy. This is the structural fix for the dual-core bundle: without it the
- *  CLI's generated loader/`hydrate.ts` resolve `@sprig/core` through the CLI's version while
+ *  CLI's generated loader/`hydrate.ts` resolve `@mrg-keystone/sprig` through the CLI's version while
  *  the island `logic.ts` resolves it through the app's pin — two `core.ts` ⇒ two runtime
  *  chunks ⇒ every island dies at hydration. Forcing BOTH to the one CLI runtime makes a single
  *  shared runtime chunk guaranteed, regardless of what (if anything) the app pins.
@@ -442,7 +442,7 @@ export async function forcedImportMap(srcDir: string): Promise<{ imports: Record
   // FORCE the runtime to the CLI's own modules — one core.ts + one signals for every entry.
   // `new URL(..., import.meta.url)` resolves against THIS file whether the CLI runs from a
   // local checkout (file://) or JSR (https://), the same trick the generated entries already use.
-  imports["@sprig/core"] = new URL("../core.ts", import.meta.url).href;
+  imports["@mrg-keystone/sprig"] = new URL("../core.ts", import.meta.url).href;
   imports["@preact/signals-core"] = "npm:@preact/signals-core@^1.8.0";
   return { imports };
 }
@@ -454,7 +454,7 @@ const RUNTIME_SENTINEL = "__sprig_runtime";
 
 /** Fail the build if the emitted client bundle carries MORE THAN ONE copy of the sprig
  *  runtime (a "dual-core" bundle). Exactly one copy is the invariant the DI + hydration model
- *  depends on; two means the client loader and the island chunks resolved @sprig/core to
+ *  depends on; two means the client loader and the island chunks resolved @mrg-keystone/sprig to
  *  different versions and esbuild could not dedup them, so every island would fail to hydrate
  *  in the browser. Exported for direct testing. (Only >1 fails: a count of 0 would mean the
  *  sentinel moved, which is a framework change, not a user's dual-core — don't block builds on
@@ -471,10 +471,10 @@ export async function assertSingleRuntime(outDir: string): Promise<void> {
     throw new Error(
       `sprig build: DUAL-CORE bundle — the sprig runtime was emitted into ${carriers.length} ` +
         `chunks (${carriers.sort().join(", ")}), but it must be exactly one. Two copies means the ` +
-        `island logic resolved @sprig/core to a DIFFERENT copy than the CLI's loader/hydrate, so ` +
+        `island logic resolved @mrg-keystone/sprig to a DIFFERENT copy than the CLI's loader/hydrate, so ` +
         `code-splitting could not dedup them. In the browser every island would fail to hydrate ` +
         `with "inject() must be called synchronously" — the DI context is module-global and cannot ` +
-        `cross two runtime copies. Fix: REMOVE @sprig/core (and @sprig/core/) from the app's ` +
+        `cross two runtime copies. Fix: REMOVE @mrg-keystone/sprig (and @mrg-keystone/sprig/) from the app's ` +
         `deno.json — the CLI supplies the one runtime. In a Deno workspace, remove it from the ` +
         `MEMBER that holds the islands (e.g. ui/deno.json): a member's own pin scopes the island ` +
         `logic to a second copy that the CLI's import map cannot override.`,

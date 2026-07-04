@@ -12,7 +12,7 @@ is **static** (ships no JS).
 template scope — its fields and methods are what `{{ }}`, `[prop]`, and `(event)` bind to.
 
 ```ts
-import { inject } from "@sprig/core";
+import { inject } from "@mrg-keystone/sprig";
 import State from "../../services/state/mod.ts";
 
 export default class Greeter {
@@ -29,7 +29,7 @@ export default class Greeter {
 small islands built from signals.
 
 ```ts
-import { defineComponent, signal } from "@sprig/core";
+import { defineComponent, signal } from "@mrg-keystone/sprig";
 
 export default defineComponent({
   setup: () => {
@@ -62,7 +62,7 @@ JSON-serializable values survive (no functions/class instances; non-finite numbe
 
 ## Signals
 
-`signal`/`computed`/`effect`/`isSignal` from `@sprig/core`. A signal is callable to read
+`signal`/`computed`/`effect`/`isSignal` from `@mrg-keystone/sprig`. A signal is callable to read
 and has `.set`/`.update`:
 
 ```ts
@@ -85,7 +85,7 @@ component must be an **island** (it has a `logic.ts`) so it can react on the cli
 The shape is **snapshot → mutate → call → reconcile**:
 
 ```ts
-import { inject, signal } from "@sprig/core";
+import { inject, signal } from "@mrg-keystone/sprig";
 import Api from "../../services/api/mod.ts";
 
 export default class Todo {
@@ -125,7 +125,7 @@ Rules of thumb:
 `@Injectable` registers a class; `inject(Token)` resolves it from the active injector.
 
 ```ts
-import { Injectable, inject, Backend } from "@sprig/core";
+import { Injectable, inject, Backend } from "@mrg-keystone/sprig";
 
 @Injectable({ providedIn: "root", scope: "both" })   // scope: "both" | "server" | "client"
 class Api {
@@ -149,7 +149,7 @@ A `StateService` subclass is a DI singleton whose serializable fields persist to
 **localStorage** across navigation + full reload, restored on load.
 
 ```ts
-import { Injectable, StateService } from "@sprig/core";
+import { Injectable, StateService } from "@mrg-keystone/sprig";
 
 @Injectable({ providedIn: "root", scope: "both" })
 export default class State extends StateService {

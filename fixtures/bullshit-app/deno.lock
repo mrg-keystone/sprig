@@ -34,7 +34,7 @@
           "jsr:@std/path@1"
         ]
       },
-      "jsr:@sprig/core@0.12.10": {
+      "jsr:@mrg-keystone/sprig@0.12.10": {
         "dependencies": [
           "jsr:@std/assert@1",
           "jsr:@std/fs@1",

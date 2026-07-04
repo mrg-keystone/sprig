@@ -13,7 +13,7 @@
 // snapshot of the instance's serializable own fields (signal VALUES included), taken
 // after onServerInit and restored before onBrowserInit — so the client's first paint
 // matches the server's and onBrowserInit sees the server-produced state.
-import { isSignal } from "@sprig/core";
+import { isSignal } from "@mrg-keystone/sprig";
 
 // deno-lint-ignore no-explicit-any
 type AnyInstance = Record<string, any>;

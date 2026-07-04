@@ -33,14 +33,14 @@ Controls: `/ui/widget/a` → 200 (Sprocket), `/ui/bogus` → 404 by design.
 **Root cause** — `src/pages/widget/resolve.ts:20` — on a miss the resolver returns
 `{ id, widget, notFound: true }` but never calls `setResponseStatus`, so `bootstrap.fetch`
 applies `root.status ?? 200` (`framework/.sprig/core.ts:550`) → default 200.
-**Fix** — import `{ setResponseStatus, currentInjector }` from `@sprig/core`; on the miss,
+**Fix** — import `{ setResponseStatus, currentInjector }` from `@mrg-keystone/sprig`; on the miss,
 `setResponseStatus(currentInjector(), 404)` before returning. The resolver is synchronous,
 so `currentInjector()` is still the active route injector (no construction-time capture
 needed). (build → `references/component-model.md`, data-and-di.)
 **Verify fixed** — `curl -i http://localhost:8099/ui/widget/nope | head -1` → `HTTP/1.1 404`;
 `/ui/widget/a` still `200`.
 **Fixed** — `src/pages/widget/resolve.ts`: import now `{ currentInjector, setResponseStatus, type Resolve }`
-from `@sprig/core`; on the miss (`widget === null`) call `setResponseStatus(currentInjector(), 404)`
+from `@mrg-keystone/sprig`; on the miss (`widget === null`) call `setResponseStatus(currentInjector(), 404)`
 before returning (resolver is synchronous, so `currentInjector()` is the active route injector →
 `injector.root.status = 404` → `core.ts:550` emits 404). `deno check` clean. The running dev server
 bundles resolvers at startup so the live curl still showed 200 — **Needs server restart** to observe

@@ -5,14 +5,14 @@
       "id": 0,
       "name": "scaffold-and-page-with-data",
       "prompt": "Start a new sprig app and add a home page that greets the user. The greeting text should be loaded on the server (e.g. \"Hello from the server\") and shown in the template. Give me the actual files and the commands to run it.",
-      "expected_output": "Scaffold via `sprig init` (CLI installed from jsr:@sprig/core/cli), then a page folder src/pages/home/ with template.html using {{ greeting }} and a logic.ts class whose onServerInit() sets this.greeting on the server. main.ts uses defineRoutes([{ path: \"\", load: \"pages/home\" }]) + createRenderer + bootstrap({ routes, base, renderer }) with NO modules map. Run with `deno task dev`.",
+      "expected_output": "Scaffold via `sprig init` (CLI installed from jsr:@mrg-keystone/sprig/cli), then a page folder src/pages/home/ with template.html using {{ greeting }} and a logic.ts class whose onServerInit() sets this.greeting on the server. main.ts uses defineRoutes([{ path: \"\", load: \"pages/home\" }]) + createRenderer + bootstrap({ routes, base, renderer }) with NO modules map. Run with `deno task dev`.",
       "files": [],
       "assertions": [
         "A component is a FOLDER (template.html + logic.ts), not a .tsx file",
         "Data is loaded in the page's logic.ts class onServerInit() (or a resolve.ts), not a Fresh handler/page()",
         "Routes use defineRoutes with `load: \"pages/home\"`; no per-page module map",
         "Template uses Angular-flavored {{ greeting }}, not JSX",
-        "App is wired with bootstrap({ routes, base, renderer }) and createRenderer from @sprig/keep",
+        "App is wired with bootstrap({ routes, base, renderer }) and createRenderer from @mrg-keystone/sprig/keep",
         "Run via the sprig CLI (`sprig init`, `deno task dev`), no Vite/_fresh/manifest"
       ]
     },

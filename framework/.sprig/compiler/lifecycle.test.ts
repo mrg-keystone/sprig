@@ -1,7 +1,7 @@
 // Proves the lifecycle + state-snapshot contract: the exact behaviours we agreed on,
 // as failing-if-reordered assertions.
 import { assert, assertEquals } from "jsr:@std/assert";
-import { signal } from "@sprig/core";
+import { signal } from "@mrg-keystone/sprig";
 import { destroyOnClient, hydrateOnClient, renderOnServer, snapshotOf } from "./lifecycle.ts";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

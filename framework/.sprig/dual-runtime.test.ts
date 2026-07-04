@@ -5,7 +5,7 @@
 // core.ts now detects the second copy at module init (browser-only) and flags it on
 // globalThis so the hydrate loop can attempt its one-shot recovery reload.
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { detectDualRuntime } from "@sprig/core";
+import { detectDualRuntime } from "@mrg-keystone/sprig";
 
 type Markers = { __sprig_runtime?: true; __sprig_runtime_dual?: true };
 

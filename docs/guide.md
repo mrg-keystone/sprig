@@ -147,7 +147,7 @@ The `setup` function returns the reactive scope the template reads.
 
 ```ts
 // shared-components/counter/logic.ts
-import { defineComponent, signal } from "@sprig/core";
+import { defineComponent, signal } from "@mrg-keystone/sprig";
 
 export default defineComponent({
   trigger: "visible",          // "load" (default) | "idle" | "visible" | "interaction"
@@ -171,7 +171,7 @@ export default defineComponent({
 </div>
 ```
 
-Reactivity primitives (from `@sprig/core`):
+Reactivity primitives (from `@mrg-keystone/sprig`):
 
 - `signal(initial)` → a callable accessor: read `count()`, write `count.set(v)`.
 - `computed(() => …)` → derived, read-only accessor.
@@ -201,7 +201,7 @@ template's inputs:
 
 ```ts
 // pages/board/resolve.ts
-import { inject, type Resolve } from "@sprig/core";
+import { inject, type Resolve } from "@mrg-keystone/sprig";
 import { BoardService } from "../../services/board/mod.ts";
 
 export const resolve: Resolve = async () => {
@@ -214,7 +214,7 @@ Services are `@Injectable` classes. The built-in `Backend` token is the in-proce
 client (SSR only — DI never crosses the wire):
 
 ```ts
-import { Backend, inject, Injectable, currentInjector, setResponseStatus } from "@sprig/core";
+import { Backend, inject, Injectable, currentInjector, setResponseStatus } from "@mrg-keystone/sprig";
 
 @Injectable({ scope: "server" })       // "server" | "client" | "both"
 export class BoardService {
@@ -260,7 +260,7 @@ compound of every selector. So `.card h3 { }` only matches *this* component's `.
 
 ```ts
 // src/main.ts
-import { bootstrap, defineRoutes, type Route, type SprigApp } from "@sprig/core";
+import { bootstrap, defineRoutes, type Route, type SprigApp } from "@mrg-keystone/sprig";
 import { createRenderer } from "<framework>/.sprig/compiler/mod.ts";
 import { resolve as boardResolve } from "./pages/board/resolve.ts";
 
@@ -292,7 +292,7 @@ soft-nav'd (the outlet is swapped, outside islands persist).
 ### Route guards
 
 ```ts
-import { type Guard, inject } from "@sprig/core";
+import { type Guard, inject } from "@mrg-keystone/sprig";
 
 const requireAuth: Guard = (ctx) => {
   if (!inject(Session).user) return ["login"];   // → 302 <base>/login
@@ -336,7 +336,7 @@ rebuilds and reloads.
 
 ```ts
 // serve.ts
-import { serveSprig } from "@sprig/keep";
+import { serveSprig } from "@mrg-keystone/sprig/keep";
 import { api } from "./server/bootstrap/mod.ts"; // a keep backend ({ backend, handler })
 import { app } from "./app/src/main.ts";
 
