@@ -1,0 +1,7 @@
+name: jsr.yml
+on: [push]
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "stamped by infra"
