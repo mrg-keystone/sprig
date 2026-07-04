@@ -30,6 +30,7 @@
     "jsr:@std/path@1": "1.1.5",
     "jsr:@std/path@1.0.6": "1.0.6",
     "jsr:@std/path@^1.1.5": "1.1.5",
+    "jsr:@std/semver@1": "1.0.8",
     "jsr:@std/semver@^1.0.8": "1.0.8",
     "jsr:@std/text@^1.0.19": "1.0.19",
     "npm:@anatine/zod-openapi@2.2.6": "2.2.6_openapi3-ts@4.6.0_zod@3.23.8",
@@ -65,7 +66,7 @@
         "jsr:@cliffy/internal",
         "jsr:@cliffy/table@1.2.1",
         "jsr:@std/fmt@^1.0.10",
-        "jsr:@std/semver",
+        "jsr:@std/semver@^1.0.8",
         "jsr:@std/text"
       ]
     },

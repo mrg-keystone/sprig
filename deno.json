@@ -35,7 +35,7 @@
     "sync:rune": "deno run -A scripts/sync-rune.ts"
   },
   "name": "@sprig/core",
-  "version": "0.19.1",
+  "version": "0.20.0",
   "license": "MIT",
   "exports": {
     ".": "./framework/.sprig/core.ts",
