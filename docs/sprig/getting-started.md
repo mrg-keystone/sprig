@@ -27,7 +27,7 @@ It creates:
 
 ```
 my-app/
-  deno.json                 # imports (@sprig/core, @sprig/keep, …) + tasks (dev/build/start)
+  deno.json                 # imports (@mrg-keystone/sprig, @mrg-keystone/sprig/keep, …) + tasks (dev/build/start)
   build.ts                  # calls buildClient(src, static)
   serve.ts                  # serveSprig({ keep, app, base: "/ui" }) — starter uses a no-op keep
   src/
@@ -78,7 +78,7 @@ reload. (Details: [cli.md](./cli.md).)
 
 ```ts
 // src/pages/home/resolve.ts
-import type { Resolve } from "@sprig/core";
+import type { Resolve } from "@mrg-keystone/sprig";
 export const resolve: Resolve = () => ({ name: "sprig" });
 ```
 
@@ -89,7 +89,7 @@ islands, so put it in `src/shared-components/` (or `pages/home/components/`):
 
 ```ts
 // src/shared-components/counter/logic.ts
-import { defineComponent, signal } from "@sprig/core";
+import { defineComponent, signal } from "@mrg-keystone/sprig";
 
 export default defineComponent({
   inputs: ["start"],

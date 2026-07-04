@@ -1,6 +1,6 @@
 # Serving & mounting the UI
 
-`@sprig/keep` is the server glue. It exposes the SSR renderer (`createRenderer`) and two
+`@mrg-keystone/sprig/keep` is the server glue. It exposes the SSR renderer (`createRenderer`) and two
 ways to serve the app. In dev you don't write any of this — `sprig dev` serves the app with
 HMR. For production the scaffold writes a `serve.ts` host file.
 
@@ -13,7 +13,7 @@ base })` returns one `{ fetch }` default export that **`deno serve` drives** —
 
 ```ts
 // serve.ts —  run it with:  deno serve -A --unstable-kv serve.ts
-import { serveSprig } from "@sprig/keep";
+import { serveSprig } from "@mrg-keystone/sprig/keep";
 import { api } from "./bootstrap/mod.ts"; // the keep backend: await bootstrapServer(...)
 import { sprigApp } from "$";             // the sprig app: bootstrap({ routes, renderer })
 
@@ -44,7 +44,7 @@ the request isn't ours.
 
 ```ts
 // bare Deno.serve — host owns everything but /ui:
-import { sprigUi } from "@sprig/keep";
+import { sprigUi } from "@mrg-keystone/sprig/keep";
 const ui = sprigUi({ app, base: "/ui", backend: api.backend }); // backend → inject(Backend) for SSR
 export default {
   fetch: (req: Request, info: Deno.ServeHandlerInfo) =>

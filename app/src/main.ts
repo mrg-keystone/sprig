@@ -1,8 +1,8 @@
 // The sprig UI member: route table + app. Each page's resolve.ts reads data
 // in-process via inject(Backend) (the isolate keep `server`); the SSR renderer renders
 // the matched folder-component (from the prebuilt template registry) into the shell.
-import { bootstrap, defineRoutes, type Route, type SprigApp } from "@sprig/core";
-import { createRenderer, type SsrRenderer } from "@sprig/keep";
+import { bootstrap, defineRoutes, type Route, type SprigApp } from "@mrg-keystone/sprig";
+import { createRenderer, type SsrRenderer } from "@mrg-keystone/sprig/keep";
 import { dirname, fromFileUrl } from "@std/path";
 
 // workbench/gallery resolve.ts are auto-loaded by their route `load` (no imports needed).

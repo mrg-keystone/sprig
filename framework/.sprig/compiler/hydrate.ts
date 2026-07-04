@@ -4,13 +4,13 @@
 // a dynamic import() of that island's OWN chunk (`isl.<sel>.js`) when its trigger
 // fires (load / idle / visible / interaction). Each island chunk calls
 // registerIsland(), which hydrates the matching elements. The interpreter + setup +
-// @sprig/core live in ONE shared chunk (esbuild --code-splitting dedups it), so the
+// @mrg-keystone/sprig live in ONE shared chunk (esbuild --code-splitting dedups it), so the
 // client root injector + signals are never duplicated across islands.
 //
 // Hydration itself reuses the SAME interpreter as SSR (renderNodes over the
 // serialized JSON AST — no wasm): re-render the island body inside an effect (so any
 // signal write re-paints) and wire (event) bindings via delegation on the island root.
-import { type Accessor, clientRoot, type ComponentCtx, effect, persistState, restoreState, runInInjector, signal, type WritableAccessor } from "@sprig/core";
+import { type Accessor, clientRoot, type ComponentCtx, effect, persistState, restoreState, runInInjector, signal, type WritableAccessor } from "@mrg-keystone/sprig";
 import { fromSerialized, type SerializedTemplate } from "./serialize.ts";
 import { evalStatement, type Scope } from "./expr.ts";
 import { type ComponentDef, type Handler, type MockSpec, type Registry, renderNodes } from "./render.ts";
@@ -185,7 +185,7 @@ export const loading = new Set<string>();
  *  handle on the mounted island — its element, selector, raw inputs, and the
  *  reactive `scope` setup() returned (whose signals ARE the island's state). The
  *  preview/inspection harness uses this to build an editable control surface by
- *  introspection (see isSignal in @sprig/core). No-op for normal apps. */
+ *  introspection (see isSignal in @mrg-keystone/sprig). No-op for normal apps. */
 export interface IslandMount {
   el: HTMLElement;
   sel: string;

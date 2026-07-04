@@ -15,7 +15,7 @@
 
 const PKG = "@mrg-keystone/rune";
 const [scope, name] = PKG.slice(1).split("/");
-const UA = "sprig-sync-rune/1.0; https://jsr.io/@sprig/core";
+const UA = "sprig-sync-rune/1.0; https://jsr.io/@mrg-keystone/sprig";
 
 // Files whose rune pins we own. server/ is the source of truth the scaffold reads; the fixtures are
 // standalone demo apps (not workspace members, so a `deno install` relock won't reach them) that

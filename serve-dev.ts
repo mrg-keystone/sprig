@@ -8,14 +8,14 @@
 // the user's components into app/src/_preview/targets/* — which lands under app/src, so the
 // dev server picks it up and hot-swaps. Structural changes (isolate/ cases, new components)
 // re-discover + re-generate the previews.
-import { serveSprig } from "@sprig/keep";
+import { serveSprig } from "@mrg-keystone/sprig/keep";
 import { createDevServer } from "./framework/.sprig/compiler/dev.ts";
 import { api } from "./server/bootstrap/mod.ts";
 import { discover } from "./server/src/core/business/discover/mod.ts";
 import { generatePreviews } from "./cli/lib/generate-previews.ts";
 import { basename, dirname, fromFileUrl, join, relative, toFileUrl } from "@std/path";
-import type { SprigApp } from "@sprig/core";
-import type { SsrRenderer } from "@sprig/keep";
+import type { SprigApp } from "@mrg-keystone/sprig";
+import type { SsrRenderer } from "@mrg-keystone/sprig/keep";
 
 const root = dirname(fromFileUrl(import.meta.url)); // the install root (repo or ~/.sprig)
 // The WORKBENCH working dir is per repo-branch (`~/.sprig/work/<repo-branch>`), so two projects —

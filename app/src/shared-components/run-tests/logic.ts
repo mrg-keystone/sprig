@@ -1,7 +1,7 @@
 // run-tests — per-case "▸ run" button + pass/fail dots, ported from RunTests.tsx.
 // An island embedded by the (static) gallery page; its `tests` input is the
 // case's spec files. Runs over the network channel /api/http/post-test-run.
-import { defineComponent, signal } from "@sprig/core";
+import { defineComponent, signal } from "@mrg-keystone/sprig";
 
 interface Res {
   title: string;

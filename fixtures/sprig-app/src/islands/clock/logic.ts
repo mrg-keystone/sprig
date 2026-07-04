@@ -1,4 +1,4 @@
-import { signal } from "@sprig/core";
+import { signal } from "@mrg-keystone/sprig";
 
 // A {setup} island that OPTS INTO the new client lifecycle (duck-typed). Proves
 // onBrowserInit fires after hydration and onBrowserDestroy cleans up on unmount.

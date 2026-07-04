@@ -8,7 +8,7 @@
     "lib": ["dom", "dom.asynciterable", "dom.iterable", "deno.ns", "esnext"]
   },
   "imports": {
-    "@sprig/core": "../framework/.sprig/core.ts",
+    "@mrg-keystone/sprig": "../framework/.sprig/core.ts",
     "@preact/signals-core": "npm:@preact/signals-core@^1.8.0",
     "web-tree-sitter": "npm:web-tree-sitter@^0.25",
     "@std/path": "jsr:@std/path@^1",

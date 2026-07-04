@@ -27,14 +27,14 @@ async function readJson(p: string): Promise<{ imports?: Record<string, string>; 
 
 /** Write the workbench app's deno.json so the client build resolves the PROJECT's `$.*` aliases
  *  (islands import `$.services/…`) — forcedImportMap walks up from `<wbApp>/src` and reads this.
- *  The app was copied OUT of the install tree, so the template's relative `@sprig/*` are re-pinned
+ *  The app was copied OUT of the install tree, so the template's relative `@mrg-keystone/sprig/*` are re-pinned
  *  to the install by absolute URL. Rewritten every run (the project — hence `$` — can change). */
 async function writeWorkbenchConfig(wbApp: string, projectDir: string): Promise<void> {
   const tmpl = await readJson(join(REPO, "app", "deno.json"));
   const proj = await readJson(join(projectDir, "deno.json"));
   const imports: Record<string, string> = { ...(tmpl.imports ?? {}) };
   for (const [k, v] of Object.entries(proj.imports ?? {})) {
-    if (k === "@sprig/core" || k === "@sprig/keep") continue; // the install owns the one runtime
+    if (k === "@mrg-keystone/sprig" || k === "@mrg-keystone/sprig/keep") continue; // the install owns the one runtime
     if (typeof v === "string" && /^\.\.?\//.test(v)) {
       let abs = toFileUrl(resolve(projectDir, v)).href;
       if (v.endsWith("/") && !abs.endsWith("/")) abs += "/"; // preserve a prefix mapping's trailing slash
@@ -43,8 +43,8 @@ async function writeWorkbenchConfig(wbApp: string, projectDir: string): Promise<
       imports[k] = v;
     }
   }
-  imports["@sprig/core"] = toFileUrl(join(REPO, "framework", ".sprig", "core.ts")).href;
-  imports["@sprig/keep"] = toFileUrl(join(REPO, "packages", "keep", "mod.ts")).href;
+  imports["@mrg-keystone/sprig"] = toFileUrl(join(REPO, "framework", ".sprig", "core.ts")).href;
+  imports["@mrg-keystone/sprig/keep"] = toFileUrl(join(REPO, "packages", "keep", "mod.ts")).href;
   await Deno.writeTextFile(join(wbApp, "deno.json"), JSON.stringify({ ...tmpl, imports }, null, 2));
 }
 

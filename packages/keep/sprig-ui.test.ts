@@ -2,7 +2,7 @@
 // null to pass through. Tested with a fake SprigApp so it doesn't need the full renderer.
 import { assert, assertEquals } from "jsr:@std/assert";
 import { sprigUi } from "./mod.ts";
-import type { SprigApp } from "@sprig/core";
+import type { SprigApp } from "@mrg-keystone/sprig";
 
 // a fake app that echoes the path it was asked to render, and remembers the env.
 function fakeApp(): { app: SprigApp; lastEnv: () => unknown } {

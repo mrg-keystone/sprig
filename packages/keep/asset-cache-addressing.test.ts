@@ -12,7 +12,7 @@ import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { join } from "@std/path";
 import { type KeepApi, serveSprig, sprigUi } from "./mod.ts";
 import { versionOf } from "../../framework/.sprig/compiler/hash.ts";
-import type { SprigApp } from "@sprig/core";
+import type { SprigApp } from "@mrg-keystone/sprig";
 
 async function makeAssets(files: Record<string, string> = {}): Promise<string> {
   const dir = await Deno.makeTempDir({ prefix: "sprig-asset-cc-" });

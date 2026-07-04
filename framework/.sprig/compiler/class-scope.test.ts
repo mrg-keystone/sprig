@@ -2,7 +2,7 @@
 // calls bind `this`, and prototype methods resolve inside event handlers (no spread).
 // Backward-compatible with today's plain-object/arrow-function scopes.
 import { assert, assertEquals } from "jsr:@std/assert";
-import { signal } from "@sprig/core";
+import { signal } from "@mrg-keystone/sprig";
 import { named, parseTemplate } from "./parse.ts";
 import { evalStatement, type Scope } from "./expr.ts";
 import { renderNodes } from "./render.ts";

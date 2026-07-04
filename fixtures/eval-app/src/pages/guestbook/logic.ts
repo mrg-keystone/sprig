@@ -8,7 +8,7 @@
 //
 // NOTE: a client-bundled logic.ts must import siblings with a RELATIVE path — the build
 // bundler does not resolve the `$.` deno.json aliases inside a client island chunk.
-import { inject } from "@sprig/core";
+import { inject } from "@mrg-keystone/sprig";
 import State from "../../services/state/mod.ts";
 
 export default class Guestbook {

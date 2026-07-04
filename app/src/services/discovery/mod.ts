@@ -1,7 +1,7 @@
 // DiscoveryService — reads the keep `server`'s discovery manifest in-process via
 // the Backend token (no TCP, no token), and flattens it into the per-case view
 // model the workbench sidebar + gallery render. Server-scoped: SSR only.
-import { Backend, inject, Injectable } from "@sprig/core";
+import { Backend, inject, Injectable } from "@mrg-keystone/sprig";
 import type { Case, Manifest, Problem } from "../../lib/types.ts";
 
 interface RawTest {

@@ -4,7 +4,7 @@
 // to the client. The navigator/palette/console derived views are computed() so
 // the template can iterate plain arrays. The stage bridge (postMessage to/from
 // the iframe) and test runs are unchanged — data over the wire, framework-agnostic.
-import { computed, defineComponent, effect, signal } from "@sprig/core";
+import { computed, defineComponent, effect, signal } from "@mrg-keystone/sprig";
 import type {
   Case,
   ControlView,

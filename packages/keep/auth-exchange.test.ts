@@ -4,7 +4,7 @@
 // these drive it with infra stubbed so no network is touched.
 import { assert, assertEquals } from "jsr:@std/assert";
 import { serveSprig } from "./mod.ts";
-import type { SprigApp } from "@sprig/core";
+import type { SprigApp } from "@mrg-keystone/sprig";
 
 const INFRA = "https://infra.test";
 const stubApp = {

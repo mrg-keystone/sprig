@@ -13,7 +13,7 @@
 // read the *current* case via a module-level handle — the preview app uses soft-nav,
 // so switching cases re-hydrates a new bridge in the SAME document; without this the
 // listeners would accumulate and each event would be logged N times.
-import { defineComponent, isSignal } from "@sprig/core";
+import { defineComponent, isSignal } from "@mrg-keystone/sprig";
 import type { ControlView, Surface } from "./types.ts";
 
 interface ControlDef {
