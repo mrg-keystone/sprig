@@ -838,22 +838,21 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// Firebase/Google sign-in + the session-bearer transport — sprig OWNS the auth flow so apps
-// don't hand-roll (and misbuild) it. `loginWithGoogle()` is the sign-in primitive; the rest is
-// the bearer lifecycle (store, auto-attach to /api, seed from a `?token=` magic link, drop on a
-// stale 401). Pairs with the same-origin /auth gateway serveSprig auto-mounts (@mrg-keystone/sprig/keep).
-// Re-exported here so an island simply does `import { loginWithGoogle } from "@mrg-keystone/sprig"`.
-// (auth.ts is SSR-safe — its on-load side effects are typeof-guarded, so this is inert server-side.)
+// Single-path sign-in — sprig OWNS the auth flow so apps don't hand-roll (and misbuild) it. Auth is
+// a server-managed httpOnly cookie: `login(token?)` (magic-link exchange or Google popup), an async
+// `getUserData()` reading `/auth/me`, and `logout()`. The browser holds NO credential; `authFetch`/
+// `apiPost` are credential-free convenience helpers. Pairs with the /auth gateway serveSprig mounts
+// (@mrg-keystone/sprig/keep), backed by keep's Deno-KV session store (silent refresh, off-client).
+// Re-exported here so an island simply does `import { login } from "@mrg-keystone/sprig"`.
+// (auth.ts is SSR-safe — its on-load side effect is typeof-guarded, so this is inert server-side.)
 export {
   apiPost,
   authFetch,
   AuthError,
   getUserData,
-  hasSession,
+  login,
   loginWithGoogle,
   logout,
   SESSION_COOKIE,
-  setBearer,
-  signOut,
   warmAuth,
 } from "./auth.ts";
