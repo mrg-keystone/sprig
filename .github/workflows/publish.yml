@@ -12,3 +12,10 @@ jobs:
   publish:
     uses: mrg-keystone/actions/.github/workflows/jsr-publish.yml@main
     secrets: inherit
+    with:
+      # Every cut repins @mrg-keystone/rune to its newest published version (server/deno.json + the
+      # workspace) BEFORE publishing, so a released sprig always targets the latest rune. The scaffold
+      # `sprig init` writes reads its rune pin back out of server/deno.json (runeRange() in cli.ts),
+      # so freshly-scaffolded apps track latest by construction. Run `deno task sync:rune` to do the
+      # same locally between releases.
+      refresh-latest: "@mrg-keystone/rune"

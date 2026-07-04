@@ -15,7 +15,7 @@
     "jsr:@danet/zod@0.0.7": "0.0.7",
     "jsr:@dx/reflect@0.2.14": "0.2.14",
     "jsr:@hono/hono@4.6.3": "4.6.3",
-    "jsr:@mrg-keystone/rune@1": "1.23.0",
+    "jsr:@mrg-keystone/rune@^3.1.0": "3.1.0",
     "jsr:@sprig/core@0.15.1": "0.15.1",
     "jsr:@std/assert@*": "1.0.19",
     "jsr:@std/assert@1": "1.0.19",
@@ -37,8 +37,8 @@
     "npm:awesome-phonenumber@7.1.0": "7.1.0",
     "npm:class-transformer@0.5": "0.5.1",
     "npm:class-validator@0.14": "0.14.4",
-    "npm:jose@5": "5.10.0",
     "npm:path-to-regexp@6.2.1": "6.2.1",
+    "npm:playwright@^1.49.0": "1.60.0",
     "npm:reflect-metadata@0.1.13": "0.1.13",
     "npm:reflect-metadata@0.2": "0.2.2",
     "npm:web-tree-sitter@0.25": "0.25.10",
@@ -124,14 +124,15 @@
     "@hono/hono@4.6.3": {
       "integrity": "a1f5a18cd12a0db54755b0461dd5a4e2d93a6f85403073eb710103eacc42daf3"
     },
-    "@mrg-keystone/rune@1.23.0": {
-      "integrity": "093cdfe93cd3f000e7494c1518aaac63d7f7d5a01a42cd2ba3acdabc6eae1a70",
+    "@mrg-keystone/rune@3.1.0": {
+      "integrity": "43fccd59974a72d707bbb90518c72b967e6703e1cd702672b0b7307cd5e1ca5e",
       "dependencies": [
         "jsr:@danet/core@2",
         "jsr:@danet/swagger",
+        "jsr:@hono/hono",
         "npm:class-transformer",
         "npm:class-validator",
-        "npm:jose",
+        "npm:playwright",
         "npm:reflect-metadata@0.1.13",
         "npm:zod@3"
       ]
@@ -218,8 +219,10 @@
         "validator"
       ]
     },
-    "jose@5.10.0": {
-      "integrity": "sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg=="
+    "fsevents@2.3.2": {
+      "integrity": "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==",
+      "os": ["darwin"],
+      "scripts": true
     },
     "libphonenumber-js@1.13.7": {
       "integrity": "sha512-rvr3HIMdOgzhz1RFGjftji+wjoAFlzhqCNqJOU/MKTZQ8d9NZxAR/tI+0weDicyoucqVR0U1GCniqHJ0f8aM2A=="
@@ -232,6 +235,20 @@
     },
     "path-to-regexp@6.2.1": {
       "integrity": "sha512-JLyh7xT1kizaEvcaXOQwOc2/Yhw6KZOvPf1S8401UyLk86CU79LN3vl7ztXGm/pZ+YjoyAJ4rxmHwbkBXJX+yw=="
+    },
+    "playwright-core@1.60.0": {
+      "integrity": "sha512-9bW6zvX/m0lEbgTKJ6YppOKx8H3VOPBMOCFh2irXFOT4BbHgrx5hPjwJYLT40Lu+4qtD36qKc/Hn56StUW57IA==",
+      "bin": true
+    },
+    "playwright@1.60.0": {
+      "integrity": "sha512-hheHdokM8cdqCb0lcE3s+zT4t4W+vvjpGxsZlDnikarzx8tSzMebh3UiFtgqwFwnTnjYQcsyMF8ei2mCO/tpeA==",
+      "dependencies": [
+        "playwright-core"
+      ],
+      "optionalDependencies": [
+        "fsevents"
+      ],
+      "bin": true
     },
     "reflect-metadata@0.1.13": {
       "integrity": "sha512-Ts1Y/anZELhSsjMcU605fU9RE4Oi3p5ORujwbIKXfWa+0Zxs510Qrmrce5/Jowq3cHSZSJqBjypxmHarc+vEWg=="
@@ -286,7 +303,7 @@
       "server": {
         "dependencies": [
           "jsr:@danet/swagger@^2.1.1",
-          "jsr:@mrg-keystone/rune@1",
+          "jsr:@mrg-keystone/rune@^3.1.0",
           "jsr:@std/assert@*",
           "jsr:@std/path@*",
           "npm:class-transformer@0.5",

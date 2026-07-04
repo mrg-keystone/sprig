@@ -31,7 +31,8 @@
     "install:dev": "deno run -A framework/cli.ts install --dev",
     "dev": "deno run -A framework/cli.ts dev app",
     "build": "deno run -A framework/cli.ts build app",
-    "start": "deno serve -A --unstable-kv serve.ts"
+    "start": "deno serve -A --unstable-kv serve.ts",
+    "sync:rune": "deno run -A scripts/sync-rune.ts"
   },
   "name": "@sprig/core",
   "version": "0.19.1",

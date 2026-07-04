@@ -36,6 +36,21 @@ function sprigRange(): string {
   return "^0.19.0";
 }
 
+/** The `@mrg-keystone/rune` range `sprig init` pins into a scaffolded app's backend. Read from the
+ *  running CLI's OWN `server/deno.json` (which ships inside the runtime bundle) — the single source
+ *  of truth for "the rune this sprig build targets." The release pipeline refreshes that pin to the
+ *  newest published rune on every cut (the reusable jsr-publish `refresh-latest` step), so the
+ *  scaffold tracks latest by construction instead of freezing a literal that silently scaffolds a
+ *  stale rune. Falls back to the current major floor if server/deno.json is unreadable. */
+function runeRange(): string {
+  try {
+    const cfg = JSON.parse(Deno.readTextFileSync(join(installRoot(), "server", "deno.json"))) as { imports?: Record<string, string> };
+    const range = cfg.imports?.["@mrg-keystone/rune"]?.match(/\/rune@([^"/]+)$/)?.[1];
+    if (range) return range;
+  } catch { /* fall through to a sane floor */ }
+  return "^3";
+}
+
 /** This CLI's on-disk install root — the dir holding `framework/` (a repo checkout or `~/.sprig`).
  *  `import.meta.dirname` is `<install>/framework` for a `file://` module and `undefined` for a
  *  remote (`jsr:`/`https:`) one — it NEVER throws, unlike `fromFileUrl(import.meta.url)`. The
@@ -1261,6 +1276,7 @@ async function init(dir = "."): Promise<void> {
   const name = (dir === "." ? "sprig-app" : dir.split("/").pop()) || "sprig-app";
 
   const range = sprigRange();
+  const runeSpec = runeRange();
   const files: Record<string, string> = {
     // `$` IS the app (src/mod.ts); `$.pages/`, `$.services/`, `$.shared-components/` alias
     // the src subtrees so deep files import siblings without ../../ chains. Plus the two
@@ -1281,7 +1297,7 @@ async function init(dir = "."): Promise<void> {
     "$.services/": "./src/services/",
     "@sprig/core": "jsr:@sprig/core@${range}",
     "@sprig/keep": "jsr:@sprig/core@${range}/keep",
-    "@mrg-keystone/rune": "jsr:@mrg-keystone/rune@^1",
+    "@mrg-keystone/rune": "jsr:@mrg-keystone/rune@${runeSpec}",
     "reflect-metadata": "npm:reflect-metadata@0.1.13",
     "@std/path": "jsr:@std/path@^1",
     "@std/assert": "jsr:@std/assert@^1"
