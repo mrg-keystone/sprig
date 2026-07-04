@@ -78,7 +78,9 @@ interface Registration {
 const REGISTRY = new Map<symbol, Registration>();
 
 /** Class decorator: register a service so `inject(TheClass)` can resolve it. */
-export function Injectable(config: InjectableConfig = {}) {
+export function Injectable(
+  config: InjectableConfig = {},
+): <T extends Ctor>(target: T, _ctx?: unknown) => T {
   return function <T extends Ctor>(target: T, _ctx?: unknown): T {
     REGISTRY.set(keyOf(target), {
       scope: config.scope ?? "both",
