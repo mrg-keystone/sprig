@@ -390,6 +390,16 @@ export interface ResolveCtx {
 }
 export type Resolve = (ctx: ResolveCtx) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
+/** The per-request context a route's logic.ts onServerLoad receives — the request URL, the matched
+ *  route params, and the session profile (null when unauthenticated). The route-logic twin of a
+ *  resolve.ts's ResolveCtx, widened with `session` (the same profile a GuardCtx carries), so a page
+ *  reads its query/params/auth the same way whether it's a resolve.ts or a logic.ts. */
+export interface RouteCtx {
+  url: URL;
+  params: Record<string, string>;
+  session: SessionProfile | null;
+}
+
 /** The reactive scope an island's logic.ts builds. */
 export interface ComponentCtx {
   /** Read a typed @input (serialized from the server). Returns an Accessor. */
@@ -436,11 +446,22 @@ export interface ComponentModule {
  *  Call `inject()` synchronously inside a guard (before any `await`) for DI —
  *  guards run on the request's route injector, so a service a guard instantiates
  *  is the SAME instance the page's resolve() later injects. */
+/** The authenticated session profile the framework resolves from the httpOnly session cookie and
+ *  hands to guards as `ctx.session` (null = unauthenticated). serveSprig fills it in session mode;
+ *  the guard reads it instead of re-verifying a bearer, since the session was validated at mint. */
+export interface SessionProfile {
+  name?: string;
+  email?: string;
+  grants?: string[];
+}
 export interface GuardCtx {
   path: string[];
   params: Record<string, string>;
   url: URL;
   headers: Headers;
+  /** Resolved session profile (from the httpOnly session cookie), or null when unauthenticated.
+   *  Present when the host (serveSprig) runs in session mode; prefer it over re-parsing `headers`. */
+  session?: SessionProfile | null;
 }
 /** A route guard: a function that returns the route — as an array of path
  *  segments — the navigation should go to. Returning the route it was going to
@@ -571,11 +592,22 @@ function walk(
     const rs = route.path.split("/").filter((s) => s.length > 0);
     const params: Record<string, string> = { ...inherited };
     let ok = true;
+    let consumed = rs.length; // URL segments this route's path eats (a catch-all eats the rest)
     for (let i = 0; i < rs.length; i++) {
+      const r = rs[i];
+      // rest param: ":name+" (one-or-more) / ":name*" (zero-or-more) captures the REST of the
+      // path, slashes and all (e.g. embed/:target+ → "foo.com/a/b"). Terminal by construction.
+      if (r.startsWith(":") && (r.endsWith("+") || r.endsWith("*"))) {
+        const tail = segs.slice(i);
+        if (r.endsWith("+") && tail.length === 0) { ok = false; break; } // "+" needs ≥1 segment
+        params[r.slice(1, -1)] = tail.map(decodeParam).join("/");
+        consumed = segs.length;
+        break;
+      }
       const u = segs[i];
       if (u === undefined) { ok = false; break; }
-      if (rs[i].startsWith(":")) params[rs[i].slice(1)] = decodeParam(u);
-      else if (rs[i] !== u) { ok = false; break; }
+      if (r.startsWith(":")) params[r.slice(1)] = decodeParam(u);
+      else if (r !== u) { ok = false; break; }
     }
     if (!ok) continue;
     // fresh arrays per matched level (never mutate the caller's): a failed child descent
@@ -587,7 +619,7 @@ function walk(
     const childWrappers = isLayoutLoad(route.load)
       ? [...wrappers, { load: route.load!, meta: route.meta }]
       : wrappers;
-    const rest = segs.slice(rs.length);
+    const rest = segs.slice(consumed);
     if (rest.length === 0) {
       // A layout (or a load-less container) has no page of its OWN at its base URL, so descend
       // into an index child (`path: ""`) for its default page — the clean cure for a container
@@ -623,8 +655,8 @@ function normalizeRoute(out: string[]): string[] {
  *  ONLY wiring an app needs — render + stream + per-page resolve loading all come from
  *  it, so `routes` alone drive data loading (no `modules` map, no per-page imports). */
 export interface AppRenderer {
-  renderDocument(chain: string | readonly MatchedLevel[], inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }, chrome?: Record<string, unknown>): Promise<string>;
-  renderStream?(chain: string | readonly MatchedLevel[], inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }, chrome?: Record<string, unknown>): ReadableStream<Uint8Array>;
+  renderDocument(chain: string | readonly MatchedLevel[], inputs: Record<string, unknown>, ropts?: { assetsVersion?: string; reqCtx?: RouteCtx }, chrome?: Record<string, unknown>): Promise<string>;
+  renderStream?(chain: string | readonly MatchedLevel[], inputs: Record<string, unknown>, ropts?: { assetsVersion?: string; reqCtx?: RouteCtx }, chrome?: Record<string, unknown>): ReadableStream<Uint8Array>;
   loadResolve?(pageLoad: string): Promise<Resolve | undefined>;
 }
 
@@ -637,9 +669,9 @@ export interface AppConfig {
    *  by route `load`); this is only consulted as an override when present. */
   modules?: Record<string, ComponentModule>;
   /** LEGACY direct render callback; superseded by `renderer.renderDocument`. */
-  render?: (pageLoad: string, inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }) => Promise<string>;
+  render?: (pageLoad: string, inputs: Record<string, unknown>, ropts?: { assetsVersion?: string; reqCtx?: RouteCtx }) => Promise<string>;
   /** LEGACY direct stream callback; superseded by `renderer.renderStream`. */
-  renderStream?: (pageLoad: string, inputs: Record<string, unknown>, ropts?: { assetsVersion?: string }) => ReadableStream<Uint8Array>;
+  renderStream?: (pageLoad: string, inputs: Record<string, unknown>, ropts?: { assetsVersion?: string; reqCtx?: RouteCtx }) => ReadableStream<Uint8Array>;
   /** Verify a route's `requiredGrant` server-side (runs after guards, before resolve — no data
    *  work for a denied page). Given the grant name + the request ctx (headers → the session
    *  cookie), return whether the caller holds it. The app wires this to its auth model (e.g. rune
@@ -653,7 +685,7 @@ export interface SprigApp {
    *  from (serveSprig/sprigUi compute it from their assetsDir). The renderer stamps it
    *  into `?v=` so the asset URLs are content-addressed — the renderer's own fallback
    *  (SPRIG_ASSETS_DIR/<cwd>/static) can't know the served dir and degrades on Deploy. */
-  fetch(req: Request, info?: Deno.ServeHandlerInfo, env?: { backend?: BackendClient; assetsVersion?: string }): Promise<Response>;
+  fetch(req: Request, info?: Deno.ServeHandlerInfo, env?: { backend?: BackendClient; assetsVersion?: string; session?: SessionProfile | null }): Promise<Response>;
 }
 
 /** Read-only methods the SSR document route honors. */
@@ -711,7 +743,7 @@ export function bootstrap(config: AppConfig): SprigApp {
       // next one). The first guard whose returned route differs from the target
       // route wins → 302 there; all guards returning the target → proceed.
       const segs = path.split("/").filter((s) => s.length > 0);
-      const gctx: GuardCtx = { path: segs, params: matched.params, url, headers: req.headers };
+      const gctx: GuardCtx = { path: segs, params: matched.params, url, headers: req.headers, session: env?.session ?? null };
       if (matched.guards?.length) {
         const target = segs.join("/");
         try {
@@ -777,8 +809,12 @@ export function bootstrap(config: AppConfig): SprigApp {
       // resource) by setting the request status; honor it on the response line.
       const status = root.status ?? 200;
 
-      // the served-assets content hash from serveSprig/sprigUi → the renderer's ?v=
-      const ropts = env?.assetsVersion ? { assetsVersion: env.assetsVersion } : undefined;
+      // the served-assets content hash from serveSprig/sprigUi → the renderer's ?v=, plus the
+      // per-request route ctx (url/params/session) a route's logic.ts onServerLoad receives — the
+      // same shape the guard chain already got as GuardCtx, so a page reads its query/auth whether
+      // it's a resolve.ts (ResolveCtx) or a logic.ts (RouteCtx). Always present (unlike assetsVersion).
+      const reqCtx: RouteCtx = { url, params: matched.params, session: env?.session ?? null };
+      const ropts = { assetsVersion: env?.assetsVersion, reqCtx };
       const renderer = config.renderer;
       // the generated-nav model (from route metadata + the current path) handed to layouts/shell
       // as chrome — so the nav IS the route tree, no hand-maintained list. Cheap + pure.

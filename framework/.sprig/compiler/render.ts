@@ -28,19 +28,33 @@ export function islandHost(
     `<script type="application/json" class="sprig-props">${props}</script>${inner}</sprig-island>`;
 }
 
+/** The per-request route context a route's logic.ts onServerLoad receives: the request URL, the
+ *  matched route params, and the session profile (null when unauthenticated) — the same shape a
+ *  guard's GuardCtx carries. Structurally the public RouteCtx from core.ts. Optional on the scope
+ *  hooks: islands/components are handed it too but ignore the arg. */
+export interface RouteCtx {
+  url: URL;
+  params: Record<string, string>;
+  session: unknown;
+}
+
 /** An island's reactive setup (from logic.ts's defineComponent). */
 export interface IslandDef {
-  /** build the reactive scope from the island's @inputs */
-  scope: (inputs: Scope) => Scope;
+  /** build the reactive scope from the island's @inputs; route logic also gets the request ctx */
+  scope: (inputs: Scope, reqCtx?: RouteCtx) => Scope;
   /** is-land trigger, e.g. "load" | "visible" | "idle" | "interaction" */
   trigger: string;
   /** class-based component: snapshot the instance's serializable state into the props
    *  bridge so the browser instance is re-seeded before onBrowserInit (see lifecycle.ts). */
   snapshot?: boolean;
+  /** a route's SERVER-ONLY logic (onServerLoad, no browser hook): its onServerLoad runs at SSR to
+   *  produce the scope, but it renders as a plain static subtree — NO hydration boundary — and the
+   *  build ships no client entry for it. The `resolve.ts` server-data model, expressed as logic.ts. */
+  serverOnly?: boolean;
   /** async resolution — instantiate + AWAIT onServerInit (class components). The server
    *  pre-pass (resolveIslands) calls this in parallel; the sync render reads the result.
    *  Absent for { setup } islands (resolved synchronously by `scope`). */
-  resolve?: (inputs: Scope) => Promise<Scope>;
+  resolve?: (inputs: Scope, reqCtx?: RouteCtx) => Promise<Scope>;
 }
 export interface ComponentDef {
   selector: string;
