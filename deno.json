@@ -70,7 +70,8 @@
       "framework/.sprig/skills.ts",
       "framework/.sprig/spec-root.ts",
       "framework/cli.ts",
-      "packages/keep/mod.ts"
+      "packages/keep/mod.ts",
+      "packages/keep/vendor/apexcharts.js"
     ]
   }
 }

@@ -16,7 +16,8 @@ import { basename, dirname, join, relative, resolve, toFileUrl } from "@std/path
 // are unanalyzable + don't resolve once this is published to JSR).
 import { buildClient, forcedImportMap } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
-import { serveSprig, sprigUi } from "../packages/keep/mod.ts";
+import { createRenderer, loadRoutes, serveSprig, sprigUi } from "../packages/keep/mod.ts";
+import { bootstrap } from "./.sprig/core.ts";
 import { assertWorkbench, installRuntimeFromDeployment, installRuntimeFromWorkingTree, latestRuntimeRelease } from "./.sprig/install.ts";
 import { specRootOf } from "./.sprig/spec-root.ts";
 // NOTE: `./.sprig/annotate.ts` is imported LAZILY (a dynamic `import(...)` inside the `dev`
@@ -688,11 +689,40 @@ async function emitRuneComposition(appDir: string, outDir: string): Promise<void
   );
 }
 
-/** A sprig UI package is a dir with src/mod.ts (the `bootstrap({ routes })` export). A keep
- *  backend has no src/mod.ts (its entry is bootstrap/mod.ts), so this cleanly tells them
- *  apart — note BOTH may have a bootstrap/, so that can't be the discriminator. */
+/** A sprig UI package is a dir with a bootstrap/ SHELL — bootstrap/template.html, the document frame
+ *  the matched pages render into. A keep backend has a bootstrap/ (mod.ts, config.ts) but NO shell
+ *  template, so the shell cleanly tells them apart — note both may have a bootstrap/mod.ts now (the
+ *  UI's composition moved there), so that can't be the discriminator. (Legacy: a src/mod.ts UI
+ *  export, before routes moved to routers/root/routes.json and the composition to bootstrap/mod.ts.) */
 async function isSprigUiDir(dir: string): Promise<boolean> {
-  return await pathExists(join(dir, "src", "mod.ts"));
+  return (await pathExists(join(dir, "bootstrap", "template.html"))) ||
+    (await pathExists(join(dir, "src", "mod.ts")));
+}
+
+/** Resolve the sprig UI package a plain `sprig build` (no --rune) targets. An EXPLICIT appDir
+ *  arg is honored as-is. With none, search in order and use the FIRST that is a sprig UI package:
+ *    1. <git root>/ui   — so `sprig build` works run from the git root (the common case)
+ *    2. <cwd>/ui        — no git repo, but a ./ui package is right here
+ *    3. <cwd>           — already inside the UI package itself
+ *  If none is a sprig project, exit with "not in a sprig project". This is why `sprig build`
+ *  worked from <root>/ui but not from the root: the root has no src/, the ./ui package does. */
+async function resolveBuildAppDir(appArg?: string): Promise<string> {
+  if (appArg) return resolve(appArg); // explicit path wins, as-is
+  const cwd = Deno.cwd();
+  const gitRoot = gitRepoRoot(cwd);
+  const candidates = [...new Set([
+    ...(gitRoot ? [join(gitRoot, "ui")] : []),
+    join(cwd, "ui"),
+    cwd,
+  ])];
+  for (const c of candidates) if (await isSprigUiDir(c)) return c;
+  console.error(
+    `sprig build: not in a sprig project.\n` +
+      `  Looked for a sprig UI package (a dir with src/mod.ts or bootstrap/template.html) at:\n` +
+      candidates.map((c) => `    ${c}`).join("\n") + `\n` +
+      `  Run it from your project's git root or its ui/ package, or pass the path: sprig build <dir>`,
+  );
+  Deno.exit(1);
 }
 
 /** Resolve the sprig UI package for a command that may run from EITHER the UI package OR the
@@ -1294,7 +1324,13 @@ async function dev(rawArgs: string[] = []): Promise<void> {
 
   await build(appDir, outDir);
 
-  const { renderer, sprigApp } = await import(toFileUrl(join(resolve(appDir), "src", "mod.ts")).href);
+  // The app is composed from FOLDERS now (no src/mod.ts export): createRenderer scans src/ for
+  // components, and the app is bootstrap() over the JSON route table (routers/root/routes.json +
+  // guards/<name>/) — the SAME composition bootstrap/mod.ts does for prod. The dev server also needs
+  // the renderer handle for HMR reparse, so it builds them here rather than importing a host entry.
+  const srcDir = join(resolve(appDir), "src");
+  const renderer = await createRenderer(srcDir, base, { dev: true });
+  const sprigApp = bootstrap({ routes: await loadRoutes(srcDir), base, renderer });
   let hostFetch: (req: Request, info: Deno.ServeHandlerInfo) => Promise<Response>;
   if (rune) {
     const { api } = await keepPromise!; // was loading concurrently since above
@@ -1745,15 +1781,19 @@ switch (cmd) {
     // NOTE: `--dev` is gone — there is no dev build variant. `sprig build` emits the ONE
     // bundle; `sprig dev` serves those exact bytes and layers HMR on via a runtime flag.
     const rune = rest.includes("--rune");
-    const appArg = rest.find((a) => !a.startsWith("-")) ?? ".";
+    const appArg = rest.find((a) => !a.startsWith("-"));
     if (rune) {
       // --rune composes the whole monorepo, so it's natural to run from the git ROOT (not
       // just the UI package). Locate the sprig UI package at/under appArg, build IT to
       // <ui>/static (cwd-independent), then compose. Works from the root or from ui/.
-      const ui = await resolveSprigUiDir(appArg, "build --rune");
+      const ui = await resolveSprigUiDir(appArg ?? ".", "build --rune");
       await build(ui, join(ui, "static"), true);
     } else {
-      await build(appArg, join(Deno.cwd(), "static"), false);
+      // Plain build: resolve the UI package (git root/ui, then <cwd>/ui, then <cwd>) so
+      // `sprig build` works from the git root too, not only from inside ui/. Write to
+      // <ui>/static — the deploy artifact serveSprig reads — independent of the cwd.
+      const ui = await resolveBuildAppDir(appArg);
+      await build(ui, join(ui, "static"), false);
     }
     break;
   }

@@ -261,6 +261,19 @@ export async function buildClient(srcDir: string, outDir: string): Promise<Build
   }
   await Deno.writeTextFile(join(outDir, "templates.json"), JSON.stringify(templates));
 
+  // 4b. copy the UI package's own static assets — assets/** (fonts, images, favicon: anything the app
+  // serves verbatim) — into the served outDir, so they answer at <base>/_assets/** next to the bundle.
+  // No transform: a font at assets/fonts/x.woff2 serves at <base>/_assets/fonts/x.woff2. This is the
+  // framework's place for app-owned static files (the bundle output is generated; assets/ is authored).
+  const assetsDir = join(srcDir, "..", "assets");
+  if (await fileExists(assetsDir)) {
+    for await (const e of walk(assetsDir, { includeDirs: false })) {
+      const dest = join(outDir, relative(assetsDir, e.path));
+      await Deno.mkdir(dirname(dest), { recursive: true });
+      await Deno.copyFile(e.path, dest);
+    }
+  }
+
   // 5. collect outputs (.js + app.css) + hash them for the ?v= cache-bust
   const files: string[] = [];
   let total = 0;

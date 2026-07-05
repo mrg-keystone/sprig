@@ -14,9 +14,16 @@ import { join, toFileUrl } from "@std/path";
 // AND the isolate workbench gets them without compiling them into its own frontend bundle.
 // The app declares these in deno.json ONLY for type-checking — this vendored copy is the one
 // and only version that actually runs (same "CLI owns the runtime" rule as @mrg-keystone/sprig).
-import apexchartsJs from "./vendor/apexcharts.js" with { type: "text" };
+// Load each vendored lib as TEXT from this module's OWN location — works both from a local file://
+// install (~/.sprig) and the published https:// JSR module. (A static `import … with { type: "text" }`
+// can't be published: JSR's module-graph builder rejects the text import attribute. Same eagerness as
+// the old text import, which embedded all 561K in the graph regardless.)
+const readVendor = async (name: string): Promise<string> => {
+  const u = new URL(`./vendor/${name}`, import.meta.url);
+  return u.protocol === "file:" ? await Deno.readTextFile(u) : await (await fetch(u)).text();
+};
 const VENDOR: Record<string, { body: string; type: string }> = {
-  "apexcharts.js": { body: apexchartsJs, type: "text/javascript; charset=utf-8" },
+  "apexcharts.js": { body: await readVendor("apexcharts.js"), type: "text/javascript; charset=utf-8" },
 };
 
 // The SSR renderer is server-only (Deno APIs) so it can't live in client-safe
