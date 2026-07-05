@@ -190,6 +190,19 @@ Deno.test("scope: renderer emits the view-encapsulation marker on every native e
 
 import { dirname, join as joinPath } from "@std/path";
 import { createRenderer } from "./mod.ts";
+import { appName, isServerOnlyRouteLogic } from "./build.ts";
+
+Deno.test("isServerOnlyRouteLogic: a COMMENT naming a browser hook doesn't count — only real code", () => {
+  // the exact shape that shipped a phantom isl.health.js: onServerLoad + prose naming onBrowserLoad
+  assert(isServerOnlyRouteLogic(`// onServerLoad + no onBrowserLoad → zero client JS\nexport default class { async onServerLoad() {} }`));
+  assert(isServerOnlyRouteLogic(`/* uses no onBrowserInit at all */\nexport default class { async onServerLoad() {} }`));
+  // a REAL browser hook → hydrates → NOT server-only
+  assert(!isServerOnlyRouteLogic(`export default class { onServerLoad() {} onBrowserLoad() {} }`));
+  // an island (Init hooks) is not a server-only route
+  assert(!isServerOnlyRouteLogic(`export default class { onServerInit() {} onBrowserInit() {} }`));
+  // no onServerLoad at all → not a server-only route
+  assert(!isServerOnlyRouteLogic(`export default class { setup() {} }`));
+});
 
 Deno.test("a page IS template + logic.ts: the class's onServerInit drives the render", async () => {
   const tmp = await Deno.makeTempDir({ prefix: "sprig-page-logic-" });
@@ -209,6 +222,235 @@ Deno.test("a page IS template + logic.ts: the class's onServerInit drives the re
     const html = await r.renderDocument("pages/home", {});
     assert(html.includes("from-logic"), "page logic.ts onServerInit data did not render");
     assert(!html.includes("(loading)"), "pre-onServerInit value leaked into the render");
+  } finally {
+    await Deno.remove(tmp, { recursive: true });
+  }
+});
+
+Deno.test("a route names its server hook onServerLoad — sync + async both drive the render", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "sprig-page-load-" });
+  try {
+    const write = async (rel: string, body: string) => {
+      const dir = joinPath(tmp, ...rel.split("/"));
+      await Deno.mkdir(dirname(dir), { recursive: true });
+      await Deno.writeTextFile(dir, body);
+    };
+    await write("shell/template.html", `<div><router-outlet></router-outlet></div>`);
+    await write("pages/sync/template.html", `<h1>{{ name }}</h1>`);
+    await write("pages/sync/logic.ts", `export default class { name = "(loading)"; onServerLoad() { this.name = "sync-load"; } }`);
+    await write("pages/async/template.html", `<h1>{{ name }}</h1>`);
+    await write("pages/async/logic.ts", `export default class { name = "(loading)"; async onServerLoad() { await Promise.resolve(); this.name = "async-load"; } }`);
+    const r = await createRenderer(tmp, "/ui", { dev: true });
+    const sync = await r.renderDocument("pages/sync", {});
+    assert(sync.includes("sync-load") && !sync.includes("(loading)"), "sync onServerLoad did not drive the render");
+    const asyncHtml = await r.renderDocument("pages/async", {});
+    assert(asyncHtml.includes("async-load") && !asyncHtml.includes("(loading)"), "async onServerLoad did not drive the render");
+  } finally {
+    await Deno.remove(tmp, { recursive: true });
+  }
+});
+
+Deno.test("onServerLoad-only = server-only (no hydration boundary); adding onBrowserLoad hydrates", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "sprig-serveronly-" });
+  try {
+    const write = async (rel: string, body: string) => {
+      const dir = joinPath(tmp, ...rel.split("/"));
+      await Deno.mkdir(dirname(dir), { recursive: true });
+      await Deno.writeTextFile(dir, body);
+    };
+    await write("shell/template.html", `<div><router-outlet></router-outlet></div>`);
+    // server-only route logic: onServerLoad, NO browser hook
+    await write("pages/srv/template.html", `<h1>{{ name }}</h1>`);
+    await write("pages/srv/logic.ts", `export default class { name = "(x)"; async onServerLoad() { this.name = "server-data"; } }`);
+    // hybrid route logic: onServerLoad + onBrowserLoad
+    await write("pages/hyb/template.html", `<h1>{{ name }}</h1>`);
+    await write("pages/hyb/logic.ts", `export default class { name = "(x)"; async onServerLoad() { this.name = "hybrid-data"; } onBrowserLoad() {} }`);
+    const r = await createRenderer(tmp, "/ui", { dev: true });
+    const srv = await r.renderDocument("pages/srv", {});
+    assert(srv.includes("server-data"), "onServerLoad data did not render");
+    assert(!srv.includes("<sprig-island"), "server-only route logic must NOT emit a hydration boundary");
+    assert(!srv.includes("sprig-props"), "server-only route logic must NOT serialize a state snapshot");
+    const hyb = await r.renderDocument("pages/hyb", {});
+    assert(hyb.includes("hybrid-data"), "hybrid onServerLoad data did not render");
+    assert(hyb.includes("<sprig-island"), "onBrowserLoad route logic MUST hydrate (emit a boundary)");
+  } finally {
+    await Deno.remove(tmp, { recursive: true });
+  }
+});
+
+Deno.test("route logic.ts onServerLoad receives the request ctx (url query + params + session)", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "sprig-reqctx-" });
+  try {
+    const write = async (rel: string, body: string) => {
+      const dir = joinPath(tmp, ...rel.split("/"));
+      await Deno.mkdir(dirname(dir), { recursive: true });
+      await Deno.writeTextFile(dir, body);
+    };
+    await write("shell/template.html", `<div><router-outlet></router-outlet></div>`);
+    // a page whose server-only logic reads the query string, the route param, and the session —
+    // exactly what calls/queue/embed need. onServerLoad(ctx) is the logic.ts twin of resolve({ url }).
+    await write("pages/q/template.html", `<h1>{{ q }}</h1><p>{{ id }}</p><span>{{ who }}</span>`);
+    await write(
+      "pages/q/logic.ts",
+      `export default class {
+        q = ""; id = ""; who = "anon";
+        onServerLoad(ctx) {
+          this.q = ctx.url.searchParams.get("q") ?? "";
+          this.id = ctx.params.id ?? "";
+          this.who = ctx.session?.email ?? "anon";
+        }
+      }`,
+    );
+    const r = await createRenderer(tmp, "/ui", { dev: true });
+    const html = await r.renderDocument("pages/q", {}, {
+      reqCtx: { url: new URL("http://h/ui/q?q=hello"), params: { id: "42" }, session: { email: "a@b.com" } },
+    });
+    assert(html.includes(">hello</h1>"), "onServerLoad did not read ctx.url.searchParams");
+    assert(html.includes(">42</p>"), "onServerLoad did not read ctx.params");
+    assert(html.includes(">a@b.com</span>"), "onServerLoad did not read ctx.session");
+    // null session → the page's own ?? fallback, not a crash
+    const anon = await r.renderDocument("pages/q", {}, {
+      reqCtx: { url: new URL("http://h/ui/q"), params: {}, session: null },
+    });
+    assert(anon.includes(">anon</span>"), "null session not handled by route logic");
+  } finally {
+    await Deno.remove(tmp, { recursive: true });
+  }
+});
+
+Deno.test("documentHead: a route's meta.title becomes the <title> (leaf wins); default 'sprig'; escaped", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "sprig-title-" });
+  try {
+    const write = async (rel: string, body: string) => {
+      const dir = joinPath(tmp, ...rel.split("/"));
+      await Deno.mkdir(dirname(dir), { recursive: true });
+      await Deno.writeTextFile(dir, body);
+    };
+    await write("shell/template.html", `<div><router-outlet></router-outlet></div>`);
+    await write("routers/app/template.html", `<div><router-outlet></router-outlet></div>`);
+    await write("pages/home/template.html", `<h1>home</h1>`);
+    const r = await createRenderer(tmp, "/ui", { dev: true });
+    // no meta anywhere → the framework default
+    assert((await r.renderDocument("pages/home", {})).includes("<title>sprig</title>"), "default title missing");
+    // a route's meta.title overrides the default
+    const titled = await r.renderDocument([{ load: "pages/home", meta: { title: "Alfred · Overview" } }], {});
+    assert(titled.includes("<title>Alfred · Overview</title>"), "meta.title did not become <title>");
+    assert(!titled.includes("<title>sprig</title>"), "default title leaked when meta.title set");
+    // the LEAF's title wins over a parent layout's
+    const nested = await r.renderDocument(
+      [{ load: "routers/app", meta: { title: "Parent" } }, { load: "pages/home", meta: { title: "Leaf" } }],
+      {},
+    );
+    assert(nested.includes("<title>Leaf</title>") && !nested.includes("Parent</title>"), "leaf title did not win");
+    // escaped for <title> text content
+    const esc = await r.renderDocument([{ load: "pages/home", meta: { title: "A & <b" } }], {});
+    assert(esc.includes("<title>A &amp; &lt;b</title>"), "title not HTML-escaped");
+  } finally {
+    await Deno.remove(tmp, { recursive: true });
+  }
+});
+
+Deno.test("documentHead: createRenderer({ favicon }) emits <link rel=icon>; absent → none", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "sprig-favicon-" });
+  try {
+    const write = async (rel: string, body: string) => {
+      const dir = joinPath(tmp, ...rel.split("/"));
+      await Deno.mkdir(dirname(dir), { recursive: true });
+      await Deno.writeTextFile(dir, body);
+    };
+    await write("shell/template.html", `<div><router-outlet></router-outlet></div>`);
+    await write("pages/home/template.html", `<h1>home</h1>`);
+    // configured → a <link rel="icon"> lands in the head
+    const withIcon = await (await createRenderer(tmp, "/ui", { dev: true, favicon: "/favicon.svg" })).renderDocument("pages/home", {});
+    assert(withIcon.includes(`<link rel="icon" href="/favicon.svg" />`), "favicon link missing when configured");
+    // not configured → no icon link (back-compat: byte-identical head to before)
+    const noIcon = await (await createRenderer(tmp, "/ui", { dev: true })).renderDocument("pages/home", {});
+    assert(!noIcon.includes(`rel="icon"`), "favicon link leaked when not configured");
+  } finally {
+    await Deno.remove(tmp, { recursive: true });
+  }
+});
+
+Deno.test("appName: workspace-root deno.json name, org-stripped (root wins over a member)", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "sprig-appname-" });
+  try {
+    await Deno.writeTextFile(joinPath(tmp, "deno.json"), JSON.stringify({ name: "@app/alfred", workspace: ["./ui"] }));
+    await Deno.mkdir(joinPath(tmp, "ui", "src"), { recursive: true });
+    await Deno.writeTextFile(joinPath(tmp, "ui", "deno.json"), JSON.stringify({ name: "@app/ui" }));
+    // the workspace root ("@app/alfred") wins over the nearer member ("@app/ui")
+    assertEquals(await appName(joinPath(tmp, "ui", "src")), "alfred");
+    // no named deno.json → undefined
+    const bare = await Deno.makeTempDir();
+    try {
+      assertEquals(await appName(bare), undefined);
+    } finally {
+      await Deno.remove(bare, { recursive: true });
+    }
+  } finally {
+    await Deno.remove(tmp, { recursive: true });
+  }
+});
+
+Deno.test("bootstrap/head.html: app-owned head content is injected into the generated <head>", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "sprig-apphead-" });
+  try {
+    const write = async (rel: string, body: string) => {
+      const dir = joinPath(tmp, ...rel.split("/"));
+      await Deno.mkdir(dirname(dir), { recursive: true });
+      await Deno.writeTextFile(dir, body);
+    };
+    // a body-only shell (parseable) + a RAW head.html the app owns (fonts / meta / preconnects)
+    await write("ui/bootstrap/template.html", `<div class="app-root"><router-outlet></router-outlet></div>`);
+    await write("ui/bootstrap/head.html", `<link rel="preconnect" href="https://fonts.example" />\n  <meta name="theme-color" content="#0b0f14" />`);
+    await write("ui/src/pages/home/template.html", `<h1>home</h1>`);
+    const html = await (await createRenderer(joinPath(tmp, "ui", "src"), "/ui", { dev: true })).renderDocument("pages/home", {});
+    // the app's head content landed inside the generated <head>
+    assert(html.includes(`<link rel="preconnect" href="https://fonts.example" />`), "head.html preconnect not injected");
+    assert(html.includes(`<meta name="theme-color" content="#0b0f14" />`), "head.html meta not injected");
+    // still exactly one framework frame, with the asset links + the page
+    assertEquals(html.match(/<head>/gi)?.length, 1, "double <head>");
+    assert(html.includes("/ui/_assets/app.css"), "framework asset link missing");
+    assert(html.includes(">home</h1>"), "page not rendered"); // scoped tag → match the text, not the bare tag
+    // absent head.html → no injection, framework default (a body-only shell with no head.html)
+    const bare = await Deno.makeTempDir({ prefix: "sprig-apphead-bare-" });
+    try {
+      await Deno.mkdir(joinPath(bare, "ui", "bootstrap"), { recursive: true });
+      await Deno.writeTextFile(joinPath(bare, "ui", "bootstrap", "template.html"), `<div><router-outlet></router-outlet></div>`);
+      await Deno.mkdir(joinPath(bare, "ui", "src", "pages", "home"), { recursive: true });
+      await Deno.writeTextFile(joinPath(bare, "ui", "src", "pages", "home", "template.html"), `<h1>x</h1>`);
+      const plain = await (await createRenderer(joinPath(bare, "ui", "src"), "/ui", { dev: true })).renderDocument("pages/home", {});
+      assert(plain.includes("<title>sprig</title>"), "framework default head missing when no head.html");
+      assert(!plain.includes("theme-color"), "phantom head content with no head.html");
+    } finally {
+      await Deno.remove(bare, { recursive: true });
+    }
+  } finally {
+    await Deno.remove(tmp, { recursive: true });
+  }
+});
+
+Deno.test("bootstrap/template.html owns the <head> inline — framework splits <head> from <body>", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "sprig-shell-split-" });
+  try {
+    const write = async (rel: string, body: string) => {
+      const dir = joinPath(tmp, ...rel.split("/"));
+      await Deno.mkdir(dirname(dir), { recursive: true });
+      await Deno.writeTextFile(dir, body);
+    };
+    // ONE combined file: a full document — <head> (favicon + meta) and <body> (app-root + outlet)
+    await write(
+      "ui/bootstrap/template.html",
+      `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <link rel="icon" href="/favicon.svg" />\n  <meta name="theme-color" content="#0b0f14" />\n</head>\n<body>\n  <div class="app-root"><router-outlet></router-outlet></div>\n</body>\n</html>`,
+    );
+    await write("ui/src/pages/home/template.html", `<h1>home</h1>`);
+    // renders without a parse error even though the source is a full document (parser only sees <body>)
+    const html = await (await createRenderer(joinPath(tmp, "ui", "src"), "/ui", { dev: true })).renderDocument("pages/home", {});
+    // the <head> content from template.html landed in the generated head
+    assert(html.includes(`<link rel="icon" href="/favicon.svg" />`), "favicon from template.html <head> not injected");
+    assert(html.includes(`<meta name="theme-color" content="#0b0f14" />`), "meta from template.html <head> not injected");
+    // the <body> rendered — page into the outlet — with exactly one frame (no double <head>)
+    assert(html.includes(">home</h1>"), "shell body / page did not render");
+    assertEquals(html.match(/<head>/gi)?.length, 1, "double <head>");
   } finally {
     await Deno.remove(tmp, { recursive: true });
   }

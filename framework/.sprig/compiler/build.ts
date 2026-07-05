@@ -16,7 +16,7 @@ import { walk } from "@std/fs/walk";
 import { parseTemplate } from "./parse.ts";
 import { serialize } from "./serialize.ts";
 import { componentScopeId, scopeCss } from "./scope.ts";
-import { assertStaticPage, pageLocalOf } from "./mod.ts";
+import { assertStaticPage, pageLocalOf, splitShellHtml } from "./mod.ts";
 import { shortHash } from "./hash.ts";
 
 export interface BuildResult {
@@ -25,6 +25,39 @@ export interface BuildResult {
   out: string;
   bytes: number;
   hash: string;
+}
+
+/** The app's identity name — the workspace ROOT deno.json's `name`, org-scope stripped
+ *  ("@app/alfred" → "alfred"). Walks up from `startDir`, preferring the deno.json that owns the
+ *  workspace (has a `workspace` array) over a nearer member's name; falls back to the nearest
+ *  named deno.json; undefined if none is named. One source of truth for `bootstrapServer(name)`
+ *  and the guard's grant key, instead of a literal repeated in both. */
+export async function appName(startDir: string): Promise<string | undefined> {
+  const strip = (n: string) => n.replace(/^@[^/]+\//, "");
+  let dir = resolvePath(startDir);
+  let nearest: string | undefined;
+  while (true) {
+    try {
+      const cfg = JSON.parse(await Deno.readTextFile(join(dir, "deno.json"))) as { name?: unknown; workspace?: unknown };
+      if (typeof cfg.name === "string" && cfg.name) {
+        nearest ??= cfg.name;
+        if (Array.isArray(cfg.workspace)) return strip(cfg.name); // the workspace root owns the identity
+      }
+    } catch { /* no deno.json here — keep walking up */ }
+    const up = dirname(dir);
+    if (up === dir) return nearest ? strip(nearest) : undefined;
+    dir = up;
+  }
+}
+
+/** Is this logic.ts a route's SERVER-ONLY logic — onServerLoad with NO browser hook? Such a route
+ *  runs at SSR for its data but never hydrates, so the build ships no client island entry for it
+ *  (matching the renderer, which decides the same from the real class prototype). Comments are
+ *  STRIPPED first: a logic.ts that merely mentions onBrowserLoad in prose ("no onBrowserLoad →
+ *  server-only") must not be misread as hydrating — the hook names are matched in code only. */
+export function isServerOnlyRouteLogic(source: string): boolean {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  return /\bonServerLoad\b/.test(code) && !/\bonBrowserLoad\b/.test(code) && !/\bonBrowserInit\b/.test(code);
 }
 
 export async function buildClient(srcDir: string, outDir: string): Promise<BuildResult> {
@@ -109,6 +142,10 @@ export async function buildClient(srcDir: string, outDir: string): Promise<Build
       }
       continue;
     }
+    // A route's SERVER-ONLY logic (onServerLoad, no browser hook) runs at SSR for its data but never
+    // hydrates — ship NO client entry (its template is already registered above). A browser hook
+    // (onBrowserLoad) makes it a normal client island.
+    if (isServerOnlyRouteLogic(await Deno.readTextFile(logic))) continue;
     const prev = seen.get(sel);
     if (prev) {
       throw new Error(
@@ -176,6 +213,12 @@ export async function buildClient(srcDir: string, outDir: string): Promise<Build
       await Deno.remove(join(outDir, e.name));
     }
   }
+  // Tailwind (styles.css → scoped → app.css) is disjoint from the JS bundle (different inputs on
+  // disk, different output files). Start it NOW so it runs concurrently with `deno bundle` instead
+  // of strictly after it — awaited below before the content-hash (which stats app.css). NB: only
+  // ONE build() runs this per process, so its shared Tailwind scratch dir isn't contended here.
+  const cssDone = buildCss(srcDir, outDir);
+  cssDone.catch(() => {}); // real failure still surfaces at `await cssDone`; suppress pre-await window
   const entries = [join(genDir, "client.ts"), ...islands.map((i) => join(genDir, `isl.${i.sel}.ts`))];
   // Run the bundle under a map that forces @mrg-keystone/sprig to the CLI's ONE runtime (see
   // forcedImportMap): this is what makes single-core structural rather than merely gated. The
@@ -202,7 +245,8 @@ export async function buildClient(srcDir: string, outDir: string): Promise<Build
   await assertSingleRuntime(outDir);
 
   // 4. per-component styles.css → scoped (view encapsulation) → Tailwind → app.css
-  await buildCss(srcDir, outDir);
+  //    (kicked off concurrently with the bundle above; just join it here).
+  await cssDone;
 
   // 4b. the SSR registry: every component's serialized template, keyed by relDir, so the
   //     server renders prebuilt ASTs and never loads the wasm parser at runtime.
@@ -210,7 +254,10 @@ export async function buildClient(srcDir: string, outDir: string): Promise<Build
   // it prebuilt — no runtime tree-sitter — exactly like the old src/shell component was.
   const shellTpl = join(srcDir, "..", "bootstrap", "template.html");
   if (await fileExists(shellTpl)) {
-    templates["shell"] = serialize(await parseTemplate(await Deno.readTextFile(shellTpl)));
+    // serialize only the shell's <body> — the <head> is lifted out raw at render time (the parser
+    // is a fragment grammar and would reject a full <!DOCTYPE>/<html>/<head> document).
+    const { body } = splitShellHtml(await Deno.readTextFile(shellTpl));
+    templates["shell"] = serialize(await parseTemplate(body));
   }
   await Deno.writeTextFile(join(outDir, "templates.json"), JSON.stringify(templates));
 
@@ -257,13 +304,21 @@ export async function buildCss(srcDir: string, outDir: string): Promise<void> {
   const home = Deno.env.get("HOME") || Deno.env.get("TMPDIR") || "/tmp";
   const twDir = join(home, ".cache", "sprig-tailwind");
   await Deno.mkdir(twDir, { recursive: true });
-  await Deno.writeTextFile(
-    join(twDir, "deno.json"),
-    JSON.stringify({
-      nodeModulesDir: "auto",
-      imports: { "@tailwindcss/cli": "npm:@tailwindcss/cli@^4", "tailwindcss": "npm:tailwindcss@^4" },
-    }),
-  );
+  // Per-build input file, keyed by outDir, so a CONCURRENT app build + workbench build don't clobber
+  // each other's input.css in this SHARED cache dir — node_modules stays shared (the speed win).
+  const twKey = ([...outDir].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 0) >>> 0).toString(36);
+  const inputPath = join(twDir, `input-${twKey}.css`);
+  // deno.json is identical every build (fixed tailwind/daisyui pins) — write it ONLY when missing/
+  // stale, so two concurrent builds don't race on it (a torn read would break Tailwind's npm resolve).
+  const denoJson = JSON.stringify({
+    nodeModulesDir: "auto",
+    // daisyUI is pinned HERE (sprig's cache), never the app's deno.json — so the CLI compiles
+    // the daisyUI version SPRIG owns, regardless of what the app declares (declares = types only).
+    imports: { "@tailwindcss/cli": "npm:@tailwindcss/cli@^4", "tailwindcss": "npm:tailwindcss@^4", "daisyui": "npm:daisyui@^5" },
+  });
+  if ((await Deno.readTextFile(join(twDir, "deno.json")).catch(() => "")) !== denoJson) {
+    await Deno.writeTextFile(join(twDir, "deno.json"), denoJson);
+  }
   // Design tokens: a src/css-variables.json (if present) compiles to a global @theme
   // (utility-generating tokens) + :root (the rest) + [data-theme] variant blocks,
   // spliced in BEFORE the component parts so it bypasses scopeCss and stays document-
@@ -275,13 +330,20 @@ export async function buildCss(srcDir: string, outDir: string): Promise<void> {
   const shellSource = (await fileExists(join(bootstrapDir, "template.html")))
     ? `@source "${bootstrapDir}/**/*.html";\n`
     : "";
-  const input = `@import "tailwindcss";\n@source "${srcDir}/**/*.html";\n${shellSource}\n` +
+  // daisyUI as a Tailwind plugin. themes:false is CRITICAL — daisyUI ships light/dark themes that
+  // set --color-* on :root, and since sprig apps define those SAME names in css-variables.json,
+  // daisyUI's defaults would otherwise override the app's brand theme (e.g. flip a dark app white).
+  // With no daisyUI themes, its components read the app's tokens and inherit the app's brand.
+  // The ONLY bespoke global CSS an app gets is CLI-injected here (apps declare tokens, not globals):
+  // a full-height root so the shell can fill the viewport. Everything else is Tailwind preflight.
+  const globalReset = `html, body { height: 100%; }`;
+  const input = `@import "tailwindcss";\n@plugin "daisyui" { themes: false; }\n@source "${srcDir}/**/*.html";\n${shellSource}${globalReset}\n` +
     `${tokenCss ? tokenCss + "\n" : ""}${parts.join("\n\n")}\n`;
-  await Deno.writeTextFile(join(twDir, "input.css"), input);
+  await Deno.writeTextFile(inputPath, input);
   const res = await new Deno.Command("deno", {
     args: [
       "run", "-A", "--node-modules-dir=auto",
-      "npm:@tailwindcss/cli@^4", "-i", join(twDir, "input.css"), "-o", join(outDir, "app.css"), "--minify",
+      "npm:@tailwindcss/cli@^4", "-i", inputPath, "-o", join(outDir, "app.css"), "--minify",
     ],
     cwd: twDir,
     stdout: "piped",
@@ -379,12 +441,12 @@ export function emitThemeCss(cfg: CssVariables): string {
 
 /** Read <srcDir>/css-variables.json (opt-in) and compile it to global CSS; "" if absent. */
 async function cssFromVariables(srcDir: string): Promise<string> {
-  let raw: string;
-  try {
-    raw = await Deno.readTextFile(join(srcDir, "css-variables.json"));
-  } catch {
-    return ""; // no token file → unchanged build
-  }
+  // Prefer bootstrap/css-tokens.json (tokens live with the app shell); fall back to the legacy
+  // src/css-variables.json so existing apps build byte-identically. Absent → unchanged build.
+  const raw = await Deno.readTextFile(join(srcDir, "..", "bootstrap", "css-tokens.json"))
+    .catch(() => Deno.readTextFile(join(srcDir, "css-variables.json")))
+    .catch(() => "");
+  if (!raw) return "";
   let cfg: CssVariables;
   try {
     cfg = JSON.parse(raw);

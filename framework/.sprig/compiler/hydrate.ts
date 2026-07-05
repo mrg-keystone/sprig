@@ -378,7 +378,10 @@ export function bootstrapIslands(cfg: SprigConfig, root: ParentNode = document):
   setCurrentPage(cfg.page);
   // capture the base for the dormant HMR receiver (registerIsland refreshes baked ASTs from
   // <base>/_sprig/ast when HMR is active). No-op cost in prod (never read when hmr is off).
-  if (cfg.base) hmrBase = cfg.base;
+  // NB: "" is a VALID base (a root-mounted app, e.g. the isolate workbench) — not "unset".
+  // Guarding with `if (cfg.base)` treated "" as absent and left hmrBase at the "/ui" default,
+  // so islands fetched /ui/_sprig/ast/* (404). `??` keeps the default ONLY for a missing base.
+  hmrBase = cfg.base ?? hmrBase;
   root.querySelectorAll("sprig-island").forEach((el) => scheduleLoad(el as HTMLElement, cfg));
 }
 
@@ -776,8 +779,10 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
   // scope; onBrowserDestroy folds into teardown so a component can release its own
   // resources (timers/sockets/listeners) on unmount — the cleanup channel whose absence
   // bit us before.
-  const life = scope as { onBrowserInit?: () => void; onBrowserDestroy?: () => void };
-  life.onBrowserInit?.();
+  const life = scope as { onBrowserInit?: () => void; onBrowserLoad?: () => void; onBrowserDestroy?: () => void };
+  // A route names its client hook onBrowserLoad (the twin of onServerLoad); a component/island
+  // uses onBrowserInit. Prefer Load, fall back to Init so islands are unchanged.
+  (life.onBrowserLoad ?? life.onBrowserInit)?.call(life);
 
   // register teardown so soft-nav (or any detach) can dispose the effect + its
   // subscriptions, so we never leak or write to a detached node.

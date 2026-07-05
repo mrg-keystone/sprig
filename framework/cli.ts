@@ -1030,6 +1030,61 @@ async function devAnnotateHtml(htmlPath: string, open = true): Promise<void> {
 /** Exit code the dev child uses to ask the supervisor for a fresh restart (a server .ts change). */
 const DEV_RESTART_CODE = 75;
 
+/** `sprig dev --no-cache`: a throwaway STANDALONE dev process. No registry entry, no shared ports,
+ *  its own ephemeral pid-keyed workbench — so it runs alongside (and independently of) the shared
+ *  process or any other `--no-cache`. Free app+iso ports; child stdio inherited (foreground, no log
+ *  tee); keeps the respawn-on-DEV_RESTART_CODE loop so hot-reload still works. The temp workbench is
+ *  removed on exit; a hard kill just leaves it for the OS to reap. Nothing to clean up in ~/.sprig. */
+async function devStandalone(rawArgs: string[], repo: string): Promise<void> {
+  const appPortN = freePort(devPorts(repo).app + 1);
+  const isoPortN = freePort(appPortN + 1);
+  const wbRoot = join(ephemeralWorkBase(), `${repo}-${Deno.pid}`);
+  const teardown = async () => {
+    // A supervisor kill doesn't always cascade to re-exec'd grandchildren (the app server + the
+    // workbench), so reap anything still bound to OUR ports first — THEN drop the ephemeral dir
+    // (removing it while a child still runs would pull files out from under it). OS-reaps as backstop.
+    try { await killPort(appPortN); await killPort(isoPortN); } catch { /* best effort */ }
+    try { Deno.removeSync(wbRoot, { recursive: true }); } catch { /* already gone */ }
+  };
+  const entry = Deno.mainModule;
+  console.log(
+    `%c⟶ sprig dev --no-cache — standalone (pid ${Deno.pid}).%c app :${appPortN} · workbench :${isoPortN}\n  ephemeral workbench: ${wbRoot}  (removed on exit / OS-reaped)`,
+    "color:#7c3aed;font-weight:bold",
+    "",
+  );
+  try {
+    for (;;) {
+      const child = new Deno.Command(Deno.execPath(), {
+        args: ["run", "-A", "--unstable-kv", entry, "dev", ...rawArgs],
+        env: {
+          ...Deno.env.toObject(),
+          SPRIG_DEV_CHILD: "1",
+          PORT: String(appPortN),
+          SPRIG_DEV_ISO_PORT: String(isoPortN),
+          SPRIG_WB_ROOT: wbRoot,
+        },
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+      }).spawn();
+      const fwd = () => {
+        try { child.kill("SIGTERM"); } catch { /* already gone */ }
+      };
+      Deno.addSignalListener("SIGINT", fwd);
+      Deno.addSignalListener("SIGTERM", fwd);
+      const status = await child.status;
+      Deno.removeSignalListener("SIGINT", fwd);
+      Deno.removeSignalListener("SIGTERM", fwd);
+      if (status.code !== DEV_RESTART_CODE) {
+        await teardown();
+        Deno.exit(status.code);
+      }
+    }
+  } finally {
+    await teardown();
+  }
+}
+
 /** `sprig dev` supervisor: ONE shared process per git repo (see the registry above). The first run
  *  OWNS it — records { pid, log-folder } in ~/.sprig/dev.json, tees the server+workbench output to a
  *  rotating log, and respawns the child on a DEV_RESTART_CODE exit (the only reliable way to pick up
@@ -1041,9 +1096,25 @@ async function devSupervisor(rawArgs: string[]): Promise<void> {
   const positionals = rawArgs.filter((a) => !a.startsWith("-") && !/\.html?$/i.test(a));
   const repo = repoKey(resolve(positionals[0] ?? "."));
 
-  // Already running for this repo? Attach — no second server.
+  // `--no-cache`: a STANDALONE dev process — never attach, never register, its OWN free ports and
+  // its OWN ephemeral (pid-keyed) workbench. Runs regardless of who else is dev'ing this repo, and
+  // leaves nothing behind (the temp workbench is removed on exit + OS-reaped on a hard kill).
+  if (rawArgs.includes("--no-cache")) return await devStandalone(rawArgs, repo);
+
+  // Already running for this repo? Attach — no second server. But `--open` is PER CALL, not a
+  // property of the shared process: if the owner was started without it (or the browser was since
+  // closed), `sprig dev --open` now must still pop the tab. The server is already listening, so
+  // open its URL before streaming the log.
   const existing = (await readDevLock())[repo];
-  if (existing && await pidAlive(existing.pid)) return await attachShared(repo, existing);
+  if (existing && await pidAlive(existing.pid)) {
+    if (rawArgs.includes("--open")) {
+      // parity with a fresh `--open` owner: pop BOTH surfaces (app+annotate and the workbench).
+      const p = devPorts(repo);
+      openUrl(`http://localhost:${p.app}${positionals[1] ?? "/ui"}`);
+      openUrl(`http://localhost:${p.iso}/`);
+    }
+    return await attachShared(repo, existing);
+  }
   // Stale entry (owner died without cleanup): free the repo's stable ports so an orphaned
   // server/workbench from that dead owner can't linger, then take ownership.
   const ports = devPorts(repo);
@@ -1182,20 +1253,51 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   // ONE build — the SAME bytes prod serves. `sprig dev` differs from prod only by the
   // out-of-band HMR activation: SPRIG_DEV (set above) makes the renderer emit cfg.hmr, which
   // wakes the loader's dormant HMR client. The bundle itself is byte-identical to `sprig build`.
-  await build(appDir, outDir);
-  // RUNE PARITY: when this UI is half of a rune monorepo (a keep backend beside it),
-  // dev serves EXACTLY the prod composition — serveSprig folding the backend's /api +
-  // /docs around the app — instead of a UI-only handler. The composition root is a
-  // CLI concern: composed in-process here, regenerated by `build --rune` for deploy,
-  // never a committed file. The backend reads env at module-eval, so the git root's
-  // .env is loaded first (never overriding the caller's environment) — the dev twin
-  // of prod's `deno serve --env-file=.env`.
+  // RUNE PARITY: when this UI is half of a rune monorepo, dev serves EXACTLY the prod composition —
+  // serveSprig folding the backend's /api + /docs around the app. Detect it + load its .env FIRST
+  // (the keep reads env at module-eval), then OVERLAP the three independent bring-ups instead of
+  // running them back-to-back — none shares mutable state, so this only hides wall-clock:
+  //   (1) keep backend import (rune/danet DI): started here, awaited after the renderer;
+  //   (2) client build + Tailwind css: awaited next;
+  //   (3) isolate workbench (a separate process): launched right after the build, so it builds
+  //       concurrently with the renderer + keep below rather than sequentially after them.
   const rune = await detectRuneComposition(resolve(appDir));
   if (rune) await loadDotEnv(join(rune.gitRoot, ".env"));
+  const keepPromise = rune
+    ? import(toFileUrl(join(rune.gitRoot, rune.serverRel, "bootstrap", "mod.ts")).href)
+    : null;
+  // mark it "handled" so a reject in the window before we await it isn't flagged as unhandled;
+  // the real error still surfaces at `await keepPromise!` below (both handlers fire).
+  keepPromise?.catch(() => {});
+
+  const port = wantPort; // annotate uses the hashed/validated stable port (no drift).
+  const root = installRoot();
+  const appAbs = resolve(appDir);
+  // The supervisor pins the isolate port (reused across restarts + freeable on reclaim); standalone
+  // `sprig dev` falls back to a free one.
+  const isoPort = Number(Deno.env.get("SPRIG_DEV_ISO_PORT")) || freePort(port + 1);
+  const isoBase = `http://localhost:${isoPort}`;
+  // Hoisted so onServerReload / the signal handler can kill the workbench before this process exits.
+  let wb: Deno.ChildProcess | null = null;
+
+  // Launch the workbench NOW (separate process) — BEFORE the app build — so its whole build+serve
+  // (~1.2s, the slow half) overlaps the app's build + renderer + keep instead of queueing after them.
+  // Safe because buildCss now keys its Tailwind input per-outDir, so the two concurrent builds no
+  // longer clobber a shared input.css. Best-effort: a missing/failed workbench must NEVER drop dev
+  // (the app is the review surface; isolate is the verify surface) — it just warns.
+  try {
+    await assertWorkbench(root); // throws on an old slim install lacking the workbench
+    wb = spawnWorkbench(appAbs, isoPort, open); // workbench opens its own tab when ready
+  } catch (e) {
+    console.error(`sprig: isolate workbench unavailable (${e instanceof Error ? e.message : e}) — annotate overlay still running.`);
+  }
+
+  await build(appDir, outDir);
+
   const { renderer, sprigApp } = await import(toFileUrl(join(resolve(appDir), "src", "mod.ts")).href);
   let hostFetch: (req: Request, info: Deno.ServeHandlerInfo) => Promise<Response>;
   if (rune) {
-    const { api } = await import(toFileUrl(join(rune.gitRoot, rune.serverRel, "bootstrap", "mod.ts")).href);
+    const { api } = await keepPromise!; // was loading concurrently since above
     const composed = serveSprig({ keep: api, app: sprigApp, base, assetsDir: outDir });
     hostFetch = (req, info) => composed.fetch(req, info);
   } else {
@@ -1204,9 +1306,6 @@ async function dev(rawArgs: string[] = []): Promise<void> {
     hostFetch = (req, info) => ui(req, info).then((r: Response | null) => r ?? new Response("Not Found", { status: 404 }));
   }
   const handler = { fetch: hostFetch };
-  // the isolate workbench (spawned below); hoisted so onServerReload can kill it before the
-  // restart exit, else each restart would orphan a workbench and the next child's would collide.
-  let wb: Deno.ChildProcess | null = null;
   const devSrv = createDevServer({
     renderer,
     base,
@@ -1220,27 +1319,6 @@ async function dev(rawArgs: string[] = []): Promise<void> {
       Deno.exit(DEV_RESTART_CODE);
     },
   });
-  // annotate uses the hashed/validated stable port (no drift).
-  const port = wantPort;
-
-  // Always-on annotate: fold the component-keyed click-to-edit overlay INTO the dev server, and
-  // bring up the isolate workbench alongside on a second port (one command, both surfaces). They
-  // die together on Ctrl-C.
-  const root = installRoot();
-  const appAbs = resolve(appDir);
-  // The supervisor pins this to the repo's stable isolate port (so it's reused across restarts +
-  // freeable on reclaim); standalone `sprig dev` (no supervisor) still falls back to a free one.
-  const isoPort = Number(Deno.env.get("SPRIG_DEV_ISO_PORT")) || freePort(port + 1);
-  const isoBase = `http://localhost:${isoPort}`;
-  // The workbench is best-effort: if it's missing or can't start, the annotate overlay must STILL
-  // run (the loop's review surface is the app; isolate is the verify surface). Never let it drop
-  // dev — so a missing workbench (old slim install) just warns instead of failing.
-  try {
-    await assertWorkbench(root); // throws on an old slim install lacking the workbench
-    wb = spawnWorkbench(appAbs, isoPort, open); // workbench opens its own tab when ready
-  } catch (e) {
-    console.error(`sprig: isolate workbench unavailable (${e instanceof Error ? e.message : e}) — annotate overlay still running.`);
-  }
   // `spec/ui` is the SHARED contract — anchor it on the git root (sibling of `.git`) so a
   // monorepo's frontend writes to <gitRoot>/spec/ui, not <gitRoot>/frontend/spec/ui. Falls back
   // to appAbs outside a git repo. `srcDir` stays per-app (component discovery is NOT a spec concern).
@@ -1485,12 +1563,19 @@ async function init(dir = "."): Promise<void> {
  *  build the app → serve serve.ts (UI + keep backend) under ISOLATE_PROJECT, on `port`. Used by
  *  `sprig isolate` (which awaits it) and `sprig dev --annotate` (which runs it alongside the dev
  *  server). The same flow that powers the live workbench; we just point it at `appAbs`. */
-/** The per-repo-branch workbench working dir (`~/.sprig/work/<repo-branch>`). Keyed by repoKey so
- *  two projects — or two branches/worktrees of one — get physically separate generated previews +
- *  build output. Nothing can leak between them (the cross-project `_preview` pollution that made a
- *  `sprig dev` build a foreign app's islands). */
+/** The base for ALL workbench working dirs — an EPHEMERAL location ($TMPDIR/sprig-work), NOT
+ *  ~/.sprig, so the OS reaps idle/abandoned workbenches (reboot + periodic temp cleanup) and nothing
+ *  leaks permanently. Safe because materializeWorkbench re-materializes on a miss: a reaped dir just
+ *  re-copies the template next run (the version-stamp cache lives inside, so warm runs stay fast). */
+function ephemeralWorkBase(): string {
+  return join(Deno.env.get("TMPDIR") ?? "/tmp", "sprig-work");
+}
+/** The per-repo-branch workbench working dir. Keyed by repoKey so two projects — or two branches/
+ *  worktrees of one — get physically separate generated previews + build output. Nothing can leak
+ *  between them (the cross-project `_preview` pollution that made a `sprig dev` build a foreign app's
+ *  islands). `--no-cache` overrides this with a pid-suffixed sibling for a throwaway standalone run. */
 function workbenchRoot(appAbs: string): string {
-  return join(sprigStateRoot(), "work", repoKey(appAbs));
+  return join(ephemeralWorkBase(), repoKey(appAbs));
 }
 
 function spawnWorkbench(appAbs: string, port: number, open: boolean): Deno.ChildProcess {
@@ -1501,7 +1586,9 @@ function spawnWorkbench(appAbs: string, port: number, open: boolean): Deno.Child
       "dev", "--root", appAbs, ...(open ? [] : ["--no-open"]),
     ],
     cwd: root,
-    env: { ...Deno.env.toObject(), PORT: String(port), SPRIG_WB_ROOT: workbenchRoot(appAbs) },
+    // respect a pre-set SPRIG_WB_ROOT (the --no-cache supervisor pins a unique ephemeral one so it
+    // can't collide with the shared owner); otherwise the default per-repo-branch ephemeral dir.
+    env: { ...Deno.env.toObject(), PORT: String(port), SPRIG_WB_ROOT: Deno.env.get("SPRIG_WB_ROOT") ?? workbenchRoot(appAbs) },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -1628,10 +1715,13 @@ async function install(dev: boolean): Promise<void> {
 const USAGE = `sprig — the framework CLI
 
   sprig init  [dir]              scaffold a minimal, runnable sprig app (default: .)
-  sprig dev   [appDir] [--annotate <html>] [--open]  HMR dev server → /ui — ALWAYS serves the click-to-edit
-                                  overlay + the isolate workbench (full app). --annotate <html>: annotate one
-                                  prototype file instead. Annotate picks a STABLE port hashed from the app name
-                                  (PORT overrides); prints the URL and, only with --open, pops it in the browser.
+  sprig dev   [appDir] [--annotate <html>] [--open] [--no-cache]  HMR dev server → /ui — ALWAYS serves the
+                                  click-to-edit overlay + the isolate workbench (full app). --annotate <html>:
+                                  annotate one prototype file instead. Annotate picks a STABLE port hashed from the
+                                  app name (PORT overrides); prints the URL and, only with --open, pops it in the
+                                  browser. Re-running attaches to the one shared process; --no-cache instead spawns
+                                  a SEPARATE standalone process (free ports, own ephemeral workbench) that runs
+                                  regardless of who else is dev'ing this repo and leaves nothing behind.
   sprig build [appDir] [--rune]  code-split islands + scope CSS + Tailwind → static/ (default: .; never annotate)
                                   --rune also folds the sibling keep backend + this UI into a git-root
                                   serve.ts (serveSprig) and makes the root deno.json a Deno workspace

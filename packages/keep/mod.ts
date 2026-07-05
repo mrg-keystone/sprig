@@ -8,6 +8,16 @@
  */
 import { backendClient, type Guard, isLayoutLoad, type Route, type RouteMeta, type SprigApp } from "@mrg-keystone/sprig";
 import { join, toFileUrl } from "@std/path";
+// Third-party browser libs VENDORED INTO the server source (imported as TEXT → part of the
+// module graph, not a disk read, so they ship whether sprig runs from ~/.sprig or straight
+// from JSR). serveSprig hands them to the client at <base>/_assets/vendor/<name>; every app
+// AND the isolate workbench gets them without compiling them into its own frontend bundle.
+// The app declares these in deno.json ONLY for type-checking — this vendored copy is the one
+// and only version that actually runs (same "CLI owns the runtime" rule as @mrg-keystone/sprig).
+import apexchartsJs from "./vendor/apexcharts.js" with { type: "text" };
+const VENDOR: Record<string, { body: string; type: string }> = {
+  "apexcharts.js": { body: apexchartsJs, type: "text/javascript; charset=utf-8" },
+};
 
 // The SSR renderer is server-only (Deno APIs) so it can't live in client-safe
 // @mrg-keystone/sprig; it belongs with the rest of the server glue. The actual COMPILER
@@ -41,7 +51,9 @@ async function routeFileExists(p: string): Promise<boolean> {
 async function resolveGuards(names: string[], srcDir: string): Promise<Guard[]> {
   const guards: Guard[] = [];
   for (const name of names) {
-    const path = join(srcDir, "guards", name, "guard.ts");
+    // a guard is a folder: guards/<name>/mod.ts (+ its test.ts). guard.ts is the legacy filename.
+    const dir = join(srcDir, "guards", name);
+    const path = (await routeFileExists(join(dir, "mod.ts"))) ? join(dir, "mod.ts") : join(dir, "guard.ts");
     const mod = await import(toFileUrl(path).href) as Record<string, unknown>;
     const fn = (mod.default ?? mod.guard ?? Object.values(mod).find((v) => typeof v === "function")) as Guard | undefined;
     if (typeof fn !== "function") {
@@ -79,6 +91,12 @@ async function mapRouteTable(entries: RawRoute[], srcDir: string): Promise<Route
  *  `routers/<name>/routes.json` (a layout's children), and `guards/<name>/guard.ts` (guards resolved
  *  by name). Produces the same `Route[]` `bootstrap()` consumes — `defineRoutes([...])` still works. */
 export async function loadRoutes(srcDir: string): Promise<Route[]> {
+  // The entry is the routers/root/ router — its routes.json is the top-level table, its template.html
+  // the root layout, its logic.ts the shared root hooks (a regular router that IS the entrypoint).
+  // Legacy: a flat src/root.json table with no root layout. Prefer the folder.
+  if (await routeFileExists(join(srcDir, "routers", "root", "routes.json"))) {
+    return await mapRouteTable([{ path: "", load: "routers/root" }], srcDir);
+  }
   const raw = JSON.parse(await Deno.readTextFile(join(srcDir, "root.json"))) as RawRoute[];
   return await mapRouteTable(raw, srcDir);
 }
@@ -516,6 +534,15 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
         const authRes = await serveAuthGateway(req, config.keep, authInfraUrl, authExchangePath);
         if (authRes) return authRes;
       }
+      // framework-vendored libs (apexcharts, …) → served straight from the in-source VENDOR
+      // map above, NOT the app's build output. This is what "ship it to the client" means:
+      // the server hands over its own bundled copy; the app never emits it.
+      if (path.startsWith(assetPrefix + "/vendor/")) {
+        const asset = VENDOR[path.slice((assetPrefix + "/vendor/").length)];
+        return asset
+          ? new Response(asset.body, { headers: { "content-type": asset.type, "cache-control": "public, max-age=86400" } })
+          : new Response("Not Found", { status: 404 });
+      }
       // built assets → static dir (immutable only for content-addressed requests)
       if (path.startsWith(assetPrefix + "/")) {
         return serveAsset(assetsDir, path.slice(assetPrefix.length + 1), req, version);
@@ -564,7 +591,15 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
       }
       // everything else → sprig SSR, in-process Backend threaded in (no globalThis),
       // plus the served-assets content hash so the rendered ?v= is content-addressed.
-      return config.app.fetch(req, info, { backend, assetsVersion: (await version()) ?? undefined });
+      // Session mode: resolve the httpOnly session cookie → profile and thread it in as env.session
+      // so the SSR guard reads ctx.session instead of re-verifying a bearer. Legacy mode (no
+      // keep.sessions) → session stays null and a guard parses the headers itself, as before.
+      let session: SessionProfile | null = null;
+      if (config.keep.sessions) {
+        const raw = readCookie(req, SESSION_COOKIE);
+        if (raw) session = await config.keep.sessions.read(decodeURIComponent(raw)).catch(() => null);
+      }
+      return config.app.fetch(req, info, { backend, assetsVersion: (await version()) ?? undefined, session });
     },
   };
 }
