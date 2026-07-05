@@ -349,7 +349,24 @@ export async function buildCss(srcDir: string, outDir: string): Promise<void> {
   // With no daisyUI themes, its components read the app's tokens and inherit the app's brand.
   // The ONLY bespoke global CSS an app gets is CLI-injected here (apps declare tokens, not globals):
   // a full-height root so the shell can fill the viewport. Everything else is Tailwind preflight.
-  const globalReset = `html, body { height: 100%; }`;
+  // The framework's BASE LAYER — the only global CSS an app needs beyond its @theme tokens, so no app
+  // stylesheet is required. It applies the app's font/color tokens to the document SEMANTICALLY, with
+  // fallbacks, so an app that defines them in css-tokens.json (--font-body/-display/-mono, daisyUI's
+  // --color-base-*) gets styled document text, headings, a `.tabular` numeric helper, and a
+  // reduced-motion guard — while an app that defines none still renders on system defaults. Injected
+  // unlayered (after Tailwind's @layer base) so it wins over Preflight.
+  const globalReset = `html, body { height: 100%; }
+body {
+  font-family: var(--font-body, var(--font-sans, ui-sans-serif, system-ui, sans-serif));
+  background: var(--color-base-100, Canvas);
+  color: var(--color-base-content, CanvasText);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4, h5, h6 { font-family: var(--font-display, inherit); letter-spacing: -0.01em; }
+.tabular { font-family: var(--font-mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}`;
   const input = `@import "tailwindcss";\n@plugin "daisyui" { themes: false; }\n@source "${srcDir}/**/*.html";\n${shellSource}${globalReset}\n` +
     `${tokenCss ? tokenCss + "\n" : ""}${parts.join("\n\n")}\n`;
   await Deno.writeTextFile(inputPath, input);
