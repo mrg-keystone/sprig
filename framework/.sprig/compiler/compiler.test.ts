@@ -440,14 +440,18 @@ Deno.test("bootstrap/template.html owns the <head> inline — framework splits <
     // ONE combined file: a full document — <head> (favicon + meta) and <body> (app-root + outlet)
     await write(
       "ui/bootstrap/template.html",
-      `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <link rel="icon" href="/favicon.svg" />\n  <meta name="theme-color" content="#0b0f14" />\n</head>\n<body>\n  <div class="app-root"><router-outlet></router-outlet></div>\n</body>\n</html>`,
+      `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <title>My Control Room</title>\n  <link rel="icon" href="/favicon.svg" />\n  <meta name="theme-color" content="#0b0f14" />\n</head>\n<body>\n  <div class="app-root"><router-outlet></router-outlet></div>\n</body>\n</html>`,
     );
     await write("ui/src/pages/home/template.html", `<h1>home</h1>`);
     // renders without a parse error even though the source is a full document (parser only sees <body>)
     const html = await (await createRenderer(joinPath(tmp, "ui", "src"), "/ui", { dev: true })).renderDocument("pages/home", {});
-    // the <head> content from template.html landed in the generated head
+    // the app's <head> is AUTHORITATIVE — its title/favicon/meta are used verbatim
+    assert(html.includes("<title>My Control Room</title>"), "template.html <title> not used");
+    assert(!html.includes("<title>sprig</title>"), "framework default title leaked — the app owns the head");
     assert(html.includes(`<link rel="icon" href="/favicon.svg" />`), "favicon from template.html <head> not injected");
     assert(html.includes(`<meta name="theme-color" content="#0b0f14" />`), "meta from template.html <head> not injected");
+    // the framework still injects its RUNTIME bits (built stylesheet, island loader) into that head
+    assert(html.includes(`/_assets/app.css`), "framework runtime bits (app.css) not injected into the app head");
     // the <body> rendered — page into the outlet — with exactly one frame (no double <head>)
     assert(html.includes(">home</h1>"), "shell body / page did not render");
     assertEquals(html.match(/<head>/gi)?.length, 1, "double <head>");

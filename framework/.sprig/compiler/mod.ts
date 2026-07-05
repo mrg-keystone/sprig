@@ -478,24 +478,35 @@ function titleOf(levels: readonly { meta?: { title?: string } }[]): string | und
 }
 function documentHead(base: string, version: string, perf: PerfConfig | null = null, title?: string, favicon?: string, appHead = ""): string {
   const client = `${base}/_assets/client.js?v=${version}`;
-  // a route's meta.title (leaf wins) overrides the framework default; escape it for <title> text.
+  // the framework's RUNTIME bits, injected into WHATEVER head is in play: the perf beacon (BEFORE the
+  // stylesheet — an inline script after a pending stylesheet blocks on the CSSOM), the built app.css,
+  // the island-loader preload, and the chart vendor.
+  const runtime = `${perfHeadSnippet(perf)}
+  <link rel="stylesheet" href="${base}/_assets/app.css?v=${version}" />
+  <link rel="modulepreload" href="${client}" />
+  <script defer src="${base}/_assets/vendor/apexcharts.js"></script>`;
+  // The app OWNS the document head via bootstrap/template.html's <head> — its charset, viewport, title,
+  // favicon, fonts and meta are AUTHORITATIVE. The framework injects only its runtime bits AFTER it and
+  // generates NO competing title/charset. (createRenderer({ favicon }) + a route's meta.title still
+  // drive the default head below, for an app whose template.html is body-only.)
+  if (appHead) {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  ${appHead}${runtime}
+</head>
+<body>
+`;
+  }
+  // No app <head> → the framework's default head (charset, viewport, title, favicon).
   const t = title ? title.replace(/&/g, "&amp;").replace(/</g, "&lt;") : "sprig";
-  // the app's favicon (createRenderer({ favicon })) → a <link>; the app serves the file itself.
   const icon = favicon ? `\n  <link rel="icon" href="${favicon.replace(/"/g, "&quot;")}" />` : "";
-  // the app's own head CONTENT (bootstrap/head.html: fonts, meta, preconnects), injected raw.
-  const extra = appHead ? `\n  ${appHead}` : "";
-  // the perf snippet (when enabled) sits BEFORE the stylesheet link: an inline script
-  // after a pending stylesheet blocks on the CSSOM, which would hold the nav-start
-  // beacon hostage to the CSS download.
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />${perfHeadSnippet(perf)}
-  <title>${t}</title>${icon}${extra}
-  <link rel="stylesheet" href="${base}/_assets/app.css?v=${version}" />
-  <link rel="modulepreload" href="${client}" />
-  <script defer src="${base}/_assets/vendor/apexcharts.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${t}</title>${icon}${runtime}
 </head>
 <body>
 `;
