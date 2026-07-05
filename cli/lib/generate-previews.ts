@@ -7,7 +7,7 @@
 // never shadows a native element like <button>. A manifest.gen.ts of
 // { routes, modules } is spread into app/src/main.ts. The app then builds (islands
 // code-split) and serves under one serveSprig origin — no Vite, no Fresh.
-import { basename, dirname, join } from "#std/path";
+import { basename, dirname, join, resolve, toFileUrl } from "#std/path";
 import { ensureDir, exists, walk } from "#std/fs";
 import type { CaseDef, ComponentEntry } from "../../server/src/core/business/discover/mod.ts";
 
@@ -17,13 +17,31 @@ const sanitize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").repl
 const RESERVED = new Set(["router-outlet", "content", "ng-content", "ng-container", "stage-bridge"]);
 const DASH_TAG = /<([a-z][a-z0-9]*(?:-[a-z0-9]+)+)[\s/>]/g;
 
+// import specifiers to rewrite: a relative path in `… from "x"`, a bare `import "x"`, or a
+// dynamic `import("x")`. Only `./` and `../` specifiers match; `$.*`/jsr/npm/bare are left alone.
+const REL_IMPORT = /(\bfrom\s*|\bimport\s*|\bimport\(\s*)(["'])(\.\.?\/[^"']*)(["'])/g;
+
+/** Copy a component's `logic.ts` into the workbench, rewriting its RELATIVE import specifiers
+ *  (`./`, `../`) to absolute file:// URLs resolved against the component's ORIGINAL dir. The
+ *  copy lands at a fixed depth (`_preview/targets/<name>/`), so a raw relative import like
+ *  `../../services/backend/client.ts` would resolve to a path that doesn't exist under the
+ *  workbench — an import map can't fix a relative specifier. Pinning it to the real project
+ *  file makes it resolve to the SAME module the typecheck/LSP saw. `$.*` aliases and bare
+ *  specifiers are untouched: the workbench import map (serve) + forcedImportMap (bundle) own those. */
+export async function copyLogic(srcFile: string, destFile: string): Promise<void> {
+  const srcDir = dirname(srcFile);
+  const code = await Deno.readTextFile(srcFile);
+  const rewritten = code.replace(REL_IMPORT, (_m, pre, q, spec, qq) => `${pre}${q}${toFileUrl(resolve(srcDir, spec)).href}${qq}`);
+  await Deno.writeTextFile(destFile, rewritten);
+}
+
 /** Copy a folder-component (template + styles + logic) into <targetsDir>/<name>. */
 async function copyComponent(srcDir: string, name: string, targetsDir: string): Promise<void> {
   const dest = join(targetsDir, name);
   await ensureDir(dest);
   await Deno.copyFile(join(srcDir, "template.html"), join(dest, "template.html"));
   if (await exists(join(srcDir, "styles.css"))) await Deno.copyFile(join(srcDir, "styles.css"), join(dest, "styles.css"));
-  if (await exists(join(srcDir, "logic.ts"))) await Deno.copyFile(join(srcDir, "logic.ts"), join(dest, "logic.ts"));
+  if (await exists(join(srcDir, "logic.ts"))) await copyLogic(join(srcDir, "logic.ts"), join(dest, "logic.ts"));
 }
 
 /** Find a folder-component by selector (folder basename) anywhere under projectSrc. */

@@ -3,7 +3,7 @@
 // SSR body that bootstrap() used to fake with a JSON dump is now real markup.
 import { basename, dirname, join, relative, toFileUrl } from "@std/path";
 import { walk } from "@std/fs/walk";
-import { clearStaticCache, type ComponentDef, islandHost, type Registry, renderNodes, resolveIslands } from "./render.ts";
+import { clearStaticCache, type ComponentDef, islandHost, type Registry, renderNodes, resolveIslands, type RouteCtx } from "./render.ts";
 import { snapshotOf } from "./lifecycle.ts";
 import { named, type Node } from "./node.ts";
 import { fromSerialized, serialize, type SerializedTemplate } from "./serialize.ts";
@@ -26,11 +26,11 @@ export interface SsrRenderer {
    *  plain page (the pre-nesting behavior). `ropts.assetsVersion` (threaded from serveSprig/
    *  sprigUi via the app env) is the content hash of the dir the assets are ACTUALLY served
    *  from — it wins over this renderer's own readVersion(). */
-  renderDocument(chain: string | readonly MatchedLevel[], inputs: Scope, ropts?: { assetsVersion?: string }, chrome?: Scope): Promise<string>;
+  renderDocument(chain: string | readonly MatchedLevel[], inputs: Scope, ropts?: { assetsVersion?: string; reqCtx?: RouteCtx }, chrome?: Scope): Promise<string>;
   /** Same document, STREAMED: the <head> (asset preloads) flushes on the first byte,
    *  the body streams after its onServerInit fetches resolve. Byte-identical to
    *  renderDocument's output, just chunked. */
-  renderStream(chain: string | readonly MatchedLevel[], inputs: Scope, ropts?: { assetsVersion?: string }, chrome?: Scope): ReadableStream<Uint8Array>;
+  renderStream(chain: string | readonly MatchedLevel[], inputs: Scope, ropts?: { assetsVersion?: string; reqCtx?: RouteCtx }, chrome?: Scope): ReadableStream<Uint8Array>;
   /** Selectors discovered (for diagnostics/tests). */
   selectors(): string[];
   /** the scanned src root (for the dev server's watcher). */
@@ -52,10 +52,23 @@ export interface SsrRenderer {
 /** Scan `srcDir` for every folder containing a template.html → selector registry
  *  (selector = folder name). The page referenced by a route's `load` resolves by
  *  its folder basename, the same map used for tag resolution. */
+/** Split a bootstrap/template.html into its raw <head> content (lifted out and injected into the
+ *  generated head — NEVER parsed) and its <body> content (the fragment the component parser sees).
+ *  A body-only shell (no <head>/<body> tags) returns { head: "", body: the whole source unchanged }. */
+export function splitShellHtml(src: string): { head: string; body: string } {
+  const headMatch = src.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+  const bodyMatch = src.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const head = headMatch ? headMatch[1].trim() : "";
+  const body = bodyMatch
+    ? bodyMatch[1].trim()
+    : src.replace(/<!doctype[^>]*>/i, "").replace(/<head[^>]*>[\s\S]*?<\/head>/i, "").replace(/<\/?html[^>]*>/gi, "").trim();
+  return { head, body };
+}
+
 export async function createRenderer(
   srcDir: string,
   base = "/ui",
-  opts: { dev?: boolean; shell?: string; shellDir?: string; reserved?: string[] } = {},
+  opts: { dev?: boolean; shell?: string; shellDir?: string; reserved?: string[]; favicon?: string } = {},
 ): Promise<SsrRenderer> {
   const shellSelector = opts.shell ?? "shell";
   // off-app (keep-owned) prefixes the client soft-nav must leave to the browser. Defaults
@@ -81,7 +94,10 @@ export async function createRenderer(
   // ASTs so the runtime never parses. Absent (no build / fresh dev) → parse live below.
   let prebuilt: Record<string, SerializedTemplate> | null = null;
   try {
-    prebuilt = JSON.parse(await Deno.readTextFile(join(Deno.cwd(), "static", "templates.json")));
+    // read the prebuilt registry from the SAME dir the build wrote it to — SPRIG_ASSETS_DIR in dev
+    // (the temp cache), else <cwd>/static. Reading <cwd>/static unconditionally made `sprig dev`
+    // ALWAYS miss → the renderer fell back to live tree-sitter parsing every template at boot.
+    prebuilt = JSON.parse(await Deno.readTextFile(join(Deno.env.get("SPRIG_ASSETS_DIR") || join(Deno.cwd(), "static"), "templates.json")));
   } catch { /* no prebuild → live parse */ }
   for await (const entry of walk(srcDir, { includeDirs: false, match: [/template\.html$/] })) {
     const dir = dirname(entry.path);
@@ -101,26 +117,38 @@ export async function createRenderer(
         // lets inject() resolve in the constructor / onServerInit.
         // deno-lint-ignore no-explicit-any
         const Cls = def as new (ctx: any) => Record<string, unknown>;
+        // A route's SERVER-ONLY logic (onServerLoad, and NO browser hook) produces data server-side
+        // but never hydrates — no state snapshot here, and the build ships no client entry for it.
+        // Any browser hook (onBrowserLoad on a route, or onBrowserInit on an island) → hydrate.
+        const proto = Cls.prototype as { onServerLoad?: unknown; onBrowserLoad?: unknown; onBrowserInit?: unknown };
+        const serverOnly = typeof proto.onServerLoad === "function" &&
+          typeof proto.onBrowserLoad !== "function" && typeof proto.onBrowserInit !== "function";
         island = {
           // sync fallback (islands behind control flow / not pre-resolved): runs
           // onServerInit synchronously (an async one isn't awaited on this path).
-          scope: (inputs) =>
+          scope: (inputs, reqCtx) =>
             withServerInjector(() => {
-              const inst = new Cls(makeServerCtx(inputs));
-              (inst as { onServerInit?: () => unknown }).onServerInit?.();
+              const inst = new Cls(makeServerCtx(inputs)) as { onServerInit?: (ctx?: RouteCtx) => unknown; onServerLoad?: (ctx?: RouteCtx) => unknown };
+              // A route names its server hook onServerLoad (the route-level twin of a component's
+              // onServerInit); prefer it, fall back to onServerInit so islands are unchanged. Route
+              // logic receives the request ctx (url/params/session); an island ignores the arg.
+              (inst.onServerLoad ?? inst.onServerInit)?.call(inst, reqCtx);
               return inst as Scope;
             }),
           // the async pre-pass path: construct + start onServerInit INSIDE the injector
           // (so inject() resolves in the constructor AND in onServerInit's synchronous
           // part, matching the sync path), then AWAIT the result before render. DI across
           // an await still needs async-aware context (documented limitation).
-          resolve: (inputs) =>
+          resolve: (inputs, reqCtx) =>
             withServerInjector(() => {
-              const inst = new Cls(makeServerCtx(inputs)) as Record<string, unknown>;
-              return Promise.resolve((inst as { onServerInit?: () => unknown }).onServerInit?.()).then(() => inst as Scope);
+              const inst = new Cls(makeServerCtx(inputs)) as Record<string, unknown> & { onServerInit?: (ctx?: RouteCtx) => unknown; onServerLoad?: (ctx?: RouteCtx) => unknown };
+              // onServerLoad (route) preferred over onServerInit (component); await either before render.
+              // Route logic receives the request ctx (url/params/session); an island ignores the arg.
+              return Promise.resolve((inst.onServerLoad ?? inst.onServerInit)?.call(inst, reqCtx)).then(() => inst as Scope);
             }),
           trigger: (Cls as { trigger?: string }).trigger ?? "load",
-          snapshot: true, // carry instance state across the wire
+          snapshot: !serverOnly, // server-only route logic never hydrates; everything else snapshots
+          serverOnly, // the SSR renders it statically (no hydration boundary); the build skips its client entry
         };
       } else {
         // the { setup } model: wrap setup() in a server component injector so inject()
@@ -166,11 +194,18 @@ export async function createRenderer(
   // Prebuilt when the build serialized it (key = the shell selector), else live-parsed once here.
   const shellDir = opts.shellDir ?? join(srcDir, "..", "bootstrap");
   const shellHtml = join(shellDir, "template.html");
+  // The app owns the document <head> CONTENT (favicon, fonts, meta, preconnects) right IN
+  // bootstrap/template.html: the framework SPLITS the file — the raw <head>…</head> is lifted out
+  // (never parsed) and injected into the generated <head>, and only the <body> is run through the
+  // component parser (a fragment grammar that would reject <!DOCTYPE>/<html>/<head>). A body-only
+  // shell is unchanged; a separate bootstrap/head.html is still honored as a fallback.
+  let appHead = "";
   if (await exists(shellHtml)) {
-    const shellSrc = await Deno.readTextFile(shellHtml);
+    const { head, body } = splitShellHtml(await Deno.readTextFile(shellHtml));
+    appHead = head || (await Deno.readTextFile(join(shellDir, "head.html")).catch(() => "")).trim();
     const template = prebuilt?.[shellSelector]
       ? fromSerialized(prebuilt[shellSelector])
-      : await (await parser()).parseCached(shellSrc);
+      : await (await parser()).parseCached(body);
     global.set(shellSelector, { selector: shellSelector, template, scope: componentScopeId(shellSelector) });
   }
   // the default (page-less) registry: global only.
@@ -240,6 +275,7 @@ export async function createRenderer(
     reg: Registry,
     outlet?: string,
     outletKey?: string,
+    reqCtx?: RouteCtx,
   ): Promise<string> => {
     const comp = global.get(basename(load));
     if (!comp) return outlet ?? ""; // unknown load → pass the inner content through untouched
@@ -249,8 +285,8 @@ export async function createRenderer(
     // the component's OWN logic.ts class IS its data source: run onServerInit and use the
     // instance as the render scope. A component with no logic.ts renders against `inputs`.
     const scope: Scope = comp.island?.resolve
-      ? await comp.island.resolve(inputs)
-      : (comp.island ? comp.island.scope(inputs) : inputs);
+      ? await comp.island.resolve(inputs, reqCtx)
+      : (comp.island ? comp.island.scope(inputs, reqCtx) : inputs);
     const baseOpts = { scope, registry: reg, source: comp.template.text, scopeAttr: comp.scope, outlet, outletKey, mocks };
     // snapshot the post-onServerInit state NOW (before @let locals mutate it) so the browser
     // re-seeds before onBrowserInit — for a layout too, so its live cycle resumes correctly.
@@ -260,11 +296,13 @@ export async function createRenderer(
     let html = renderNodes(named(comp.template), { ...baseOpts, resolved });
     // if it's a class island, wrap it as a hydration boundary so its logic.ts hydrates on the
     // client (constructs the class, restores the snapshot, runs onBrowserInit, wires events).
-    if (comp.island) {
+    if (comp.island && !comp.island.serverOnly) {
       const propsObj: Record<string, unknown> = { ...(inputs as Record<string, unknown>) };
       if (snap) propsObj.__snapshot = snap;
       html = islandHost(comp.scope ?? "", comp.selector, comp.island.trigger, propsObj, html);
     }
+    // serverOnly route logic: its onServerLoad ran to produce `scope`/`html` above, but it renders
+    // as a plain static subtree — no hydration boundary, and the build emits no client entry for it.
     return html;
   };
 
@@ -273,24 +311,24 @@ export async function createRenderer(
    *  inner level, keyed by that level's load (data-level) so the client soft-nav can swap the
    *  deepest changed one. The leaf gets the resolved `inputs`; layouts get {} (their own
    *  logic.ts onServerInit is their data source). Shared by renderDocument + renderStream. */
-  const renderBody = async (chain: readonly MatchedLevel[], inputs: Scope, chrome?: Scope): Promise<string> => {
+  const renderBody = async (chain: readonly MatchedLevel[], inputs: Scope, chrome?: Scope, reqCtx?: RouteCtx): Promise<string> => {
     if (!chain.length) return "";
     // layouts + the shell receive the CHROME model (generated nav etc.) as their inputs; the leaf
     // page gets its own resolved data. A layout's logic.ts reads chrome via ctx.input("nav").
     const chromeInputs = chrome ?? ({} as Scope);
     const leaf = chain[chain.length - 1].load;
     // the deepest level (the page) — its page-local registry, its resolved inputs, no outlet.
-    let html = await renderLevel(leaf, inputs, registryForPage(basename(leaf)));
+    let html = await renderLevel(leaf, inputs, registryForPage(basename(leaf)), undefined, undefined, reqCtx);
     let innerLoad = leaf;
     // wrap in each ancestor LAYOUT (routers/*), inner→outer; each holds the inner HTML, keyed.
     for (let i = chain.length - 2; i >= 0; i--) {
-      html = await renderLevel(chain[i].load, chromeInputs, registry, html, innerLoad);
+      html = await renderLevel(chain[i].load, chromeInputs, registry, html, innerLoad, reqCtx);
       innerLoad = chain[i].load;
     }
     // wrap in the shell (outermost); its outlet is keyed by the outermost chain level.
     const shell = global.get(shellSelector);
     if (!shell) return html;
-    return await renderLevel(shellSelector, chromeInputs, registry, html, innerLoad);
+    return await renderLevel(shellSelector, chromeInputs, registry, html, innerLoad, reqCtx);
   };
 
   // resolve.ts loaders, imported on first match by route `load` path and cached.
@@ -330,7 +368,8 @@ export async function createRenderer(
       // a bare load string (the pre-nesting caller, incl. tests) normalizes to a length-1 chain.
       const levels = typeof chain === "string" ? [{ load: chain }] : chain;
       const leaf = levels.length ? levels[levels.length - 1].load : "";
-      return document(await renderBody(levels, inputs, chrome), base, v, reserved, pageName(leaf), perf, !!opts.dev);
+      const body = await renderBody(levels, inputs, chrome, ropts?.reqCtx);
+      return document(body, base, v, reserved, pageName(leaf), perf, !!opts.dev, titleOf(levels), opts.favicon, appHead);
     },
     renderStream(chain, inputs, ropts, chrome) {
       const enc = new TextEncoder();
@@ -341,13 +380,13 @@ export async function createRenderer(
             // snapshot the version so head and tail agree even if a concurrent dev rebuild
             // mutates the module-level `version` during the body await.
             const v = pickVersion(ropts?.assetsVersion);
-            // flush the head NOW → the browser preloads app.css + client.js while we
-            // await the body's onServerInit fetches (and, when INFRA_PERF is on, the
-            // perf snippet's nav-start beacon fires while the body is still streaming).
-            ctrl.enqueue(enc.encode(documentHead(base, v, perf)));
             const levels = typeof chain === "string" ? [{ load: chain }] : chain;
-            const body = await renderBody(levels, inputs, chrome);
             const leaf = levels.length ? levels[levels.length - 1].load : "";
+            // flush the head NOW → the browser preloads app.css + client.js while we await the
+            // body's onServerLoad fetches (and, when INFRA_PERF is on, the perf beacon fires while
+            // the body is still streaming).
+            ctrl.enqueue(enc.encode(documentHead(base, v, perf, titleOf(levels), opts.favicon, appHead)));
+            const body = await renderBody(levels, inputs, chrome, ropts?.reqCtx);
             ctrl.enqueue(enc.encode(body + documentTail(base, v, reserved, pageName(leaf), perf, !!opts.dev)));
           } catch {
             // headers + head are already on the wire, so a render failure can't become a
@@ -431,8 +470,20 @@ export async function assertStaticPage(_templateDir: string): Promise<void> {}
 // first byte — the browser preloads app.css + client.js (modulepreload) while the
 // server is still awaiting the body's onServerInit fetches. documentHead() + the body +
 // documentTail() concatenate to EXACTLY document()'s string (streaming is transparent).
-function documentHead(base: string, version: string, perf: PerfConfig | null = null): string {
+/** The document <title> for a matched chain: the deepest level that declares meta.title (leaf
+ *  overrides its parents); undefined → documentHead uses the framework default. */
+function titleOf(levels: readonly { meta?: { title?: string } }[]): string | undefined {
+  for (let i = levels.length - 1; i >= 0; i--) if (levels[i].meta?.title) return levels[i].meta!.title;
+  return undefined;
+}
+function documentHead(base: string, version: string, perf: PerfConfig | null = null, title?: string, favicon?: string, appHead = ""): string {
   const client = `${base}/_assets/client.js?v=${version}`;
+  // a route's meta.title (leaf wins) overrides the framework default; escape it for <title> text.
+  const t = title ? title.replace(/&/g, "&amp;").replace(/</g, "&lt;") : "sprig";
+  // the app's favicon (createRenderer({ favicon })) → a <link>; the app serves the file itself.
+  const icon = favicon ? `\n  <link rel="icon" href="${favicon.replace(/"/g, "&quot;")}" />` : "";
+  // the app's own head CONTENT (bootstrap/head.html: fonts, meta, preconnects), injected raw.
+  const extra = appHead ? `\n  ${appHead}` : "";
   // the perf snippet (when enabled) sits BEFORE the stylesheet link: an inline script
   // after a pending stylesheet blocks on the CSSOM, which would hold the nav-start
   // beacon hostage to the CSS download.
@@ -441,14 +492,16 @@ function documentHead(base: string, version: string, perf: PerfConfig | null = n
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />${perfHeadSnippet(perf)}
-  <title>sprig</title>
+  <title>${t}</title>${icon}${extra}
   <link rel="stylesheet" href="${base}/_assets/app.css?v=${version}" />
   <link rel="modulepreload" href="${client}" />
+  <script defer src="${base}/_assets/vendor/apexcharts.js"></script>
 </head>
 <body>
 `;
 }
-function documentTail(base: string, version: string, reserved: string[], page?: string, perf: PerfConfig | null = null, hmr = false): string {
+// The framework's client runtime scripts (config + module) — wrapped by documentTail below.
+function tailScripts(base: string, version: string, reserved: string[], page?: string, perf: PerfConfig | null = null, hmr = false): string {
   const client = `${base}/_assets/client.js?v=${version}`;
   // `page` (the matched page's basename) lets the client resolve an island's child
   // components against the same page-local registry the server used (registryForPage).
@@ -458,17 +511,19 @@ function documentTail(base: string, version: string, reserved: string[], page?: 
   // whose fetched documents never execute scripts — emit the same beacon pair.
   if (perf) cfg.perf = { url: perf.url, app: perf.app };
   // dev-only: activate the loader's dormant HMR client. Emitted ONLY when the renderer is in
-  // dev mode (`sprig dev`); prod never sets it, so the bundle stays byte-identical — this is a
-  // runtime DATA flag, not a build variant. The client.js is the same bytes either way.
+  // dev mode (`sprig dev`); prod never sets it, so the bundle stays byte-identical.
   if (hmr) cfg.hmr = true;
   return `
 <script type="application/json" id="__sprig_config">${JSON.stringify(cfg).replace(/</g, "\\u003c")}</script>
-<script type="module" src="${client}"></script>
+<script type="module" src="${client}"></script>`;
+}
+function documentTail(base: string, version: string, reserved: string[], page?: string, perf: PerfConfig | null = null, hmr = false): string {
+  return `${tailScripts(base, version, reserved, page, perf, hmr)}
 </body>
 </html>`;
 }
-function document(body: string, base: string, version: string, reserved: string[], page?: string, perf: PerfConfig | null = null, hmr = false): string {
-  return documentHead(base, version, perf) + body + documentTail(base, version, reserved, page, perf, hmr);
+function document(body: string, base: string, version: string, reserved: string[], page?: string, perf: PerfConfig | null = null, hmr = false, title?: string, favicon?: string, appHead = ""): string {
+  return documentHead(base, version, perf, title, favicon, appHead) + body + documentTail(base, version, reserved, page, perf, hmr);
 }
 
 export { join };

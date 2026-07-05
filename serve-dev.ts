@@ -12,7 +12,7 @@ import { serveSprig } from "@mrg-keystone/sprig/keep";
 import { createDevServer } from "./framework/.sprig/compiler/dev.ts";
 import { api } from "./server/bootstrap/mod.ts";
 import { discover } from "./server/src/core/business/discover/mod.ts";
-import { generatePreviews } from "./cli/lib/generate-previews.ts";
+import { copyLogic, generatePreviews } from "./cli/lib/generate-previews.ts";
 import { basename, dirname, fromFileUrl, join, relative, toFileUrl } from "@std/path";
 import type { SprigApp } from "@mrg-keystone/sprig";
 import type { SsrRenderer } from "@mrg-keystone/sprig/keep";
@@ -24,6 +24,10 @@ const root = dirname(fromFileUrl(import.meta.url)); // the install root (repo or
 const wbRoot = Deno.env.get("SPRIG_WB_ROOT") ?? root;
 const appSrc = join(wbRoot, "app", "src");
 const outDir = join(wbRoot, "static");
+// Point the workbench renderer at its own build dir so createRenderer reads the prebuilt
+// templates.json (ASTs) instead of live-parsing every template with tree-sitter at boot. Must be
+// set BEFORE main.ts is imported below (createRenderer reads SPRIG_ASSETS_DIR at module-eval).
+Deno.env.set("SPRIG_ASSETS_DIR", outDir);
 
 // The workbench app is generated per-key OUTSIDE this module's dir, so import it by absolute URL
 // (a static `./app/src/main.ts` would always be the install copy, defeating the isolation).
@@ -32,7 +36,12 @@ const { app, renderer } = await import(toFileUrl(join(appSrc, "main.ts")).href) 
   renderer: SsrRenderer;
 };
 
-const handler = serveSprig({ keep: api, app, base: "" });
+// assetsDir MUST be the workbench build dir (outDir). serveSprig's default is "static"
+// resolved against CWD — but this process runs with cwd=<install root>, not the per-key
+// workbench, so the default points at a nonexistent <install>/static and every /_assets/*
+// (client.js, app.css) 404s → unstyled, no island hydration. Pin it to the dir we actually
+// built into so the asset route AND the content-hash version both read the real bundle.
+const handler = serveSprig({ keep: api, app, base: "", assetsDir: outDir });
 const dev = createDevServer({ renderer, base: "", outDir, handler });
 
 const project = Deno.env.get("ISOLATE_PROJECT");
@@ -63,7 +72,9 @@ async function watchProject(srcDir: string, projectRoot: string): Promise<void> 
       const dest = join(targetsDir, sanitize(basename(dirname(p))), file);
       try {
         await Deno.stat(dirname(dest)); // an existing preview target → mirror in place
-        await Deno.copyFile(p, dest);
+        // logic.ts must rewrite its relative imports (the copy is relocated); see generate-previews.
+        if (file === "logic.ts") await copyLogic(p, dest);
+        else await Deno.copyFile(p, dest);
       } catch {
         structural = true; // not a known target (new component) → re-generate
       }

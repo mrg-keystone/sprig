@@ -2,6 +2,7 @@ import { Command } from "@cliffy/command";
 import { fromFileUrl, join, resolve, toFileUrl } from "#std/path";
 import { copy, ensureDir, exists } from "#std/fs";
 import { discover } from "../../server/src/core/business/discover/mod.ts";
+import { buildClient } from "../../framework/.sprig/compiler/build.ts";
 import { generatePreviews } from "../lib/generate-previews.ts";
 import { ensureRunner } from "../lib/runner.ts";
 import { onShutdown, openBrowser } from "../lib/process.ts";
@@ -114,16 +115,16 @@ export const devCmd = new Command()
     const n = await generatePreviews(entries, appSrc, resolve(root, "src"));
     console.log(`Generated ${n} preview page(s) for ${entries.length} component(s).`);
 
-    // 3. build the workbench app (code-split islands + scope CSS + the HMR client) → <wbRoot>/static.
-    //    cwd = wbRoot so the build's default outDir lands there; --config pins the install's runtime
-    //    deps + node_modules (the copied app lives outside the install workspace).
-    const build = await new Deno.Command("deno", {
-      args: ["run", "-A", "--config", join(REPO, "deno.json"), resolve(REPO, "framework/cli.ts"), "build", wbApp],
-      cwd: wbRoot,
-      stdout: "inherit",
-      stderr: "inherit",
-    }).output();
-    if (!build.success) Deno.exit(build.code);
+    // 3. build the workbench app IN-PROCESS (code-split islands + scope CSS + the HMR client) →
+    //    <wbRoot>/static. Previously this shelled out `deno run framework/cli.ts build`, which
+    //    cold-loads the ENTIRE cli graph (compiler + keep + the 561KB vendored apexcharts) it never
+    //    needs — ~230ms warm, seconds cold. buildClient is the whole non-rune build; it derives its
+    //    own forcedImportMap from <wbApp>/src, so no --config subprocess is needed.
+    const built = await buildClient(join(wbApp, "src"), join(wbRoot, "static"));
+    console.log(
+      `sprig build: ${built.islands.length} island chunk(s) [${built.islands.join(", ")}] + ` +
+        `${built.chunks.length} shared chunk(s) → ${join(wbRoot, "static")} (${(built.bytes / 1024).toFixed(1)}kb, v=${built.hash})`,
+    );
 
     // 4. serve the single origin: the sprig shell + the generated previews + the in-process
     //    keep backend (discovery for the sidebar + the test runner), wrapped in the compiler's
@@ -131,7 +132,12 @@ export const devCmd = new Command()
     //    SPRIG_WB_ROOT tells serve-dev.ts which per-key app + static to serve.
     const port = Number(Deno.env.get("PORT") ?? 8000);
     const child = new Deno.Command("deno", {
-      args: ["serve", "-A", "--unstable-kv", `--port=${port}`, resolve(REPO, "serve-dev.ts")],
+      // --config the GENERATED workbench deno.json (not REPO's): it carries the project's `$.*`
+      // aliases ($, $.services/, $.pages/, …) that serve-dev.ts's createRenderer needs to
+      // dynamically import each preview target. Without it the SSR import resolves `$.services/*`
+      // against REPO/deno.json (which has no `$.*`) and dies with "not in import map". The build
+      // step above already resolves these via the app's config; the serve step must match.
+      args: ["serve", "-A", "--unstable-kv", "--config", join(wbApp, "deno.json"), `--port=${port}`, resolve(REPO, "serve-dev.ts")],
       cwd: REPO,
       env: { ...Deno.env.toObject(), ISOLATE_PROJECT: root, SPRIG_DEV: "1", SPRIG_WB_ROOT: wbRoot },
       stdout: "inherit",
