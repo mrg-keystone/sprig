@@ -479,6 +479,11 @@ async function build(appDir = ".", outDir = join(Deno.cwd(), "static"), rune = f
  *  Called by init, build, and dev (dev stamps BEFORE its local-pin swap so the committed file still
  *  gets the version). `sprig clean` never removes a stamp — it is authored config, not a build file. */
 async function stamp(appDir: string): Promise<void> {
+  // First, self-heal the jsr SCOPE rename: an app still on the legacy `@sprig/core` / `@sprig/keep`
+  // name IS the runtime under its old name and can never dedup with `@mrg-keystone/sprig` (a guaranteed
+  // DUAL-CORE build). stamp() only re-pins the VERSION of an EXISTING `@mrg-keystone/sprig` mapping, so
+  // it would skip such an app entirely — hence migrate the NAME here, once, before stamping the version.
+  await migrateLegacyRuntime(appDir);
   const v = cliVersion();
   if (!v) return; // no on-disk version to stamp with (remote jsr run) → nothing to do
   const wanted: Record<string, string> = {
@@ -523,6 +528,140 @@ async function stamp(appDir: string): Promise<void> {
     dir = parent;
   }
   if (stamped) console.log(`sprig: stamped @mrg-keystone/sprig → ${v}`);
+}
+
+/** Files whose imports the legacy-name migration rewrites — every runtime-importing source in the app
+ *  tree (islands, pages, services, tests), skipping build output + vendored/scaffold dirs. Broader than
+ *  `collectTs`: tests import the runtime too, and `.tsx/.js/.jsx/.mjs` can carry an island. */
+async function collectSource(dir: string, out: string[] = []): Promise<string[]> {
+  let entries: Deno.DirEntry[];
+  try {
+    entries = [];
+    for await (const e of Deno.readDir(dir)) entries.push(e);
+  } catch {
+    return out; // unreadable dir → nothing to migrate here
+  }
+  for (const e of entries) {
+    const p = join(dir, e.name);
+    if (e.isDirectory) {
+      // static/ is build output (regenerated); the rest are vendored/scaffold/VCS — never source.
+      if (["node_modules", ".git", "static", "isolate", "_isolate"].includes(e.name)) continue;
+      await collectSource(p, out);
+    } else if (/\.(?:tsx?|jsx?|mjs)$/.test(e.name)) {
+      out.push(p);
+    }
+  }
+  return out;
+}
+
+/** One-time, idempotent migration of the LEGACY runtime NAME `@sprig/core` / `@sprig/keep` (the jsr
+ *  scope before the `@mrg-keystone/*` rename) to `@mrg-keystone/sprig` (+ `/keep`), across BOTH the
+ *  import maps (walking up the deno.json layers — a `--rune` monorepo pins at the workspace root) AND
+ *  every source import in the app tree. This is what `stamp()` alone can't do: stamp only re-pins the
+ *  VERSION of a mapping that is ALREADY named `@mrg-keystone/sprig`, so an app authored against the old
+ *  name slips through untouched and then trips the DUAL-CORE guard at build (the legacy package IS the
+ *  runtime under its old name — it can never dedup with the new one). Runs before every stamp
+ *  (init/build/dev/isolate); a fast no-op once no `@sprig/*` remains, so it self-heals exactly once. */
+async function migrateLegacyRuntime(appDir: string): Promise<void> {
+  const v = cliVersion();
+  const root = resolve(appDir);
+  let configs = 0, files = 0;
+  // Rename a legacy-scoped import KEY (bare `@sprig/core`/`@sprig/keep` OR a `.../<subpath>` prefix)
+  // to the modern scope; a non-legacy key is returned unchanged.
+  const migrateKey = (k: string): string =>
+    k === "@sprig/core"
+      ? "@mrg-keystone/sprig"
+      : k === "@sprig/keep"
+      ? "@mrg-keystone/sprig/keep"
+      : k.startsWith("@sprig/core/")
+      ? "@mrg-keystone/sprig/" + k.slice("@sprig/core/".length)
+      : k.startsWith("@sprig/keep/")
+      ? "@mrg-keystone/sprig/keep/" + k.slice("@sprig/keep/".length)
+      : k;
+  // Rewrite a value's scope (`@sprig/core@X[/keep]` → `@mrg-keystone/sprig@X[/keep]`) and re-pin the
+  // @mrg-keystone/sprig version to the CLI's, so a migrated mapping matches the runtime that builds it.
+  const migrateVal = (val: string): string => {
+    let out = val.replaceAll("@sprig/core", "@mrg-keystone/sprig").replaceAll("@sprig/keep", "@mrg-keystone/sprig/keep");
+    if (v) out = out.replace(/(@mrg-keystone\/sprig)@[^/"']+/g, `$1@${v}`);
+    return out;
+  };
+
+  // 1) IMPORT MAPS — rename the legacy KEY (and value) to the modern one, walking up to the fs root so
+  //    a `--rune` monorepo's workspace-root map is caught too. A pre-existing LOCAL/`file:` override on
+  //    the modern key (an intentional dev checkout) is preserved; otherwise it takes the jsr pin (which
+  //    the version-stamp below then keeps current). The legacy key is always dropped.
+  let dir = root;
+  for (;;) {
+    for (const name of ["deno.json", "deno.jsonc"]) {
+      const p = join(dir, name);
+      let cfg: { imports?: Record<string, string> };
+      try {
+        cfg = JSON.parse(await Deno.readTextFile(p));
+      } catch {
+        continue; // absent, or JSONC-with-comments/unparseable → don't risk a rewrite (as stamp does)
+      }
+      const imports = cfg.imports;
+      if (!imports) continue;
+      let changed = false;
+      const next: Record<string, string> = {};
+      for (const [k, val] of Object.entries(imports)) {
+        const key = migrateKey(k);
+        const value = migrateVal(val);
+        // A deliberate LOCAL/`file:` override already on the modern key wins — drop the legacy key
+        // rather than clobber it (an intentional dev checkout, incl. `sprig dev`'s local-pin swap).
+        if (key !== k) {
+          const existing = imports[key];
+          if (typeof existing === "string" && /^(\.{0,2}\/|\/|file:)/.test(existing)) {
+            changed = true;
+            continue;
+          }
+        }
+        if (key !== k || value !== val) changed = true;
+        next[key] = value;
+      }
+      if (changed) cfg.imports = next;
+      // tasks: rewrite a legacy CLI reference (e.g. `deno run -A jsr:@sprig/core@X/cli build --rune`)
+      // to the modern package, so `deno task build` doesn't invoke the pre-rename CLI.
+      const tasks = (cfg as { tasks?: Record<string, unknown> }).tasks;
+      if (tasks) {
+        for (const [tk, tv] of Object.entries(tasks)) {
+          if (typeof tv === "string" && (tv.includes("@sprig/core") || tv.includes("@sprig/keep"))) {
+            tasks[tk] = migrateVal(tv);
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        await Deno.writeTextFile(p, JSON.stringify(cfg, null, 2) + "\n");
+        configs++;
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  // 2) SOURCE IMPORTS — rewrite the specifiers across the app tree. `@sprig/core`/`@sprig/keep` only
+  //    ever appear as module specifiers, so a plain string swap is safe; do `/keep` first so it isn't
+  //    shadowed by the `@sprig/core`→`@mrg-keystone/sprig` pass (they don't overlap, but order is clear).
+  for (const f of await collectSource(root)) {
+    let src: string;
+    try {
+      src = await Deno.readTextFile(f);
+    } catch {
+      continue;
+    }
+    if (!src.includes("@sprig/core") && !src.includes("@sprig/keep")) continue;
+    const out = src.replaceAll("@sprig/keep", "@mrg-keystone/sprig/keep").replaceAll("@sprig/core", "@mrg-keystone/sprig");
+    if (out !== src) {
+      await Deno.writeTextFile(f, out);
+      files++;
+    }
+  }
+
+  if (configs || files) {
+    console.log(`sprig: migrated legacy @sprig/core → @mrg-keystone/sprig (${configs} config(s), ${files} source file(s))`);
+  }
 }
 
 /** `sprig clean [appDir]` — remove everything `sprig build` generated, leaving hand-authored
