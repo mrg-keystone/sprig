@@ -27,15 +27,24 @@ import { specRootOf } from "./.sprig/spec-root.ts";
 
 // the published-package version range a scaffolded app pins (core + its /keep + /cli
 // sub-exports all ship from @mrg-keystone/sprig). Bump in lockstep with the published version.
-/** The @mrg-keystone/sprig version range `sprig init` pins into a scaffolded app — the running CLI's OWN
- *  version (from its deno.json), so a fresh app never targets a stale sprig. This was a frozen
- *  "^0.12.0" that silently scaffolded seven versions behind. */
-function sprigRange(): string {
+/** The running CLI's OWN semver, read from its install deno.json — the single source for "which
+ *  sprig am I". Null only when it can't be read (running straight from a remote jsr: module with
+ *  nothing on disk). Feeds both sprigRange() (the init pin) and stamp() (the build-time pin). */
+function cliVersion(): string | null {
   try {
     const { version } = JSON.parse(Deno.readTextFileSync(join(installRoot(), "deno.json"))) as { version?: string };
-    if (typeof version === "string" && version) return `^${version}`;
-  } catch { /* fall through to a sane floor */ }
-  return "^0.19.0";
+    return (typeof version === "string" && version) ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The @mrg-keystone/sprig version range `sprig init` pins into a scaffolded app — the running CLI's OWN
+ *  version, so a fresh app never targets a stale sprig. This was a frozen "^0.12.0" that silently
+ *  scaffolded seven versions behind. */
+function sprigRange(): string {
+  const v = cliVersion();
+  return v ? `^${v}` : "^0.19.0";
 }
 
 /** The `@mrg-keystone/rune` range `sprig init` pins into a scaffolded app's backend. Read from the
@@ -531,6 +540,9 @@ async function build(appDir = ".", outDir = join(Deno.cwd(), "static"), rune = f
   // member) so the client build sees pin-free members that inherit the ONE root runtime — a
   // member's own pin would scope its islands to a second copy (dual-core). Must precede buildClient.
   if (rune) await emitRuneComposition(appDir, outDir);
+  // Pin the app's @mrg-keystone/sprig import to THIS CLI's exact version (after --rune has hoisted the
+  // pin to the workspace root) so what's declared == what built. Idempotent; skips a local override.
+  await stamp(resolve(appDir));
   const srcDir = join(resolve(appDir), "src");
   // ONE build — `sprig dev` serves exactly these bytes (no dev variant). HMR rides on top as a
   // runtime flag (cfg.hmr) + the dormant receiver, never a different bundle.
@@ -540,6 +552,65 @@ async function build(appDir = ".", outDir = join(Deno.cwd(), "static"), rune = f
       `[${r.islands.join(", ")}] + ${r.chunks.length} shared chunk(s) → ${outDir} ` +
       `(${(r.bytes / 1024).toFixed(1)}kb, v=${r.hash})`,
   );
+}
+
+/** Stamp the app's `@mrg-keystone/sprig` (+ `/keep`) import to the RUNNING CLI's EXACT version, so an
+ *  app's declared sprig always matches the CLI that built it — the fix for silent SSR/CLI runtime
+ *  drift (a caret pin lets `deno` resolve a sprig NEWER than the CLI that generated the bundle). Walks
+ *  from `appDir` up to the filesystem root: the pin lives in the app's own deno.json for a standalone
+ *  UI, but at the WORKSPACE ROOT for a `--rune` monorepo (a member inherits the root map) — so it
+ *  rewrites whichever deno.json(c) actually declares the key. Idempotent (same keys, exact pin → a
+ *  no-op once current) and deliberately conservative:
+ *    · only an EXISTING key is touched — never added (an app that doesn't use keep stays that way);
+ *    · a LOCAL override (a relative / `file:` value — an intentional dev checkout, incl. `sprig dev`'s
+ *      own transient local-pin swap) is left ALONE, so a stamp can never clobber a working local pin.
+ *  Called by init, build, and dev (dev stamps BEFORE its local-pin swap so the committed file still
+ *  gets the version). `sprig clean` never removes a stamp — it is authored config, not a build file. */
+async function stamp(appDir: string): Promise<void> {
+  const v = cliVersion();
+  if (!v) return; // no on-disk version to stamp with (remote jsr run) → nothing to do
+  const wanted: Record<string, string> = {
+    "@mrg-keystone/sprig": `jsr:@mrg-keystone/sprig@${v}`,
+    "@mrg-keystone/sprig/keep": `jsr:@mrg-keystone/sprig@${v}/keep`,
+  };
+  let dir = resolve(appDir);
+  let stamped = false;
+  for (;;) {
+    for (const name of ["deno.json", "deno.jsonc"]) {
+      const p = join(dir, name);
+      let text: string;
+      try {
+        text = await Deno.readTextFile(p);
+      } catch {
+        continue; // no config here
+      }
+      let cfg: { imports?: Record<string, string> };
+      try {
+        cfg = JSON.parse(text);
+      } catch {
+        continue; // JSONC-with-comments / unparseable → don't risk a rewrite
+      }
+      if (!cfg.imports) continue;
+      let changed = false;
+      for (const [k, want] of Object.entries(wanted)) {
+        const cur = cfg.imports[k];
+        if (typeof cur !== "string") continue; // only restamp a key that already exists
+        if (/^(\.{0,2}\/|\/|file:)/.test(cur)) continue; // leave a LOCAL / file: override alone
+        if (cur !== want) {
+          cfg.imports[k] = want;
+          changed = true;
+        }
+      }
+      if (changed) {
+        await Deno.writeTextFile(p, JSON.stringify(cfg, null, 2) + "\n");
+        stamped = true;
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  if (stamped) console.log(`sprig: stamped @mrg-keystone/sprig → ${v}`);
 }
 
 /** `sprig clean [appDir]` — remove everything `sprig build` generated, leaving hand-authored
@@ -1309,6 +1380,11 @@ async function dev(rawArgs: string[] = []): Promise<void> {
     );
     Deno.exit(1);
   }
+  // Stamp the app's @mrg-keystone/sprig pin to this CLI's version BEFORE withMergedConfig →
+  // pinLocalSprig swaps it to a local file: path (and restores the stamped value on exit). Doing it
+  // here — not only inside build() below — means the COMMITTED deno.json still gets the stamp even
+  // though dev serves from the temporarily-local pin.
+  await stamp(appDir);
   await withMergedConfig(appDir);
   // State-preserving HMR (no Vite): build the dev bundle (HMR client + AST-fetching
   // island chunks), then wrap the app's production handler with the compiler's dev
@@ -1459,6 +1535,9 @@ async function init(dir = "."): Promise<void> {
 
   const range = sprigRange();
   const runeSpec = runeRange();
+  // sprig's own pins are EXACT (== the running CLI), matching what stamp() enforces on every build;
+  // the app's OTHER deps (rune, std) keep their ranges. Falls back to the range if version is unknown.
+  const sprigPin = cliVersion() ?? range;
   const files: Record<string, string> = {
     // `$` IS the app (src/mod.ts); `$.pages/`, `$.services/`, `$.shared-components/` alias
     // the src subtrees so deep files import siblings without ../../ chains. Plus the two
@@ -1477,8 +1556,8 @@ async function init(dir = "."): Promise<void> {
     "$.pages/": "./src/pages/",
     "$.shared-components/": "./src/shared-components/",
     "$.services/": "./src/services/",
-    "@mrg-keystone/sprig": "jsr:@mrg-keystone/sprig@${range}",
-    "@mrg-keystone/sprig/keep": "jsr:@mrg-keystone/sprig@${range}/keep",
+    "@mrg-keystone/sprig": "jsr:@mrg-keystone/sprig@${sprigPin}",
+    "@mrg-keystone/sprig/keep": "jsr:@mrg-keystone/sprig@${sprigPin}/keep",
     "@mrg-keystone/rune": "jsr:@mrg-keystone/rune@${runeSpec}",
     "reflect-metadata": "npm:reflect-metadata@0.1.13",
     "@std/path": "jsr:@std/path@^1",
@@ -1626,6 +1705,9 @@ async function init(dir = "."): Promise<void> {
   }
   // the `$.shared-components/` alias points here — create it (empty) so the dir exists.
   await Deno.mkdir(join(appAbs, "src", "shared-components"), { recursive: true });
+  // Enforce the exact sprig pin (the template already writes it; this is the same stamp build/dev
+  // apply, so init and every later build agree on the key + format). No-op when already current.
+  await stamp(appAbs);
   console.log(
     `Scaffolded a sprig app at ${appAbs}\n\n` +
       `  cd ${dir}\n` +
