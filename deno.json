@@ -73,5 +73,11 @@
       "packages/keep/mod.ts",
       "packages/keep/vendor/apexcharts.js"
     ]
+  },
+  "git": {
+    "repo": "https://github.com/mrg-keystone/sprig",
+    "commit": "488baf658df7541c67444c01a183e52f34ea739e",
+    "branch": "develop",
+    "buildTime": "2026-07-06T20:07:36.675Z"
   }
 }

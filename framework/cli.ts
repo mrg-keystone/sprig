@@ -459,11 +459,42 @@ async function build(appDir = ".", outDir = join(Deno.cwd(), "static"), rune = f
   // ONE build — `sprig dev` serves exactly these bytes (no dev variant). HMR rides on top as a
   // runtime flag (cfg.hmr) + the dormant receiver, never a different bundle.
   const r = await buildClient(srcDir, outDir);
+  await writeBuildInfo(resolve(appDir), outDir);
   console.log(
     `sprig build: ${r.islands.length} island chunk(s) ` +
       `[${r.islands.join(", ")}] + ${r.chunks.length} shared chunk(s) → ${outDir} ` +
       `(${(r.bytes / 1024).toFixed(1)}kb, v=${r.hash})`,
   );
+}
+
+/** Bake the git provenance block into the served static dir as `build-info.json`. The deploy tooling
+ *  (infra) stamps a `git` object — `{ repo, commit, branch, buildTime }` — into the git-root
+ *  `deno.json` BEFORE the build runs; this copies it beside the built assets so serveSprig can emit it
+ *  as `<meta>` in every SSR document head at runtime (the serving isolate has no git and no repo).
+ *  Walks up from `appDir` to find the nearest `deno.json(c)` carrying a `git` block; absent (local dev,
+ *  or infra didn't stamp) → writes nothing, and the head stays clean. */
+async function writeBuildInfo(appDir: string, outDir: string): Promise<void> {
+  let git: unknown;
+  let dir = resolve(appDir);
+  for (;;) {
+    for (const name of ["deno.json", "deno.jsonc"]) {
+      try {
+        const cfg = JSON.parse(await Deno.readTextFile(join(dir, name))) as { git?: unknown };
+        if (cfg.git && typeof cfg.git === "object" && !Array.isArray(cfg.git)) {
+          git = cfg.git;
+          break;
+        }
+      } catch { /* absent / JSONC-with-comments / unparseable → keep walking up */ }
+    }
+    if (git) break;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  if (!git) return;
+  await Deno.mkdir(outDir, { recursive: true }).catch(() => {});
+  await Deno.writeTextFile(join(outDir, "build-info.json"), JSON.stringify(git) + "\n");
+  console.log(`sprig: baked build-info.json (git provenance) → ${outDir}`);
 }
 
 /** Stamp the app's `@mrg-keystone/sprig` (+ `/keep`) import to the RUNNING CLI's EXACT version, so an

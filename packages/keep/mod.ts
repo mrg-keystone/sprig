@@ -491,6 +491,73 @@ async function serveAuthGateway(
   return null;
 }
 
+// ─────────────────────────────── build-info <meta> provenance ───────────────────────────────
+// `sprig build` bakes the git-root deno.json's `git` block (repo/commit/branch/buildTime, stamped by
+// the deploy tooling) into `<assetsDir>/build-info.json`. serveSprig/sprigUi read it ONCE (the served
+// dir is the one thing they know reliably on Deno Deploy — same channel that makes ?v= work) and
+// splice the tags into every SSR document head. No git or repo is needed in the serving isolate.
+
+/** Read `<assetsDir>/build-info.json` once and render the provenance `<meta>` tags for the head.
+ *  Memoized (constant per deployment); "" when the file is absent (local dev / not stamped). */
+function buildMetaReader(assetsDir: string): () => Promise<string> {
+  let cached: string | null = null;
+  return async () => {
+    if (cached !== null) return cached;
+    try {
+      const info = JSON.parse(await Deno.readTextFile(`${assetsDir}/build-info.json`)) as Record<string, unknown>;
+      const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+      const tag = (name: string, key: string) => {
+        const v = info[key];
+        return typeof v === "string" && v ? `  <meta name="${name}" content="${esc(v)}" />\n` : "";
+      };
+      cached = tag("git-repo", "repo") + tag("git-commit", "commit") + tag("git-branch", "branch") + tag("build-time", "buildTime");
+    } catch {
+      cached = ""; // no build-info → emit nothing
+    }
+    return cached;
+  };
+}
+
+/** Splice `meta` into an HTML response right after the opening `<head>` — streaming-safe (the head
+ *  flushes as the first chunk, so the tags land immediately and the body passes through untouched).
+ *  A non-HTML response, or an empty `meta`, is returned unchanged. */
+function injectHeadMeta(res: Response, meta: string): Response {
+  if (!meta) return res;
+  const type = res.headers.get("content-type") ?? "";
+  if (!type.includes("text/html") || res.body === null) return res;
+  const dec = new TextDecoder();
+  const enc = new TextEncoder();
+  const NEEDLE = "<head>";
+  let carry = "";
+  let done = false;
+  const rewrite = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      if (done) {
+        controller.enqueue(chunk);
+        return;
+      }
+      carry += dec.decode(chunk, { stream: true });
+      const at = carry.indexOf(NEEDLE);
+      if (at !== -1) {
+        const cut = at + NEEDLE.length;
+        controller.enqueue(enc.encode(carry.slice(0, cut) + "\n" + meta + carry.slice(cut)));
+        carry = "";
+        done = true;
+      } else if (carry.length > 8192) {
+        controller.enqueue(enc.encode(carry)); // no <head> in the first 8KB → pass through
+        carry = "";
+        done = true;
+      }
+    },
+    flush(controller) {
+      if (carry) controller.enqueue(enc.encode(carry));
+    },
+  });
+  const headers = new Headers(res.headers);
+  headers.delete("content-length"); // body length changed
+  return new Response(res.body.pipeThrough(rewrite), { status: res.status, statusText: res.statusText, headers });
+}
+
 /**
  * Dispatch order (the author writes none of this):
  *   /api/*   → keep.handler with the prefix STRIPPED, info forwarded (token-gated,
@@ -519,6 +586,7 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
   // immutable check, so the two can never disagree. Stat-probed memoization: steady
   // state is cheap, and an in-place rebuild is picked up on the next request.
   const version = assetsVersioner(assetsDir);
+  const buildMeta = buildMetaReader(assetsDir);
 
   return {
     async fetch(req, info): Promise<Response> {
@@ -606,7 +674,7 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
         const raw = readCookie(req, SESSION_COOKIE);
         if (raw) session = await config.keep.sessions.read(decodeURIComponent(raw)).catch(() => null);
       }
-      return config.app.fetch(req, info, { backend, assetsVersion: (await version()) ?? undefined, session });
+      return injectHeadMeta(await config.app.fetch(req, info, { backend, assetsVersion: (await version()) ?? undefined, session }), await buildMeta());
     },
   };
 }
@@ -646,6 +714,7 @@ export function sprigUi(
   // same single source of truth as serveSprig: the served dir's content hash drives
   // the renderer's ?v= AND the immutable check (stat-probed, tracks in-place rebuilds).
   const version = assetsVersioner(assetsDir);
+  const buildMeta = buildMetaReader(assetsDir);
 
   return async (req, info) => {
     const path = new URL(req.url).pathname;
@@ -657,6 +726,6 @@ export function sprigUi(
     if (path.startsWith(assetPrefix + "/")) {
       return serveAsset(assetsDir, path.slice(assetPrefix.length + 1), req, version);
     }
-    return config.app.fetch(req, info, { backend, assetsVersion: (await version()) ?? undefined });
+    return injectHeadMeta(await config.app.fetch(req, info, { backend, assetsVersion: (await version()) ?? undefined }), await buildMeta());
   };
 }
