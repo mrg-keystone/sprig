@@ -76,8 +76,8 @@
   },
   "git": {
     "repo": "https://github.com/mrg-keystone/sprig",
-    "commit": "488baf658df7541c67444c01a183e52f34ea739e",
-    "branch": "develop",
-    "buildTime": "2026-07-06T20:07:36.675Z"
+    "commit": "34556dc10529e98aec45490ef41dfb7e8d98dee4",
+    "branch": "main",
+    "buildTime": "2026-07-06T20:08:51.515Z"
   }
 }
