@@ -29,6 +29,17 @@ export function createDevServer(cfg: DevConfig): {
   const enc = new TextEncoder();
   const clients = new Set<ReadableStreamDefaultController<Uint8Array>>();
   const send = (msg: unknown) => {
+    // An error must be LOUD in the terminal too, not just the browser HMR overlay — an
+    // overlay-only error is invisible unless a browser happens to be watching, which is how a
+    // failing rebuild (e.g. a dual-core bundle) used to pass silently in dev while the identical
+    // build failed the prod deploy.
+    if ((msg as { type?: string })?.type === "error") {
+      console.error(
+        `%c[sprig dev]%c build/reload error:\n${(msg as { message?: string }).message ?? msg}`,
+        "color:#dc2626;font-weight:bold",
+        "",
+      );
+    }
     const frame = enc.encode(`data: ${JSON.stringify(msg)}\n\n`);
     for (const c of clients) {
       try {

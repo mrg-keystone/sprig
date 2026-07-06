@@ -57,9 +57,9 @@ Deno.test("gate: ZERO sentinel chunks → does NOT block (sentinel moved = frame
   }
 });
 
-Deno.test("forcedImportMap: FORCES @mrg-keystone/sprig to the CLI runtime, preserves + absolutizes app imports", async () => {
-  // an app whose deno.json pins @mrg-keystone/sprig to its OWN copy (the drift source) plus an
-  // app-specific relative import and a bare jsr specifier
+Deno.test("forcedImportMap: the APP'S @mrg-keystone/sprig pin wins (dev == prod resolution), app imports preserved + absolutized", async () => {
+  // an app whose deno.json pins the runtime (the stamped jsr pin) plus an app-specific relative
+  // import and a bare jsr specifier
   const app = await Deno.makeTempDir({ prefix: "sprig-fmap-" });
   const src = join(app, "src");
   await Deno.mkdir(src, { recursive: true });
@@ -67,8 +67,8 @@ Deno.test("forcedImportMap: FORCES @mrg-keystone/sprig to the CLI runtime, prese
     join(app, "deno.json"),
     JSON.stringify({
       imports: {
-        "@mrg-keystone/sprig": "jsr:@mrg-keystone/sprig@0.9.9", // WRONG on purpose — must be overridden
-        "@preact/signals-core": "npm:@preact/signals-core@0.0.1", // also overridden
+        "@mrg-keystone/sprig": "jsr:@mrg-keystone/sprig@0.9.9", // the app's pin — the ONE runtime the bundle must resolve
+        "@preact/signals-core": "npm:@preact/signals-core@0.0.1", // still overridden (single signals)
         "$.services/": "./src/services/", // app import — must survive, made absolute
         "@mrg-keystone/rune": "jsr:@mrg-keystone/rune@^3", // bare — must survive as-is
       },
@@ -76,13 +76,49 @@ Deno.test("forcedImportMap: FORCES @mrg-keystone/sprig to the CLI runtime, prese
   );
   try {
     const { imports } = await forcedImportMap(src);
-    // the runtime is forced to the CLI's own core.ts (this checkout), NOT the app's 0.9.9 pin
-    assert(imports["@mrg-keystone/sprig"].endsWith("/framework/.sprig/core.ts"), imports["@mrg-keystone/sprig"]);
-    assert(!imports["@mrg-keystone/sprig"].includes("0.9.9"), "app's @mrg-keystone/sprig pin must be overridden");
+    // the APP'S pin wins — dev bundles the same runtime bytes prod does (stamp keeps it == CLI version)
+    assertEquals(imports["@mrg-keystone/sprig"], "jsr:@mrg-keystone/sprig@0.9.9");
     assertEquals(imports["@preact/signals-core"], "npm:@preact/signals-core@^1.8.0");
     // app imports survive; relative ones become absolute file URLs, bare ones stay
     assert(imports["$.services/"].startsWith("file://") && imports["$.services/"].endsWith("/src/services/"), imports["$.services/"]);
     assertEquals(imports["@mrg-keystone/rune"], "jsr:@mrg-keystone/rune@^3");
+  } finally {
+    await Deno.remove(app, { recursive: true });
+  }
+});
+
+Deno.test("forcedImportMap: an app that maps NO runtime falls back to the CLI's own core", async () => {
+  const app = await Deno.makeTempDir({ prefix: "sprig-fmap-none-" });
+  const src = join(app, "src");
+  await Deno.mkdir(src, { recursive: true });
+  await Deno.writeTextFile(join(app, "deno.json"), JSON.stringify({ imports: { "@mrg-keystone/rune": "jsr:@mrg-keystone/rune@^3" } }));
+  try {
+    const { imports } = await forcedImportMap(src);
+    assert(imports["@mrg-keystone/sprig"].endsWith("/core.ts"), imports["@mrg-keystone/sprig"]);
+  } finally {
+    await Deno.remove(app, { recursive: true });
+  }
+});
+
+Deno.test("gate: the dual-core error names a legacy @sprig/core mapping as the culprit", async () => {
+  // an app tree whose member deno.json still maps the RENAMED package — the exact alfred failure:
+  // the old advice ("remove @mrg-keystone/sprig from the member") was wrong for this case.
+  const app = await Deno.makeTempDir({ prefix: "sprig-legacy-" });
+  const src = join(app, "src");
+  const out = join(app, "static");
+  await Deno.mkdir(src, { recursive: true });
+  await Deno.mkdir(out, { recursive: true });
+  await Deno.writeTextFile(
+    join(app, "deno.json"),
+    JSON.stringify({ imports: { "@sprig/core": "jsr:@sprig/core@0.15.1" } }),
+  );
+  await Deno.writeTextFile(join(out, "client.js"), `globalThis.${SENTINEL} = true;`);
+  await Deno.writeTextFile(join(out, "isl.x.js"), `globalThis.${SENTINEL} = true;`);
+  try {
+    const err = await assertRejects(() => assertSingleRuntime(out, src), Error);
+    assertStringIncludes(err.message, "DUAL-CORE");
+    assertStringIncludes(err.message, "@sprig/core"); // names the legacy package
+    assertStringIncludes(err.message, join(app, "deno.json")); // and WHERE it's mapped
   } finally {
     await Deno.remove(app, { recursive: true });
   }
