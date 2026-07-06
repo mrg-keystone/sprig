@@ -18,7 +18,11 @@ import { basename, dirname, join, relative, resolve, toFileUrl } from "@std/path
 import { buildClient, forcedImportMap } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
 import { createRenderer, loadRoutes, serveSprig, sprigUi } from "../packages/keep/mod.ts";
-import { bootstrap } from "./.sprig/core.ts";
+// The runtime via the BARE specifier, not "./.sprig/core.ts": in the merged-config dev child the
+// import map resolves @mrg-keystone/sprig to the APP'S stamped pin, so the CLI's bootstrap and the
+// app's own modules share ONE core (dev == prod resolution; a relative import here would load a
+// second, local copy and split the module-global DI).
+import { bootstrap, type Route } from "@mrg-keystone/sprig";
 import { assertWorkbench, installRuntimeFromDeployment, installRuntimeFromWorkingTree, latestRuntimeRelease } from "./.sprig/install.ts";
 import { specRootOf } from "./.sprig/spec-root.ts";
 // NOTE: `./.sprig/annotate.ts` is imported LAZILY (a dynamic `import(...)` inside the `dev`
@@ -146,21 +150,15 @@ function openUrl(url: string): void {
   } catch { /* ignore */ }
 }
 
-/** A per-project dir (in TMPDIR, not the project) where pinLocalSprig stashes the ORIGINAL of
- *  every deno.json it rewrites. A monorepo pins @mrg-keystone/sprig/* in the WORKSPACE ROOT (a Deno workspace
- *  member resolves its imports through the root, not the member) — so more than one config may be
- *  swapped, and each gets a `{ path, original }` backup so a `sprig dev` killed mid-session
- *  self-heals every one on the next run. */
-function sprigBackupDir(appDir: string): string {
+/** If a previous sprig version's `sprig dev` was killed (e.g. SIGKILL) before it could restore
+ *  the app's deno.json(s), its pin backups still exist in TMPDIR — put every one back. The
+ *  local-pin swap itself is GONE (dev now resolves @mrg-keystone/sprig through the app's own
+ *  stamped pin, exactly like prod), but a repo last touched by an older sprig may still be
+ *  carrying a leaked local-path rewrite; this heals it once and removes the backup dir. */
+async function healLegacyLocalPins(appDir: string): Promise<void> {
   const tmp = Deno.env.get("TMPDIR") ?? "/tmp";
   const key = resolve(appDir).replace(/[^A-Za-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "app";
-  return join(tmp, "sprig-dev", key, "pins");
-}
-
-/** If a previous `sprig dev` was killed (e.g. SIGKILL) before it could restore the app's
- *  deno.json(s), the backups still exist — put every one back. */
-async function healLocalSprig(appDir: string): Promise<void> {
-  const dir = sprigBackupDir(appDir);
+  const dir = join(tmp, "sprig-dev", key, "pins");
   let healed = 0;
   try {
     for await (const e of Deno.readDir(dir)) {
@@ -378,87 +376,20 @@ async function attachShared(repo: string, e: DevLockEntry): Promise<void> {
   Deno.removeSignalListener("SIGTERM", stop);
 }
 
-/** Point the app's `@mrg-keystone/sprig` + `@mrg-keystone/sprig/keep` at the LOCAL install. The app pins them to
- *  JSR (`jsr:@mrg-keystone/sprig@…`) for portability, but importing its mod.ts with a JSR pin pulls a
- *  SECOND @mrg-keystone/sprig — the JSR build — into the process, and two web-tree-sitter wasm
- *  instances can't co-exist (`Import #0 "./env"`). deno reads the app's deno.json at STARTUP,
- *  so the swap must be in place before the dev child launches. We back the original up to
- *  TMPDIR (self-heal) and return a sync restore. No-op when already local / no deno.json. */
-async function pinLocalSprig(appDir: string): Promise<{ active: boolean; restore: () => void }> {
-  const installDir = installRoot();
-  const locals: Record<string, string> = {
-    "@mrg-keystone/sprig": join(installDir, "framework", ".sprig", "core.ts"),
-    "@mrg-keystone/sprig/keep": join(installDir, "packages", "keep", "mod.ts"),
-  };
-  // Walk from the app dir up to the filesystem root, rewriting EVERY deno.json(c) that pins a
-  // non-local @mrg-keystone/sprig/* to the local checkout. Critically this reaches the WORKSPACE ROOT: a Deno
-  // workspace member resolves its imports through the ROOT's map, so a monorepo pins @mrg-keystone/sprig
-  // in the root (not the UI member). deno reads it at STARTUP, so without rewriting the root the
-  // SSR resolves @mrg-keystone/sprig to the pinned JSR build while the client bundle (forcedImportMap)
-  // uses local — a silent SSR/client sprig SPLIT (it surfaces the moment either side needs an
-  // export the other's version lacks). Force BOTH to the one local checkout. Each rewritten file
-  // is backed up to TMPDIR so a killed `sprig dev` self-heals every one (healLocalSprig).
-  const backupDir = sprigBackupDir(appDir);
-  const swaps: Array<{ path: string; original: string; rewritten: string }> = [];
-  let dir = resolve(appDir);
-  for (;;) {
-    for (const name of ["deno.json", "deno.jsonc"]) {
-      const cfgPath = join(dir, name);
-      let original: string;
-      try {
-        original = await Deno.readTextFile(cfgPath);
-      } catch {
-        continue; // no config here
-      }
-      let cfg: { imports?: Record<string, string> };
-      try {
-        cfg = JSON.parse(original);
-      } catch {
-        continue; // JSONC-with-comments / unparseable → can't safely rewrite; skip
-      }
-      if (!cfg.imports) continue;
-      let changed = false;
-      for (const [k, local] of Object.entries(locals)) {
-        const v = cfg.imports[k];
-        if (typeof v === "string" && !/^(\.{0,2}\/|\/)/.test(v)) { // a non-local (jsr:/npm:/bare) map
-          cfg.imports[k] = local;
-          changed = true;
-        }
-      }
-      if (changed) swaps.push({ path: cfgPath, original, rewritten: JSON.stringify(cfg, null, 2) });
-    }
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  if (!swaps.length) return { active: false, restore: () => {} };
-  await Deno.mkdir(backupDir, { recursive: true });
-  for (let i = 0; i < swaps.length; i++) {
-    await Deno.writeTextFile(join(backupDir, `${i}.json`), JSON.stringify({ path: swaps[i].path, original: swaps[i].original }));
-    await Deno.writeTextFile(swaps[i].path, swaps[i].rewritten);
-  }
-  let done = false;
-  const restore = () => {
-    if (done) return;
-    done = true;
-    for (const s of swaps) {
-      try {
-        Deno.writeTextFileSync(s.path, s.original); // sync → safe inside signal handlers
-      } catch { /* best effort */ }
-    }
-    try {
-      Deno.removeSync(backupDir, { recursive: true });
-    } catch { /* best effort */ }
-  };
-  return { active: true, restore };
-}
-
 /** `dev`/`isolate` import the app's SSR renderer in-process, and that renderer dynamically
  *  imports the app's logic.ts — whose `$.*` aliases live in the APP's deno.json, not the
  *  installed CLI's (~/.sprig) config. So re-run under a MERGED config: the install's compiler
- *  deps (web-tree-sitter + node_modules for grammar.wasm, the local @mrg-keystone/sprig) PLUS the
- *  app's own imports (the `$` aliases, @danet/core, …), with the app's relative paths made
- *  absolute. No-op once merged, or when run from somewhere without an install deno.json. */
+ *  deps (web-tree-sitter + node_modules for grammar.wasm) PLUS the app's own imports (the `$`
+ *  aliases, @danet/core, …), with the app's relative paths made absolute.
+ *
+ *  THE APP'S `@mrg-keystone/sprig` PIN WINS — dev resolves the runtime exactly as prod does
+ *  (the stamped jsr pin, or the app's own explicit local override). The old behavior (force
+ *  the install's local checkout + `pinLocalSprig` rewriting the app's deno.jsons on disk) made
+ *  dev resolve DIFFERENTLY than prod, which hid prod-only failures (a member pinning a second
+ *  runtime dual-cores the deploy build but dev'd fine) and leaked local file: paths into
+ *  commits when a dev was killed. `stamp()` (which runs before this) keeps pin == CLI version,
+ *  so the CLI's local compiler and the app's pinned runtime are the same release.
+ *  No-op once merged, or when run from somewhere without an install deno.json. */
 async function withMergedConfig(appDir: string): Promise<void> {
   if (Deno.env.get("SPRIG_MERGED")) return;
   if (!import.meta.url.startsWith("file:")) return; // only a local install runs the compiler
@@ -467,7 +398,7 @@ async function withMergedConfig(appDir: string): Promise<void> {
   const installDir = installRoot(); // framework/ → install root (file:// guaranteed by the guard above)
   const rtCfgPath = join(installDir, "deno.json");
   if (!(await fileExists(appCfgPath)) || !(await fileExists(rtCfgPath))) return;
-  await healLocalSprig(appDir); // recover the app's deno.json if a prior `sprig dev` was killed
+  await healLegacyLocalPins(appDir); // recover a deno.json an OLD sprig's killed dev left rewritten
   let appCfg: { imports?: Record<string, string> }, rtCfg: Record<string, unknown>;
   try {
     appCfg = JSON.parse(await Deno.readTextFile(appCfgPath));
@@ -477,7 +408,6 @@ async function withMergedConfig(appDir: string): Promise<void> {
   }
   const imports: Record<string, unknown> = { ...(rtCfg.imports as Record<string, unknown> ?? {}) };
   for (const [k, v] of Object.entries(appCfg.imports ?? {})) {
-    if (k === "@mrg-keystone/sprig" || k === "@mrg-keystone/sprig/keep") continue; // keep the install's local sprig + compiler
     if (typeof v === "string" && /^\.\.?\//.test(v)) {
       let abs = toFileUrl(join(appAbs, v)).href;
       if (v.endsWith("/") && !abs.endsWith("/")) abs += "/"; // preserve prefix-mapping trailing slash
@@ -488,37 +418,19 @@ async function withMergedConfig(appDir: string): Promise<void> {
   }
   const mergedPath = join(installDir, ".sprig-app.json");
   await Deno.writeTextFile(mergedPath, JSON.stringify({ ...rtCfg, imports }, null, 2));
-  // Pin the app's @mrg-keystone/sprig/* to the LOCAL install for the child run (deno reads the app's
-  // deno.json at startup, so the swap must precede the launch). Restore on normal exit AND on
-  // Ctrl-C; a SIGKILL is caught by healLocalSprig on the next run.
-  const pin = await pinLocalSprig(appDir);
-  if (pin.active) {
-    const onSig = () => {
-      pin.restore();
-      Deno.exit(130);
-    };
-    Deno.addSignalListener("SIGINT", onSig);
-    Deno.addSignalListener("SIGTERM", onSig);
-  }
-  try {
-    const { code } = await new Deno.Command(Deno.execPath(), {
-      // import.meta.filename is the file:// path of THIS module — defined here because the early
-      // `!import.meta.url.startsWith("file:")` guard already returned for a remote module.
-      // --unstable-kv: this merged-config child is the process that ends up running the server
-      // (it re-enters dev() past the SPRIG_MERGED guard), so it — not just the supervisor — needs
-      // Deno KV enabled for a keep backend that calls Deno.openKv.
-      args: ["run", "-A", "--unstable-kv", "--config", mergedPath, import.meta.filename!, ...Deno.args],
-      env: { ...Deno.env.toObject(), SPRIG_MERGED: "1" },
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    }).output();
-    pin.restore();
-    Deno.exit(code);
-  } catch (e) {
-    pin.restore();
-    throw e;
-  }
+  const { code } = await new Deno.Command(Deno.execPath(), {
+    // import.meta.filename is the file:// path of THIS module — defined here because the early
+    // `!import.meta.url.startsWith("file:")` guard already returned for a remote module.
+    // --unstable-kv: this merged-config child is the process that ends up running the server
+    // (it re-enters dev() past the SPRIG_MERGED guard), so it — not just the supervisor — needs
+    // Deno KV enabled for a keep backend that calls Deno.openKv.
+    args: ["run", "-A", "--unstable-kv", "--config", mergedPath, import.meta.filename!, ...Deno.args],
+    env: { ...Deno.env.toObject(), SPRIG_MERGED: "1" },
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  }).output();
+  Deno.exit(code);
 }
 
 /** Dev/HMR build output lives in a per-project temp dir, NOT the project's static/, so
@@ -1333,6 +1245,34 @@ async function devSupervisor(rawArgs: string[]): Promise<void> {
   }
 }
 
+/** The app's routes, whichever way the app declares them: JSON folder tables
+ *  (src/routers/root/routes.json, or the legacy src/root.json — what loadRoutes reads), else the
+ *  app's own `src/mod.ts` `routes` export (the code-composed `defineRoutes([...])` style that
+ *  `sprig init` scaffolds). Importing mod.ts also evaluates its module-level renderer — harmless
+ *  in dev (SPRIG_DEV + SPRIG_ASSETS_DIR are already set, so it reads the prebuilt assets); only
+ *  its `routes` export is used. A clear error names BOTH options when neither source exists. */
+async function appRoutes(srcDir: string): Promise<Route[]> {
+  if (
+    await fileExists(join(srcDir, "routers", "root", "routes.json")) ||
+    await fileExists(join(srcDir, "root.json"))
+  ) {
+    return await loadRoutes(srcDir);
+  }
+  const modPath = join(srcDir, "mod.ts");
+  if (await fileExists(modPath)) {
+    const mod = await import(toFileUrl(modPath).href) as { routes?: Route[] };
+    if (Array.isArray(mod.routes)) return mod.routes;
+    throw new Error(
+      `sprig dev: ${modPath} exports no \`routes\` array — export ` +
+        "`routes = defineRoutes([...])` from it, or add src/routers/root/routes.json.",
+    );
+  }
+  throw new Error(
+    `sprig dev: no routes found under ${srcDir} — add src/routers/root/routes.json ` +
+      "(folder-composed), or export `routes = defineRoutes([...])` from src/mod.ts.",
+  );
+}
+
 async function dev(rawArgs: string[] = []): Promise<void> {
   // `sprig dev` ALWAYS serves the full-app BUILD annotate overlay (⌘/Ctrl+click → spec/ui/
   // build-notes.json) plus the isolate workbench. `--annotate <html>` switches to PROTOTYPE
@@ -1380,10 +1320,9 @@ async function dev(rawArgs: string[] = []): Promise<void> {
     );
     Deno.exit(1);
   }
-  // Stamp the app's @mrg-keystone/sprig pin to this CLI's version BEFORE withMergedConfig →
-  // pinLocalSprig swaps it to a local file: path (and restores the stamped value on exit). Doing it
-  // here — not only inside build() below — means the COMMITTED deno.json still gets the stamp even
-  // though dev serves from the temporarily-local pin.
+  // Stamp the app's @mrg-keystone/sprig pin to this CLI's version BEFORE withMergedConfig — the
+  // merged config carries the APP'S pin (dev resolves the runtime exactly as prod), so the stamp
+  // must land first for the child to serve the aligned version.
   await stamp(appDir);
   await withMergedConfig(appDir);
   // State-preserving HMR (no Vite): build the dev bundle (HMR client + AST-fetching
@@ -1445,13 +1384,14 @@ async function dev(rawArgs: string[] = []): Promise<void> {
 
   await build(appDir, outDir);
 
-  // The app is composed from FOLDERS now (no src/mod.ts export): createRenderer scans src/ for
-  // components, and the app is bootstrap() over the JSON route table (routers/root/routes.json +
-  // guards/<name>/) — the SAME composition bootstrap/mod.ts does for prod. The dev server also needs
-  // the renderer handle for HMR reparse, so it builds them here rather than importing a host entry.
+  // Dev composes its OWN bootstrap (it needs the renderer handle for HMR reparse), but the route
+  // SOURCE belongs to the app — and apps come in TWO styles, both of which must dev: folder-
+  // composed (routers/root/routes.json + guards/<name>/ — what loadRoutes reads) and code-composed
+  // (src/mod.ts exporting `routes = defineRoutes([...])` — what `sprig init` scaffolds). Requiring
+  // the folder table alone made `sprig dev` crash at boot on a freshly-scaffolded app.
   const srcDir = join(resolve(appDir), "src");
   const renderer = await createRenderer(srcDir, base, { dev: true });
-  const sprigApp = bootstrap({ routes: await loadRoutes(srcDir), base, renderer });
+  const sprigApp = bootstrap({ routes: await appRoutes(srcDir), base, renderer });
   let hostFetch: (req: Request, info: Deno.ServeHandlerInfo) => Promise<Response>;
   if (rune) {
     const { api } = await keepPromise!; // was loading concurrently since above

@@ -220,9 +220,10 @@ export async function buildClient(srcDir: string, outDir: string): Promise<Build
   const cssDone = buildCss(srcDir, outDir);
   cssDone.catch(() => {}); // real failure still surfaces at `await cssDone`; suppress pre-await window
   const entries = [join(genDir, "client.ts"), ...islands.map((i) => join(genDir, `isl.${i.sel}.ts`))];
-  // Run the bundle under a map that forces @mrg-keystone/sprig to the CLI's ONE runtime (see
-  // forcedImportMap): this is what makes single-core structural rather than merely gated. The
-  // map lives in genDir, which is removed right after the bundle.
+  // Run the bundle under the app's effective import map with ONE @mrg-keystone/sprig mapping
+  // (see forcedImportMap — the app's pin wins, CLI core as fallback): one mapping per bundle is
+  // what makes single-core structural rather than merely gated. The map lives in genDir, which
+  // is removed right after the bundle.
   const mapPath = join(genDir, "import-map.json");
   await Deno.writeTextFile(mapPath, JSON.stringify(await forcedImportMap(srcDir)));
   const res = await new Deno.Command("deno", {
@@ -242,7 +243,7 @@ export async function buildClient(srcDir: string, outDir: string): Promise<Build
   // called synchronously` (the module-global DI context can't cross two copies). That failure is
   // silent at build + typecheck and only shows in the browser after deploy, so catch it HERE,
   // loudly, at the moment it's created — never ship it.
-  await assertSingleRuntime(outDir);
+  await assertSingleRuntime(outDir, srcDir);
 
   // 4. per-component styles.css → scoped (view encapsulation) → Tailwind → app.css
   //    (kicked off concurrently with the bundle above; just join it here).
@@ -487,12 +488,12 @@ async function cssFromVariables(srcDir: string): Promise<string> {
 }
 
 /** Build the import map the client bundle runs under: the APP's own imports (so island
- *  logic resolves its app specifiers — `$.services/…`, etc.) with the sprig runtime FORCED
- *  to the CLI's own copy. This is the structural fix for the dual-core bundle: without it the
- *  CLI's generated loader/`hydrate.ts` resolve `@mrg-keystone/sprig` through the CLI's version while
- *  the island `logic.ts` resolves it through the app's pin — two `core.ts` ⇒ two runtime
- *  chunks ⇒ every island dies at hydration. Forcing BOTH to the one CLI runtime makes a single
- *  shared runtime chunk guaranteed, regardless of what (if anything) the app pins.
+ *  logic resolves its app specifiers — `$.services/…`, etc.), with the APP'S OWN
+ *  `@mrg-keystone/sprig` mapping (the stamped jsr pin, or an explicit local override) deciding
+ *  the ONE runtime for every entry — generated loader, `hydrate.ts`, and island `logic.ts` all
+ *  import the runtime by the same bare specifier, so one mapping ⇒ one shared runtime chunk.
+ *  Resolving through the app's pin (not the CLI's own copy) makes dev build the SAME bytes prod
+ *  builds — the CLI's core is only a fallback for an app that maps nothing.
  *
  *  `--import-map` REPLACES the app's deno.json map (it does not merge), so we reconstruct the
  *  app's effective imports here — walking up from `srcDir`, nearest-wins, resolving relative
@@ -531,10 +532,12 @@ export async function forcedImportMap(srcDir: string): Promise<{ imports: Record
       imports[k] = abs;
     }
   }
-  // FORCE the runtime to the CLI's own modules — one core.ts + one signals for every entry.
-  // `new URL(..., import.meta.url)` resolves against THIS file whether the CLI runs from a
-  // local checkout (file://) or JSR (https://), the same trick the generated entries already use.
-  imports["@mrg-keystone/sprig"] = new URL("../core.ts", import.meta.url).href;
+  // THE APP'S OWN @mrg-keystone/sprig MAPPING WINS — dev resolves the runtime exactly as prod
+  // does, so the bundle bytes match and a resolution defect (e.g. a second runtime under another
+  // name) fails in dev the same way it fails in prod. Only when the app maps nothing do we fall
+  // back to the CLI's own core (`new URL(..., import.meta.url)` resolves against THIS file
+  // whether the CLI runs from a local checkout (file://) or JSR (https://)).
+  imports["@mrg-keystone/sprig"] ??= new URL("../core.ts", import.meta.url).href;
   imports["@preact/signals-core"] = "npm:@preact/signals-core@^1.8.0";
   return { imports };
 }
@@ -551,7 +554,7 @@ const RUNTIME_SENTINEL = "__sprig_runtime";
  *  in the browser. Exported for direct testing. (Only >1 fails: a count of 0 would mean the
  *  sentinel moved, which is a framework change, not a user's dual-core — don't block builds on
  *  it.) */
-export async function assertSingleRuntime(outDir: string): Promise<void> {
+export async function assertSingleRuntime(outDir: string, srcDir?: string): Promise<void> {
   const carriers: string[] = [];
   for await (const e of Deno.readDir(outDir)) {
     if (!e.isFile || !e.name.endsWith(".js")) continue;
@@ -560,16 +563,40 @@ export async function assertSingleRuntime(outDir: string): Promise<void> {
     }
   }
   if (carriers.length > 1) {
+    // Identify WHERE each extra runtime copy came from — the actionable half of the error. A
+    // second copy can only enter the bundle under a DIFFERENT specifier than the one mapping
+    // (e.g. the legacy `@sprig/core` package, or a jsr/https URL imported directly), so scan the
+    // app's deno.json layers (walking up from srcDir — the APP tree, not the build output, which
+    // in dev lives in TMPDIR) for the usual suspects and name them.
+    const suspects = new Set<string>();
+    const LEGACY = /@sprig\/(?:core|keep)/;
+    let dir = resolvePath(srcDir ?? outDir);
+    for (;;) {
+      for (const name of ["deno.json", "deno.jsonc"]) {
+        try {
+          const text = await Deno.readTextFile(join(dir, name));
+          if (LEGACY.test(text)) suspects.add(`${join(dir, name)} maps a legacy @sprig/* package`);
+        } catch { /* no config here */ }
+      }
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+    const hint = suspects.size > 0
+      ? `Found likely culprits:\n  - ${[...suspects].join("\n  - ")}\n` +
+        `The legacy @sprig/core package IS the sprig runtime under its old name — it can never ` +
+        `dedup with @mrg-keystone/sprig. Migrate every @sprig/core / @sprig/keep mapping and ` +
+        `source import to @mrg-keystone/sprig, then rebuild.`
+      : `Check for the runtime imported under a SECOND specifier: the legacy @sprig/core package, ` +
+        `a member deno.json pinning its own @mrg-keystone/sprig (a member pin scopes its islands ` +
+        `to a second copy), or a direct jsr:/https: import of the runtime in island code.`;
     throw new Error(
       `sprig build: DUAL-CORE bundle — the sprig runtime was emitted into ${carriers.length} ` +
-        `chunks (${carriers.sort().join(", ")}), but it must be exactly one. Two copies means the ` +
-        `island logic resolved @mrg-keystone/sprig to a DIFFERENT copy than the CLI's loader/hydrate, so ` +
+        `chunks (${carriers.sort().join(", ")}), but it must be exactly one. Two copies means some ` +
+        `island code resolved the runtime to a DIFFERENT module than the loader/hydrate, so ` +
         `code-splitting could not dedup them. In the browser every island would fail to hydrate ` +
         `with "inject() must be called synchronously" — the DI context is module-global and cannot ` +
-        `cross two runtime copies. Fix: REMOVE @mrg-keystone/sprig (and @mrg-keystone/sprig/) from the app's ` +
-        `deno.json — the CLI supplies the one runtime. In a Deno workspace, remove it from the ` +
-        `MEMBER that holds the islands (e.g. ui/deno.json): a member's own pin scopes the island ` +
-        `logic to a second copy that the CLI's import map cannot override.`,
+        `cross two runtime copies.\n${hint}`,
     );
   }
 }
