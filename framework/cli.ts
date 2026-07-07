@@ -477,23 +477,33 @@ async function build(appDir = ".", outDir = join(Deno.cwd(), "static"), rune = f
 }
 
 /** Bake the git provenance block into the served static dir as `build-info.json`. The deploy tooling
- *  (infra) stamps a `git` object — `{ repo, commit, branch, buildTime }` — into the git-root
- *  `deno.json` BEFORE the build runs; this copies it beside the built assets so serveSprig can emit it
- *  as `<meta>` in every SSR document head at runtime (the serving isolate has no git and no repo).
- *  Walks up from `appDir` to find the nearest `deno.json(c)` carrying a `git` block; absent (local dev,
- *  or infra didn't stamp) → writes nothing, and the head stays clean. */
+ *  (infra) stamps `{ repo, commit, branch, buildTime }` into **`.infra/git.json`** at the repo root
+ *  BEFORE the build runs — a server-only sidecar file (it moved OUT of deno.json: a stamp inside the
+ *  most-contended file in the repo conflicted every lagging branch at the merge). This copies it
+ *  beside the built assets so serveSprig can emit it as `<meta>` in every SSR document head at
+ *  runtime (the serving isolate has no git and no repo). Walks up from `appDir` for the nearest
+ *  `.infra/git.json`, falling back to a legacy `git` block in `deno.json(c)`; absent (local dev, or
+ *  infra didn't stamp) → writes nothing, and the head stays clean. */
 async function writeBuildInfo(appDir: string, outDir: string): Promise<void> {
   let git: unknown;
   let dir = resolve(appDir);
   for (;;) {
-    for (const name of ["deno.json", "deno.jsonc"]) {
-      try {
-        const cfg = JSON.parse(await Deno.readTextFile(join(dir, name))) as { git?: unknown };
-        if (cfg.git && typeof cfg.git === "object" && !Array.isArray(cfg.git)) {
-          git = cfg.git;
-          break;
-        }
-      } catch { /* absent / JSONC-with-comments / unparseable → keep walking up */ }
+    // current stamp location: .infra/git.json (the whole file IS the block)
+    try {
+      const stamp = JSON.parse(await Deno.readTextFile(join(dir, ".infra", "git.json")));
+      if (stamp && typeof stamp === "object" && !Array.isArray(stamp)) git = stamp;
+    } catch { /* absent / unparseable → try the legacy location */ }
+    // legacy location: a `git` key inside deno.json(c)
+    if (!git) {
+      for (const name of ["deno.json", "deno.jsonc"]) {
+        try {
+          const cfg = JSON.parse(await Deno.readTextFile(join(dir, name))) as { git?: unknown };
+          if (cfg.git && typeof cfg.git === "object" && !Array.isArray(cfg.git)) {
+            git = cfg.git;
+            break;
+          }
+        } catch { /* absent / JSONC-with-comments / unparseable → keep walking up */ }
+      }
     }
     if (git) break;
     const parent = dirname(dir);
