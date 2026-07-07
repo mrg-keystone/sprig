@@ -32,11 +32,16 @@ import { specRootOf } from "./.sprig/spec-root.ts";
 // the published-package version range a scaffolded app pins (core + its /keep + /cli
 // sub-exports all ship from @mrg-keystone/sprig). Bump in lockstep with the published version.
 /** The running CLI's OWN semver, read from its install deno.json — the single source for "which
- *  sprig am I". Null only when it can't be read (running straight from a remote jsr: module with
- *  nothing on disk). Feeds both sprigRange() (the init pin) and stamp() (the build-time pin). */
+ *  sprig am I". Null when it can't be read — INCLUDING a remote jsr: run, where there is no
+ *  install root on disk. MUST NOT go through installRoot(): its jsr guard `Deno.exit(1)`s, which
+ *  no try/catch can intercept — that regression made every `deno run jsr:…/cli build --rune`
+ *  (i.e. every Deno Deploy build) die instead of gracefully skipping the stamp. Feeds both
+ *  sprigRange() (the init pin) and stamp() (the build-time pin), both of which handle null. */
 function cliVersion(): string | null {
+  const fwDir = import.meta.dirname; // undefined on a remote jsr:/https: run — no disk, no version
+  if (!fwDir) return null;
   try {
-    const { version } = JSON.parse(Deno.readTextFileSync(join(installRoot(), "deno.json"))) as { version?: string };
+    const { version } = JSON.parse(Deno.readTextFileSync(join(fwDir, "..", "deno.json"))) as { version?: string };
     return (typeof version === "string" && version) ? version : null;
   } catch {
     return null;
@@ -58,8 +63,12 @@ function sprigRange(): string {
  *  scaffold tracks latest by construction instead of freezing a literal that silently scaffolds a
  *  stale rune. Falls back to the current major floor if server/deno.json is unreadable. */
 function runeRange(): string {
+  // Direct import.meta.dirname, NOT installRoot(): its jsr guard Deno.exit(1)s
+  // (uncatchable) — this read must degrade to the floor on a remote jsr: run.
+  const fwDir = import.meta.dirname;
+  if (!fwDir) return "^3";
   try {
-    const cfg = JSON.parse(Deno.readTextFileSync(join(installRoot(), "server", "deno.json"))) as { imports?: Record<string, string> };
+    const cfg = JSON.parse(Deno.readTextFileSync(join(fwDir, "..", "server", "deno.json"))) as { imports?: Record<string, string> };
     const range = cfg.imports?.["@mrg-keystone/rune"]?.match(/\/rune@([^"/]+)$/)?.[1];
     if (range) return range;
   } catch { /* fall through to a sane floor */ }
