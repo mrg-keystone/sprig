@@ -655,10 +655,12 @@ function assetsGuard(assetsDir: string): void {
 
 /** bare-root/favicon redirects DERIVED from `base` (not options): when the UI mounts at a non-root
  *  base, `/` can only mean "go to the app" and `/favicon.ico` is served from the built assets.
- *  Returns a redirect Response or null. `base: "/"` (UI-at-root) → the app is already at `/`, no
- *  redirect. Applied by serveSprig BEFORE the SSR app so the app authors neither. */
-function derivedRedirect(path: string, base: string): Response | null {
-  if (base === "/") return null;
+ *  Returns a redirect Response or null. A ROOT mount — `base: "/"` OR `base: ""` (the isolate
+ *  workbench mounts at "") — means the app is already at `/`, so NO redirect: redirecting `/` to an
+ *  empty `location` self-loops into a blank page. Applied by serveSprig BEFORE the SSR app so the
+ *  app authors neither. */
+export function derivedRedirect(path: string, base: string): Response | null {
+  if (base === "/" || base === "") return null; // root mount — the app IS at "/", nothing to redirect to
   if (path === "/") return new Response(null, { status: 307, headers: { location: base } });
   if (path === "/favicon.ico") {
     return new Response(null, { status: 307, headers: { location: `${base}/_assets/favicon.svg` } });

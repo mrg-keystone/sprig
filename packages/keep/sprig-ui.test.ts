@@ -66,3 +66,23 @@ Deno.test("composes as middleware: under base → sprig, else → host", async (
   assertEquals(await (await handler(get("/ui/x"))).text(), "SSR:/ui/x");
   assertEquals(await (await handler(get("/dashboard"))).text(), "HOST:/dashboard");
 });
+
+// derivedRedirect: bare-"/" and favicon redirects are DERIVED from base. A ROOT mount
+// (base "/" OR "") must NOT redirect — redirecting "/" to an empty location self-loops
+// into a blank page (the isolate workbench, base "", regressed exactly this way).
+import { derivedRedirect } from "./mod.ts";
+
+Deno.test("derivedRedirect: root mount never redirects (no self-loop)", () => {
+  assertEquals(derivedRedirect("/", "/"), null); // UI at "/"
+  assertEquals(derivedRedirect("/", ""), null); // isolate workbench mounts at ""
+  assertEquals(derivedRedirect("/favicon.ico", ""), null);
+});
+
+Deno.test("derivedRedirect: a non-root base redirects / and /favicon.ico to the app", () => {
+  const root = derivedRedirect("/", "/ui");
+  assertEquals(root?.status, 307);
+  assertEquals(root?.headers.get("location"), "/ui");
+  const fav = derivedRedirect("/favicon.ico", "/ui");
+  assertEquals(fav?.headers.get("location"), "/ui/_assets/favicon.svg");
+  assertEquals(derivedRedirect("/anything-else", "/ui"), null);
+});
