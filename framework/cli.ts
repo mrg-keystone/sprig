@@ -1073,32 +1073,42 @@ async function writeRuneServe(gitRoot: string, uiRel: string, serverRel: string,
       Deno.exit(1);
     }
   }
-  // NEW convention: the app owns a small hand-written composition at <ui>/bootstrap/mod.ts
-  // (serveSprig + a pinned assetsDir). When present, serve.ts is a mere gitignored re-export
-  // shim — the wiring lives in ONE place, not regenerated boilerplate. Legacy apps with no
-  // ui/bootstrap/mod.ts still get the full generated composition below (back-compat).
-  const uiBootstrap = join(gitRoot, uiRel, "bootstrap", "mod.ts");
-  const src = (await pathExists(uiBootstrap))
+  // ZERO composition: serve.ts is ONE line — `serveSprig({ keep: api })`. srcDir, assetsDir, base,
+  // and the bare-/ + favicon redirects are all DERIVED by serveSprig from this file's location + the
+  // `ui/` convention, so no app authors (and can't misauthor) a composition — the assetsDir a
+  // hand-written file used to forget is derived and pinned. The only named value is the imported keep
+  // backend. A non-standard layout (uiRel != "ui") can't be derived by convention → fall back to the
+  // explicit composition (imports the app's `sprigApp` export and pins assetsDir via import.meta).
+  const standard = uiRel === "ui" && assetsRel === "ui/static";
+  const src = standard
     ? [
-      `// ${MARKER} — a gitignored deploy shim; the composition lives in ${uiRel}/bootstrap/mod.ts.`,
-      `// That hand-owned file folds the keep backend (${serverRel}/) + the sprig UI into one`,
-      `// { fetch } handler with assetsDir pinned; this root re-exports it so \`deno serve serve.ts\``,
-      `// at the git root drives it. Regenerated every build; never committed.`,
+      `// ${MARKER} — the single-origin composition root at the git root.`,
+      `//`,
+      `// ONE line: serveSprig folds the rune/keep backend (${serverRel}/) and the sprig UI (${uiRel}/)`,
+      `// into a { fetch } default export. srcDir (${uiRel}/src), assetsDir (${assetsRel}/), base (/ui),`,
+      `// and the bare-/ + favicon redirects are DERIVED from this file's location + the ui/ convention,`,
+      `// so the app authors no composition and can't forget assetsDir (the cwd-relative default that`,
+      `// shipped ?v=dev to prod). The Deno workspace in ./deno.json lets each half keep its own import`,
+      `// map; serveSprig binds keep's IN-PROCESS Backend so the UI's resolve.ts reads data with no TCP.`,
       `//`,
       `//   deno serve -A serve.ts            (add --env-file=.env if your backend reads one)`,
       `//`,
       `//   /ui    → the SSR app        /api/* → the keep backend (token-gated)        /docs → Swagger`,
+      `//`,
+      `// Re-run \`sprig build --rune\` after changing pages/islands to refresh ${assetsRel}/.`,
+      `import { serveSprig } from "@mrg-keystone/sprig/keep";`,
+      `import { api } from "./${serverRel}/bootstrap/mod.ts";`,
       ``,
-      `export { default } from "./${uiRel}/bootstrap/mod.ts";`,
+      `export default serveSprig({ keep: api });`,
       ``,
     ].join("\n")
     : [
-      `// ${MARKER} — the single-origin composition root at the git root.`,
+      `// ${MARKER} — the single-origin composition root (non-standard layout: ui at "${uiRel}").`,
       `//`,
       `// serveSprig folds the rune/keep backend (${serverRel}/) and the sprig UI (${uiRel}/) into ONE`,
-      `// { fetch } default export that \`deno serve\` drives, reading the prebuilt ${assetsRel}/. The`,
-      `// Deno workspace in ./deno.json lets each half keep its own import map; serveSprig binds`,
-      `// keep's IN-PROCESS Backend so the UI's resolve.ts reads data with no TCP hop and no token.`,
+      `// { fetch } default export that \`deno serve\` drives, reading the prebuilt ${assetsRel}/. Because`,
+      `// the UI isn't at the conventional ./ui, srcDir + assetsDir can't be derived — they're pinned`,
+      `// here via import.meta so the handler is correct no matter where it is launched (e.g. Deno Deploy).`,
       `//`,
       `//   deno serve -A serve.ts            (add --env-file=.env if your backend reads one)`,
       `//`,
@@ -1110,8 +1120,6 @@ async function writeRuneServe(gitRoot: string, uiRel: string, serverRel: string,
       `import { api } from "./${serverRel}/bootstrap/mod.ts";`,
       `import { sprigApp } from "./${uiRel}/src/mod.ts";`,
       ``,
-      `// Pin assetsDir via import.meta (not the cwd-relative default) so the handler is correct`,
-      `// no matter what directory it is launched from (e.g. Deno Deploy).`,
       `const assetsDir = fromFileUrl(new URL("./${assetsRel}", import.meta.url));`,
       ``,
       `export default serveSprig({ keep: api, app: sprigApp, base: "/ui", assetsDir });`,
