@@ -6,8 +6,9 @@
  * This is the whole composition root — the app author writes `serveSprig({...})`,
  * not a hand-rolled path dispatcher + globalThis bridge.
  */
-import { backendClient, type Guard, isLayoutLoad, type Route, type RouteMeta, type SprigApp } from "@mrg-keystone/sprig";
-import { join, toFileUrl } from "@std/path";
+import { backendClient, bootstrap, type Guard, isLayoutLoad, type Route, type RouteMeta, type SprigApp } from "@mrg-keystone/sprig";
+import { dirname, fromFileUrl, join, toFileUrl } from "@std/path";
+import { createRenderer as makeRenderer } from "../../framework/.sprig/compiler/mod.ts";
 // Third-party browser libs VENDORED INTO the server source (imported as TEXT → part of the
 // module graph, not a disk read, so they ship whether sprig runs from ~/.sprig or straight
 // from JSR). serveSprig hands them to the client at <base>/_assets/vendor/<name>; every app
@@ -148,12 +149,17 @@ export interface KeepApi {
 
 export interface ServeSprigConfig {
   keep: KeepApi;
-  app: SprigApp;
+  /** The SSR app. OPTIONAL: when omitted, serveSprig composes it from the derived srcDir
+   *  (`<entry root>/ui/src`) exactly as `sprig dev` does — so a generated `serve.ts` is one line
+   *  and the app authors no composition. Pass it to override (how `sprig dev` calls serveSprig). */
+  app?: SprigApp;
   /** where the UI mounts (default "/ui"). keep owns apiPrefix + docsPrefix. */
   base?: string;
   apiPrefix?: string; // default "/api"
   docsPrefix?: string; // default "/docs"
-  /** directory served at <base>/_assets/* (the build's client.js etc.); default "static". */
+  /** directory served at <base>/_assets/* (the build's client.js etc.). OPTIONAL: derived from the
+   *  entry anchor (`<root>/ui/static`) when omitted — NOT the cwd-relative "static", the default that
+   *  silently shipped ?v=dev to prod. Pass to override. */
   assetsDir?: string;
   /** Firebase/Google sign-in. When an infra URL is resolvable here (or via the INFRA_URL env),
    *  serveSprig auto-mounts the same-origin /auth gateway that sprig's `loginWithGoogle()` and
@@ -558,6 +564,108 @@ function injectHeadMeta(res: Response, meta: string): Response {
   return new Response(res.body.pipeThrough(rewrite), { status: res.status, statusText: res.statusText, headers });
 }
 
+// ─────────────────────────── zero-composition derivation ───────────────────────────
+// A generated `serve.ts` is `export default serveSprig({ keep: api })` — nothing else passed.
+// Everything else is DERIVED from one runtime anchor (`Deno.mainModule`, the git-root serve.ts that
+// `--rune` hoists) plus the fixed `ui/` convention: srcDir = <root>/ui/src, assetsDir = <root>/ui/static
+// (falling back to <root>/src|static for a UI-at-root layout). The app is then composed from srcDir the
+// SAME way `sprig dev` does — so an app authors no composition file and can't forget `assetsDir` (the
+// cwd-relative default that shipped ?v=dev to prod). Every derived value is an override-able default:
+// pass `app`/`assetsDir` explicitly and derivation never runs (back-compat, and how `sprig dev` calls it).
+
+/** The dir of the running entrypoint (the git-root `serve.ts`), or null when `Deno.mainModule` isn't a
+ *  file URL (e.g. a jsr:/https: entry, or a test harness) — then paths must be passed explicitly. */
+function entryRoot(): string | null {
+  try {
+    const m = Deno.mainModule;
+    return m.startsWith("file:") ? dirname(fromFileUrl(m)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function isDirSync(p: string): boolean {
+  try {
+    return Deno.statSync(p).isDirectory;
+  } catch {
+    return false;
+  }
+}
+
+/** Derive a UI subtree dir (`src` or `static`) from the entry anchor + the `ui/` convention:
+ *  `<root>/ui/<sub>` for a monorepo, else `<root>/<sub>` for a UI-at-root layout. Returns the
+ *  cwd-relative `sub` as a last resort (no file anchor — matches the historical default). */
+function deriveUiDir(sub: string): string {
+  const root = entryRoot();
+  if (!root) return sub;
+  const monorepo = join(root, "ui", sub);
+  if (isDirSync(join(root, "ui", "src")) || isDirSync(join(root, "ui", "static"))) return monorepo;
+  return join(root, sub);
+}
+
+/** Resolve an app's route table from `srcDir` — folder tables (`routers/root/routes.json` / legacy
+ *  `root.json`, via loadRoutes) or a `src/mod.ts` `routes` export (the code-composed style). The
+ *  SAME resolution `sprig dev`'s appRoutes runs, so dev and the generated serve.ts compose identically. */
+async function resolveAppRoutes(srcDir: string): Promise<Route[]> {
+  if (
+    await routeFileExists(join(srcDir, "routers", "root", "routes.json")) ||
+    await routeFileExists(join(srcDir, "root.json"))
+  ) {
+    return await loadRoutes(srcDir);
+  }
+  const modPath = join(srcDir, "mod.ts");
+  const mod = await import(toFileUrl(modPath).href) as { routes?: Route[]; sprigApp?: SprigApp };
+  if (Array.isArray(mod.routes)) return mod.routes;
+  throw new Error(
+    `serveSprig: ${modPath} exports no \`routes\` array — export \`routes = defineRoutes([...])\`, ` +
+      `add src/routers/root/routes.json, or pass \`app\` explicitly.`,
+  );
+}
+
+/** Compose the SSR app from `srcDir` (createRenderer scans it for pages/islands; bootstrap wires the
+ *  routes) — the composition `ui/src/mod.ts` used to hand-author. Async; called lazily on first request
+ *  so serveSprig/sprigUi keep their synchronous `{ fetch }` return. */
+async function composeApp(srcDir: string, base: string): Promise<SprigApp> {
+  const renderer = await makeRenderer(srcDir, base, { dev: !!Deno.env.get("SPRIG_DEV") });
+  return bootstrap({ routes: await resolveAppRoutes(srcDir), base, renderer });
+}
+
+/** Prod safety net: a missing/empty assets dir is the intended DEGRADED-DEV state (?v=dev, no
+ *  provenance), indistinguishable from a misconfigured prod deploy EXCEPT by context — so when
+ *  `SPRIG_DEV` is unset (a real launch) and the dir has no built assets, say so LOUDLY, once, at
+ *  startup, instead of silently shipping ?v=dev + no <meta> tags (the alfred outage). */
+function assetsGuard(assetsDir: string): void {
+  if (Deno.env.get("SPRIG_DEV")) return;
+  let empty = true;
+  try {
+    for (const _ of Deno.readDirSync(assetsDir)) {
+      empty = false;
+      break;
+    }
+  } catch {
+    empty = true; // absent dir → empty
+  }
+  if (empty) {
+    console.warn(
+      `serveSprig: assetsDir "${assetsDir}" has no built assets — ?v= cache-busting + <meta> ` +
+        `provenance are degraded. Did the build run? (set SPRIG_DEV=1 to silence in dev.)`,
+    );
+  }
+}
+
+/** bare-root/favicon redirects DERIVED from `base` (not options): when the UI mounts at a non-root
+ *  base, `/` can only mean "go to the app" and `/favicon.ico` is served from the built assets.
+ *  Returns a redirect Response or null. `base: "/"` (UI-at-root) → the app is already at `/`, no
+ *  redirect. Applied by serveSprig BEFORE the SSR app so the app authors neither. */
+function derivedRedirect(path: string, base: string): Response | null {
+  if (base === "/") return null;
+  if (path === "/") return new Response(null, { status: 307, headers: { location: base } });
+  if (path === "/favicon.ico") {
+    return new Response(null, { status: 307, headers: { location: `${base}/_assets/favicon.svg` } });
+  }
+  return null;
+}
+
 /**
  * Dispatch order (the author writes none of this):
  *   /api/*   → keep.handler with the prefix STRIPPED, info forwarded (token-gated,
@@ -569,8 +677,14 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
   const base = config.base ?? "/ui";
   const apiPrefix = config.apiPrefix ?? "/api";
   const docsPrefix = config.docsPrefix ?? "/docs";
-  const assetsDir = config.assetsDir ?? "static";
+  const assetsDir = config.assetsDir ?? deriveUiDir("static");
   const assetPrefix = `${base}/_assets`;
+  assetsGuard(assetsDir);
+  // The SSR app: explicit, or composed lazily from the derived srcDir on first request (memoized) so
+  // serveSprig keeps its synchronous return. Deriving srcDir here (not per-request) pins it once.
+  const srcDir = deriveUiDir("src");
+  let appOnce: Promise<SprigApp> | undefined;
+  const getApp = (): Promise<SprigApp> => config.app ? Promise.resolve(config.app) : (appOnce ??= composeApp(srcDir, base));
   // Firebase/Google sign-in gateway (loginWithGoogle's server half) — mounted only when an
   // infra URL is resolvable; else /auth is left to the app (backward compatible).
   const authInfraUrl = config.auth?.infraUrl ?? Deno.env.get("INFRA_URL") ?? "";
@@ -601,6 +715,11 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
           headers: { "allow": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS" },
         });
       }
+
+      // bare-root + favicon redirects, DERIVED from base (a non-root UI's "/" means "go to the app",
+      // /favicon.ico is served from the built assets). No option, no hand-owned wrapper.
+      const redirect = derivedRedirect(path, base);
+      if (redirect) return redirect;
 
       // same-origin /auth gateway (the server half of sprig's client auth). Active when an infra
       // URL is configured (login/exchange/firebase-config) OR keep exposes the cookie-session engine
@@ -674,16 +793,18 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
         const raw = readCookie(req, SESSION_COOKIE);
         if (raw) session = await config.keep.sessions.read(decodeURIComponent(raw)).catch(() => null);
       }
-      return injectHeadMeta(await config.app.fetch(req, info, { backend, assetsVersion: (await version()) ?? undefined, session }), await buildMeta());
+      const app = await getApp();
+      return injectHeadMeta(await app.fetch(req, info, { backend, assetsVersion: (await version()) ?? undefined, session }), await buildMeta());
     },
   };
 }
 
 export interface SprigUiConfig {
-  app: SprigApp;
+  /** The SSR app. OPTIONAL: composed from the derived srcDir (`<entry root>/ui|.>/src`) when omitted. */
+  app?: SprigApp;
   /** where the UI mounts (default "/ui"); the build's assets live at <base>/_assets/*. */
   base?: string;
-  /** directory the built assets are read from (default "static"). */
+  /** directory the built assets are read from. OPTIONAL: derived from the entry anchor when omitted. */
   assetsDir?: string;
   /** the HOST's in-process backend, threaded into resolve.ts for SSR data loading. */
   backend?: { fetch: typeof fetch };
@@ -708,13 +829,18 @@ export function sprigUi(
   config: SprigUiConfig,
 ): (req: Request, info?: Deno.ServeHandlerInfo) => Promise<Response | null> {
   const base = config.base ?? "/ui";
-  const assetsDir = config.assetsDir ?? "static";
+  const assetsDir = config.assetsDir ?? deriveUiDir("static");
   const assetPrefix = `${base}/_assets`;
   const backend = config.backend ? backendClient(config.backend.fetch) : undefined;
+  assetsGuard(assetsDir);
   // same single source of truth as serveSprig: the served dir's content hash drives
   // the renderer's ?v= AND the immutable check (stat-probed, tracks in-place rebuilds).
   const version = assetsVersioner(assetsDir);
   const buildMeta = buildMetaReader(assetsDir);
+  // explicit app, or lazily composed from the derived srcDir (memoized) — same as serveSprig.
+  const srcDir = deriveUiDir("src");
+  let appOnce: Promise<SprigApp> | undefined;
+  const getApp = (): Promise<SprigApp> => config.app ? Promise.resolve(config.app) : (appOnce ??= composeApp(srcDir, base));
 
   return async (req, info) => {
     const path = new URL(req.url).pathname;
@@ -726,6 +852,7 @@ export function sprigUi(
     if (path.startsWith(assetPrefix + "/")) {
       return serveAsset(assetsDir, path.slice(assetPrefix.length + 1), req, version);
     }
-    return injectHeadMeta(await config.app.fetch(req, info, { backend, assetsVersion: (await version()) ?? undefined }), await buildMeta());
+    const app = await getApp();
+    return injectHeadMeta(await app.fetch(req, info, { backend, assetsVersion: (await version()) ?? undefined }), await buildMeta());
   };
 }
