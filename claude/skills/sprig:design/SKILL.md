@@ -74,6 +74,22 @@ Each specialist owns its own procedure (the MCP calls, the derivation, the rende
    (derivation issue), then re-verify. **Looking is the test** — don't declare done on
    markup alone.
 
+## Orchestrator conduct
+
+- **After spawning a specialist, END YOUR TURN** — task notifications re-invoke you; never
+  `sleep`-poll between passes. Never search the filesystem yourself (skill references live
+  at exact `~/.claude/skills/<skill>/references/` paths).
+- **Brief completely — a specialist that searches was under-briefed.** Pass the artifact
+  dir (`spec/ui/design-system/`) and the `theme.css` path down the chain — absolute,
+  copied verbatim from the previous stage's return, never retyped, never "glob for it".
+  A specialist reporting `blocked: missing path` means the brief was wrong: fix the brief
+  and re-delegate.
+- **Verify by receipt.** The deriver's byte-consistency confirmation and the verifier's
+  screenshots + PASS/FAIL verdict ARE the state — don't re-read derived files or re-shoot
+  the showcase to double-check what a specialist already returned; a FAIL loops back to
+  the owning specialist (author for theme issues, deriver for derivation issues), never
+  gets patched inline.
+
 ## Output location & naming
 
 Write to **`spec/ui/design-system/`** (relative to the **git root**; create `spec/ui/`

@@ -21,7 +21,9 @@ The `sprig:audit` playbook reaches **Stage 1 (HUNT)**. Exactly one instance per 
 ## Input contract
 
 The orchestrator passes:
-- **APP** — the running base URL (e.g. `http://localhost:8000/ui`).
+- **APP** — the running base URL (e.g. `http://localhost:8000/ui`). The server is PARENT-OWNED and
+  live: if it doesn't respond, return `blocked: app unreachable at <url>` — never `lsof`/port-scan
+  for it, never start/restart it yourself.
 - **PROJECT ROOT** (abs path) + **PROJECT MAP** — `src/` (`shell/ pages/ components/ islands/ services/`), `main.ts`, `serve.ts`.
 - **DATA OWNERSHIP** — `owns-data` | `fronts keep backend (Backend token / /api) at <dir>`.
 - **USER STORIES** — the contents of `user-stories.md`, or `"none — derive from the route table + islands"`.
@@ -30,7 +32,9 @@ The orchestrator passes:
 **Finding a Playwright-MCP screenshot — read the returned path, never search for the file.** `browser_take_screenshot` writes to the **MCP's own output directory** (default `.playwright-mcp/`), not a path you choose, and **returns the saved absolute path in its tool result**. Take the path from that result — it is authoritative. To land a shot in the EVIDENCE DIR, `cp` it there from the returned path. **NEVER run `find /`, `find ~`, or any whole-disk / home-dir scan to locate a screenshot** — it pins every CPU core for minutes. Lost a path? Look only in `.playwright-mcp/`, or just re-shoot — do not scan the disk.
 - **REFERENCES DIR** — absolute path to the audit skill's `references/` dir.
 
-Assume nothing beyond this.
+Assume nothing beyond this. **Knowledge boundary:** this definition + the passed inputs +
+the REFERENCES DIR files (`sprig-bug-catalog.md`, `playwright-mcp-recipes.md`) are all your
+reference material — never read another skill's SKILL.md (orchestrator playbooks).
 
 ## Procedure
 
@@ -92,6 +96,36 @@ Return your final message as **exactly** this JSON, nothing else:
 ```
 
 `category`: `bug|perf`. `severity`: `blocker|high|medium|low`. `layer`: `ui|server|client|backend`. Return ONLY this JSON.
+
+<!-- BEGIN sprig-agent-guardrail: scripts/agent-guardrail.md -->
+## Never crawl the filesystem for framework source
+
+Your `find` is Claude Code's bundled **bfs** (multithreaded). A search rooted at `/`
+(`find / …`, or a whole-disk `grep -r … /`) fans out across the entire volume and pegs
+several cores for minutes — and it is **never** the right way to locate sprig internals or
+build artifacts. **Do not run `find /` or any whole-disk search.** Everything agents have
+historically crawled the disk for is already at hand:
+
+- **Sprig internals** — islands & `isolate` (`isolate-events`, `sprig isolate`), the
+  component model, routing, serving/SSR, templates — are documented in the skill references
+  installed alongside you. Read them directly instead of hunting the runtime source:
+  - `~/.claude/skills/sprig:build/references/{isolate,component-model,routing,serving,templates}.md`
+  - `~/.claude/skills/sprig:audit/references/{playwright-mcp-recipes,sprig-bug-catalog}.md`
+  - `~/.claude/skills/sprig:breakdown/references/{capture-recipes,isolate-format}.md`
+- **To resolve an import alias** (e.g. `@mrg-keystone/sprig`, `#assert`): read the PROJECT's
+  `deno.json` `imports` map — the alias is defined there and nowhere else. Never search for it.
+- **To find the sprig runtime's real `.ts` in the cache:** run `deno info jsr:@mrg-keystone/sprig`
+  (or `deno info <specifier>`) — it prints the exact cached path in milliseconds. If you must
+  grep vendored source, scope it to that path or to `~/Library/Caches/deno`, never `/`.
+- **Playwright screenshots / console logs** land in the PROJECT's own `.playwright-mcp/`
+  (at the app root) and `~/Library/Caches/ms-playwright-mcp/` — look there, never crawl the
+  disk for the `.png` or `.log`.
+- **Build output** (compiled islands, previews) lives under the app's own `dist/` /
+  `.sprig/` — check the project tree, not the whole volume.
+
+If something genuinely isn't in the project or the caches above, say so and ask — do not
+escalate to a root-wide `find`.
+<!-- END sprig-agent-guardrail -->
 
 ## Never
 

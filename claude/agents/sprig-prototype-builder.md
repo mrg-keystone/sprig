@@ -30,6 +30,12 @@ The `sprig:prototype` playbook is on the **Create**, **Improve**, or **Apply cli
 - **OUTPUT PATH** — `spec/ui/<app>-prototype/` (at the git root; create `spec/ui/` if absent).
 - **DESIGN-SYSTEM** — whether `spec/ui/design-system/` exists.
 
+All paths arrive resolved (the proto-host template is always at
+`~/.claude/skills/sprig:prototype/assets/proto-host/`). A passed path that doesn't exist →
+return `blocked: <path> missing`; don't hunt for a replacement. **Knowledge boundary:**
+this definition + the SOURCE/FEEDBACK artifacts + the Resources paths below are all your
+reference material — never read another skill's SKILL.md (orchestrator playbooks).
+
 ## Procedure
 
 This is a **THROWAWAY** prototype — read once and deleted. Optimize for change speed. The two seams are the one part that outlives it (they seed the backend spec — `rune:spec` ratifies them), so keep them honest.
@@ -60,6 +66,36 @@ This is a **THROWAWAY** prototype — read once and deleted. Optimize for change
 ## Output contract
 
 Return: the folder written (path), the seams declared — the object types and the command verbs (name + `kind`) — and, only if you ran the gut-check, one line on what it flagged. **Don't explain the code.** Return ONLY this.
+
+<!-- BEGIN sprig-agent-guardrail: scripts/agent-guardrail.md -->
+## Never crawl the filesystem for framework source
+
+Your `find` is Claude Code's bundled **bfs** (multithreaded). A search rooted at `/`
+(`find / …`, or a whole-disk `grep -r … /`) fans out across the entire volume and pegs
+several cores for minutes — and it is **never** the right way to locate sprig internals or
+build artifacts. **Do not run `find /` or any whole-disk search.** Everything agents have
+historically crawled the disk for is already at hand:
+
+- **Sprig internals** — islands & `isolate` (`isolate-events`, `sprig isolate`), the
+  component model, routing, serving/SSR, templates — are documented in the skill references
+  installed alongside you. Read them directly instead of hunting the runtime source:
+  - `~/.claude/skills/sprig:build/references/{isolate,component-model,routing,serving,templates}.md`
+  - `~/.claude/skills/sprig:audit/references/{playwright-mcp-recipes,sprig-bug-catalog}.md`
+  - `~/.claude/skills/sprig:breakdown/references/{capture-recipes,isolate-format}.md`
+- **To resolve an import alias** (e.g. `@mrg-keystone/sprig`, `#assert`): read the PROJECT's
+  `deno.json` `imports` map — the alias is defined there and nowhere else. Never search for it.
+- **To find the sprig runtime's real `.ts` in the cache:** run `deno info jsr:@mrg-keystone/sprig`
+  (or `deno info <specifier>`) — it prints the exact cached path in milliseconds. If you must
+  grep vendored source, scope it to that path or to `~/Library/Caches/deno`, never `/`.
+- **Playwright screenshots / console logs** land in the PROJECT's own `.playwright-mcp/`
+  (at the app root) and `~/Library/Caches/ms-playwright-mcp/` — look there, never crawl the
+  disk for the `.png` or `.log`.
+- **Build output** (compiled islands, previews) lives under the app's own `dist/` /
+  `.sprig/` — check the project tree, not the whole volume.
+
+If something genuinely isn't in the project or the caches above, say so and ask — do not
+escalate to a root-wide `find`.
+<!-- END sprig-agent-guardrail -->
 
 ## Never
 

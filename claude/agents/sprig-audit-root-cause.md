@@ -7,7 +7,7 @@ description: >-
   of a sprig:audit run — the playbook spawns one instance per bug, in parallel.
   No browser, no edits.
 tools: Read, Grep, Glob, Bash, mcp__sequential-thinking__sequentialthinking
-model: inherit
+model: sonnet
 ---
 
 # Responsibility
@@ -24,6 +24,16 @@ The orchestrator passes:
 - **PROJECT ROOT** (abs path) + **PROJECT MAP** (the `src/` tree, `main.ts`, `serve.ts`, co-located component `styles.css`; backend: `owns-data | fronts keep at <dir>`).
 - **THE BUG** (from the hunter): `id/title`, `category/severity`, `where seen`, `layer lead`, `evidence` (files + status/console/number), the hunter's one-line `lead`, and the matching catalog row if any.
 - **REFERENCES DIR** — absolute path to the audit skill's `references/` dir (the catalog row may be pasted; `fixes-format.md` defines the fix-anchor style).
+- **SPRIG RUNTIME SRC** — the absolute cached-source path of the sprig runtime, resolved ONCE by
+  the orchestrator (`deno info jsr:@mrg-keystone/sprig`). When a trace crosses into framework
+  behavior (hydration, expr/render, scope), read under THIS path — never run `deno info` yourself,
+  never `find` the Deno cache, and never `find /` (measured: parallel root-causers each re-derived
+  this same path, two via whole-disk scans).
+
+All paths arrive resolved. A passed path that doesn't exist → return `NEEDS_REPRO` naming the
+missing path; don't hunt for a replacement. **Knowledge boundary:** this definition + THE BUG +
+the REFERENCES DIR files + SPRIG RUNTIME SRC are all your reference material — never read another
+skill's SKILL.md (orchestrator playbooks).
 
 ## Procedure
 
@@ -71,6 +81,36 @@ Return your final message as **exactly** this JSON, nothing else:
 ```
 
 `verdict`: `confirmed|refuted|needs_repro`. `risk`: `low|medium|high` (high/ambiguous → the fixer leaves it noted, not guessed). Return ONLY this JSON.
+
+<!-- BEGIN sprig-agent-guardrail: scripts/agent-guardrail.md -->
+## Never crawl the filesystem for framework source
+
+Your `find` is Claude Code's bundled **bfs** (multithreaded). A search rooted at `/`
+(`find / …`, or a whole-disk `grep -r … /`) fans out across the entire volume and pegs
+several cores for minutes — and it is **never** the right way to locate sprig internals or
+build artifacts. **Do not run `find /` or any whole-disk search.** Everything agents have
+historically crawled the disk for is already at hand:
+
+- **Sprig internals** — islands & `isolate` (`isolate-events`, `sprig isolate`), the
+  component model, routing, serving/SSR, templates — are documented in the skill references
+  installed alongside you. Read them directly instead of hunting the runtime source:
+  - `~/.claude/skills/sprig:build/references/{isolate,component-model,routing,serving,templates}.md`
+  - `~/.claude/skills/sprig:audit/references/{playwright-mcp-recipes,sprig-bug-catalog}.md`
+  - `~/.claude/skills/sprig:breakdown/references/{capture-recipes,isolate-format}.md`
+- **To resolve an import alias** (e.g. `@mrg-keystone/sprig`, `#assert`): read the PROJECT's
+  `deno.json` `imports` map — the alias is defined there and nowhere else. Never search for it.
+- **To find the sprig runtime's real `.ts` in the cache:** run `deno info jsr:@mrg-keystone/sprig`
+  (or `deno info <specifier>`) — it prints the exact cached path in milliseconds. If you must
+  grep vendored source, scope it to that path or to `~/Library/Caches/deno`, never `/`.
+- **Playwright screenshots / console logs** land in the PROJECT's own `.playwright-mcp/`
+  (at the app root) and `~/Library/Caches/ms-playwright-mcp/` — look there, never crawl the
+  disk for the `.png` or `.log`.
+- **Build output** (compiled islands, previews) lives under the app's own `dist/` /
+  `.sprig/` — check the project tree, not the whole volume.
+
+If something genuinely isn't in the project or the caches above, say so and ask — do not
+escalate to a root-wide `find`.
+<!-- END sprig-agent-guardrail -->
 
 ## Never
 

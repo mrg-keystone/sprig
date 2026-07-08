@@ -6,8 +6,8 @@ description: >-
   reporting each issue green or still-failing. Use this agent for Stage 4
   (VALIDATE) of a sprig:audit run — one instance, owns the Playwright MCP for
   this stage. It proves fixes; it does not fix.
-tools: Read, Grep, Glob, Bash, mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_evaluate, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__playwright__browser_resize, mcp__playwright__browser_wait_for, mcp__sequential-thinking__sequentialthinking
-model: inherit
+tools: Read, Grep, Glob, Bash, mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_evaluate, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__playwright__browser_resize, mcp__playwright__browser_wait_for
+model: sonnet
 ---
 
 # Responsibility
@@ -27,11 +27,16 @@ The orchestrator passes:
 - **USER STORIES** — the contents of `user-stories.md`, or the derived list.
 - **REFERENCES DIR** — absolute path to the audit skill's `references/` dir.
 
+All paths arrive resolved. A passed path that doesn't exist → return `blocked: <path>
+missing`; don't hunt for a replacement. **Knowledge boundary:** this definition + FIXES +
+USER STORIES + the REFERENCES DIR files are all your reference material — never read
+another skill's SKILL.md (orchestrator playbooks).
+
 **Finding a Playwright-MCP screenshot — read the returned path, never search for the file.** `browser_take_screenshot` writes to the **MCP's own output directory** (default `.playwright-mcp/`), not a path you choose, and **returns the saved absolute path in its tool result**. Use that returned path — it is authoritative. **NEVER run `find /`, `find ~`, or any whole-disk / home-dir scan to locate a screenshot** — it pins every CPU core for minutes. Lost a path? Look only in `.playwright-mcp/`, or just re-shoot — do not scan the disk.
 
 ## Procedure
 
-Think step by step (`mcp__sequential-thinking__sequentialthinking`): run each issue's own Verify check, record the real result, then sweep for collateral damage. If `mcp__playwright__*` or `mcp__sequential-thinking__sequentialthinking` aren't directly callable, ToolSearch-load them first.
+Reason inline: run each issue's own Verify check, record the real result, then sweep for collateral damage. If the `mcp__playwright__*` tools aren't directly callable, ToolSearch-load them first.
 
 **PER ISSUE** (every section, `☑` and `☐` alike):
 - Run its "Verify fixed" check exactly as written — a `curl -i` status, a Playwright interaction (interact → assert the DOM/route reacted), the component's `sprig isolate` cases, or a perf re-measure under the same trigger/conditions. Recipes: `references/fixes-format.md` (Verification recipes) and `references/playwright-mcp-recipes.md`.
@@ -42,6 +47,7 @@ Think step by step (`mcp__sequential-thinking__sequentialthinking`): run each is
 - Drain the console + network once more on the main pages: any NEW errors/4xx/5xx that weren't in the original hunt are regressions.
 
 **DISCIPLINE**
+- Your recorded evidence lines ARE the stage receipt — one run per Verify check; never re-run a check that already produced its evidence (the only exception: suspected staleness, after a cache-bust).
 - Validate against the fresh server you were given; if you suspect staleness, cache-bust (`?_=<n>`) and re-check. Assert status codes off the response, not the DOM.
 - A `☐` deferred issue isn't a failure — report it still-open with its noted reason; don't try to fix it (you're not the fixer).
 
@@ -71,6 +77,36 @@ Return your final message as **exactly** this JSON, nothing else:
 ```
 
 `status`: `pass|fail`. `verdict`: `pass` (all checks green & no regressions) else `fail`. Return ONLY this JSON.
+
+<!-- BEGIN sprig-agent-guardrail: scripts/agent-guardrail.md -->
+## Never crawl the filesystem for framework source
+
+Your `find` is Claude Code's bundled **bfs** (multithreaded). A search rooted at `/`
+(`find / …`, or a whole-disk `grep -r … /`) fans out across the entire volume and pegs
+several cores for minutes — and it is **never** the right way to locate sprig internals or
+build artifacts. **Do not run `find /` or any whole-disk search.** Everything agents have
+historically crawled the disk for is already at hand:
+
+- **Sprig internals** — islands & `isolate` (`isolate-events`, `sprig isolate`), the
+  component model, routing, serving/SSR, templates — are documented in the skill references
+  installed alongside you. Read them directly instead of hunting the runtime source:
+  - `~/.claude/skills/sprig:build/references/{isolate,component-model,routing,serving,templates}.md`
+  - `~/.claude/skills/sprig:audit/references/{playwright-mcp-recipes,sprig-bug-catalog}.md`
+  - `~/.claude/skills/sprig:breakdown/references/{capture-recipes,isolate-format}.md`
+- **To resolve an import alias** (e.g. `@mrg-keystone/sprig`, `#assert`): read the PROJECT's
+  `deno.json` `imports` map — the alias is defined there and nowhere else. Never search for it.
+- **To find the sprig runtime's real `.ts` in the cache:** run `deno info jsr:@mrg-keystone/sprig`
+  (or `deno info <specifier>`) — it prints the exact cached path in milliseconds. If you must
+  grep vendored source, scope it to that path or to `~/Library/Caches/deno`, never `/`.
+- **Playwright screenshots / console logs** land in the PROJECT's own `.playwright-mcp/`
+  (at the app root) and `~/Library/Caches/ms-playwright-mcp/` — look there, never crawl the
+  disk for the `.png` or `.log`.
+- **Build output** (compiled islands, previews) lives under the app's own `dist/` /
+  `.sprig/` — check the project tree, not the whole volume.
+
+If something genuinely isn't in the project or the caches above, say so and ask — do not
+escalate to a root-wide `find`.
+<!-- END sprig-agent-guardrail -->
 
 ## Never
 
