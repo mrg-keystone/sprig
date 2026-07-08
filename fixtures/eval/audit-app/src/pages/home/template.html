@@ -1,0 +1,18 @@
+<!-- `name` comes from logic.ts (set in onServerInit) -->
+<main class="home">
+  <h1>Hello, {{ name }} 👋 — Widget Store</h1>
+  <p>Edit <code>src/pages/home/template.html</code> — `sprig dev` hot-swaps it.</p>
+
+  <h2>Widgets</h2>
+  <ul class="widgets">
+    <li><a href="/ui/widget/a">Sprocket</a></li>
+    <li><a href="/ui/widget/b">Flange</a></li>
+    <li><a href="/ui/widget/nope">A missing one (should 404)</a></li>
+  </ul>
+
+  <h2>Counter (healthy island)</h2>
+  <counter></counter>
+
+  <h2>Like (dead — no logic.ts)</h2>
+  <like-button></like-button>
+</main>

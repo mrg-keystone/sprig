@@ -1,0 +1,13 @@
+<section class="login">
+  @if (user()) {
+    <p class="status">login works</p>
+    <p class="who">{{ user().name }} &lt;{{ user().email }}&gt;</p>
+    <button (click)="doLogout()">Logout</button>
+  } @else {
+    <h1>Login</h1>
+    <button (click)="doLogin()" [disabled]="busy()">Login with Google</button>
+  }
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+</section>

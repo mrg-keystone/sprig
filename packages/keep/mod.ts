@@ -165,7 +165,8 @@ export interface ServeSprigConfig {
    *  serveSprig auto-mounts the same-origin /auth gateway that sprig's `loginWithGoogle()` and
    *  `?token=` seeding (@mrg-keystone/sprig) call — proxying `/auth/firebase-config`, `/auth/login`
    *  (Firebase idToken → bearer) and `/auth/exchange` (opaque `?token=` → bearer) to infra so the
-   *  browser never touches the control plane cross-origin. Omit (and unset INFRA_URL) to leave
+   *  browser never touches the control plane cross-origin. The infra URL defaults to the baked-in
+   *  mrg-keystone control plane; pass `auth: { infraUrl: "" }` to disable the gateway and leave
    *  /auth to the app.
    *
    *  `exchangePath` is infra's opaque-token exchange endpoint (default `/api/authz/exchange`,
@@ -325,6 +326,10 @@ const MAX_LOGIN_BODY = 64_000; // an ID token is ~1–2 KB; anything larger is n
 // shape; the one value to confirm against your infra deployment (override via serveSprig's
 // `auth.exchangePath` or the INFRA_EXCHANGE_PATH env var).
 const DEFAULT_EXCHANGE_PATH = "/api/authz/exchange";
+/** The mrg-keystone control plane — baked in so every sprig app gets working Google sign-in with
+ *  ZERO config. Override per-deployment via `auth.infraUrl` / the INFRA_URL env; pass
+ *  `auth: { infraUrl: "" }` to disable the gateway and leave /auth to the app. */
+const DEFAULT_INFRA_URL = "https://infra.mrg-keystone.deno.net";
 /** The httpOnly cookie the session id lives in (keep's guard resolves this exact name). */
 const SESSION_COOKIE = "sprig_session";
 let firebaseConfigCache: { body: string; at: number } | null = null;
@@ -357,7 +362,7 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days — matches keep's default i
 
 /** Mint a session in SESSION MODE, or return null to fall back to legacy bearer proxying (when the
  *  store is disabled / unavailable). Sets the httpOnly cookie and returns the profile — no bearer. */
-async function mintSession(keep: KeepApi, req: Request, input: SessionIntake): Promise<Response | null> {
+async function mintSession(keep: SessionEngine, req: Request, input: SessionIntake): Promise<Response | null> {
   if (!keep.intakeSession) return null;
   try {
     const { id, creator, email, grants } = await keep.intakeSession(input);
@@ -379,9 +384,13 @@ async function mintSession(keep: KeepApi, req: Request, input: SessionIntake): P
   }
 }
 
+/** The session slice of KeepApi the gateway actually touches — lets `sprigAuth` mount the gateway
+ *  with NO keep backend at all (all three absent → legacy proxy mode + cookie-clearing logout). */
+type SessionEngine = Pick<KeepApi, "intakeSession" | "destroySession" | "sessions">;
+
 async function serveAuthGateway(
   req: Request,
-  keep: KeepApi,
+  keep: SessionEngine,
   infraUrl: string,
   exchangePath: string,
 ): Promise<Response | null> {
@@ -495,6 +504,21 @@ async function serveAuthGateway(
   }
 
   return null;
+}
+
+/** Standalone /auth gateway middleware for hosts WITHOUT a keep backend (sprigUi compositions,
+ *  `sprig dev` on a pure-UI app). Same endpoints serveSprig mounts; with no session engine the
+ *  gateway runs in legacy mode — login/exchange proxy to infra and `login()` still resolves the
+ *  profile (the demo path), while /auth/me answers 401 (no server-side session store to read).
+ *  Returns a Response for /auth/* or null to pass through. Infra defaults to the baked-in
+ *  mrg-keystone control plane; pass `{ infraUrl: "" }` to disable. */
+export function sprigAuth(
+  config: { infraUrl?: string; exchangePath?: string; keep?: SessionEngine } = {},
+): (req: Request) => Promise<Response | null> {
+  const infraUrl = config.infraUrl ?? Deno.env.get("INFRA_URL") ?? DEFAULT_INFRA_URL;
+  const exchangePath = config.exchangePath ?? Deno.env.get("INFRA_EXCHANGE_PATH") ?? DEFAULT_EXCHANGE_PATH;
+  const engine = config.keep ?? {};
+  return (req) => infraUrl ? serveAuthGateway(req, engine, infraUrl, exchangePath) : Promise.resolve(null);
 }
 
 // ─────────────────────────────── build-info <meta> provenance ───────────────────────────────
@@ -689,7 +713,7 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
   const getApp = (): Promise<SprigApp> => config.app ? Promise.resolve(config.app) : (appOnce ??= composeApp(srcDir, base));
   // Firebase/Google sign-in gateway (loginWithGoogle's server half) — mounted only when an
   // infra URL is resolvable; else /auth is left to the app (backward compatible).
-  const authInfraUrl = config.auth?.infraUrl ?? Deno.env.get("INFRA_URL") ?? "";
+  const authInfraUrl = config.auth?.infraUrl ?? Deno.env.get("INFRA_URL") ?? DEFAULT_INFRA_URL;
   const authExchangePath = config.auth?.exchangePath ?? Deno.env.get("INFRA_EXCHANGE_PATH") ?? DEFAULT_EXCHANGE_PATH;
 
   if (base === apiPrefix || base === docsPrefix) {

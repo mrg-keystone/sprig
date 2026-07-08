@@ -32,7 +32,9 @@
     "dev": "deno run -A framework/cli.ts dev app",
     "build": "deno run -A framework/cli.ts build app",
     "start": "deno serve -A --unstable-kv serve.ts",
-    "sync:rune": "deno run -A scripts/sync-rune.ts"
+    "sync:rune": "deno run -A scripts/sync-rune.ts",
+    "sync:agent-guardrail": "deno run -A scripts/sync-agent-guardrail.ts",
+    "check:agent-guardrail": "deno run -A scripts/sync-agent-guardrail.ts --check"
   },
   "name": "@mrg-keystone/sprig",
   "version": "0.20.23",

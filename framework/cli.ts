@@ -17,7 +17,7 @@ import { basename, dirname, join, relative, resolve, toFileUrl } from "@std/path
 // are unanalyzable + don't resolve once this is published to JSR).
 import { buildClient, forcedImportMap } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
-import { createRenderer, loadRoutes, serveSprig, sprigUi } from "../packages/keep/mod.ts";
+import { createRenderer, loadRoutes, serveSprig, sprigAuth, sprigUi } from "../packages/keep/mod.ts";
 // The runtime via the BARE specifier, not "./.sprig/core.ts": in the merged-config dev child the
 // import map resolves @mrg-keystone/sprig to the APP'S stamped pin, so the CLI's bootstrap and the
 // app's own modules share ONE core (dev == prod resolution; a relative import here would load a
@@ -1595,9 +1595,12 @@ async function dev(rawArgs: string[] = []): Promise<void> {
     const composed = serveSprig({ keep: api, app: sprigApp, base, assetsDir: outDir });
     hostFetch = (req, info) => composed.fetch(req, info);
   } else {
-    // pure-UI app: the sprig middleware alone (no backend to compose)
+    // pure-UI app: the sprig middleware + the standalone /auth gateway (sessionless legacy mode),
+    // so the built-in login()/warmAuth() client works without a keep backend.
     const ui = sprigUi({ app: sprigApp, base, assetsDir: outDir });
-    hostFetch = (req, info) => ui(req, info).then((r: Response | null) => r ?? new Response("Not Found", { status: 404 }));
+    const auth = sprigAuth();
+    hostFetch = async (req, info) =>
+      (await auth(req)) ?? (await ui(req, info)) ?? new Response("Not Found", { status: 404 });
   }
   const handler = { fetch: hostFetch };
   const devSrv = createDevServer({

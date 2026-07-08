@@ -66,19 +66,57 @@ one its input contract and summarize what it returns.
    (from the breakdown `index.md` build order, or the user's ask), the base path, whether
    a `spec/ui/design-system/css-variables.json` exists to copy in, and whether
    `spec/contract/openapi.json` exists at the git root (→ it generates/refreshes the
-   **typed client** in `spec/contract/client/`).
+   **typed client** in `spec/contract/client/`). It returns a **BUILD BRIEF** (app root,
+   alias names, tokens path, isolate command, port base, contract + browser posture) —
+   **inline those ≤8 fact lines into every component prompt** so no builder re-derives
+   them; facts inline, bulk behind paths.
 2. **Build each unit in isolation, in build order.** Walk the breakdown `index.md` build
    order — **tokens → shared components (primitives before composites) → page-local
    components → page compositions** — and for each unit delegate to **`sprig-build-component`**
-   with its breakdown spec (`.md` + proposed `isolate/` + `screenshots/`). Each unit must
-   be green in `sprig isolate` **before** the units that compose it. Independent units can
-   be delegated in parallel (one message, multiple Task calls), but respect the dependency
-   order. Without a breakdown spec, the same specialist authors a minimal `isolate/` and
-   runs the same loop.
+   with its breakdown spec as **resolved ABSOLUTE paths you looked up in `index.md` /
+   the breakdown tree ONCE**: the unit's breakdown folder, its `<name>.md`, `isolate/`,
+   `screenshots/`, and the target src dir. Never brief a specialist with just a name and
+   "glob for it" — a measured fleet did that 652 times and every agent re-searched the
+   tree the orchestrator already held. Each unit must
+   be green in `sprig isolate` **before** the units that compose it. Independent units run
+   in parallel, **capped at 4–6 concurrent, in chunked waves** — measured on real fleets,
+   10+ concurrent builders saturate the org's tokens-per-minute quota, agents die on
+   429/529 and re-execute from scratch (one fleet: 78 units → 329 executions, one unit
+   built 6× over 16 hours). In a Workflow script:
+   `for (const wave of chunks(units, 5)) await parallel(wave.map(…))`; if a wave still
+   dies of rate limits, halve the chunk size before resuming — never relaunch the full
+   fan-out. **Assign each parallel agent its own PORT** (e.g. `4100 + index`) in its
+   prompt so isolate servers never collide (the pkill-a-sibling wars are a measured
+   failure mode). Without a breakdown spec, the same specialist authors a minimal
+   `isolate/` and runs the same loop.
 3. **Verify the whole app.** After units are green, have the scaffolder run the prod-build
    smoke (`deno task build` → `deno task start`, hit a real URL). Deeper QA of the running
    app — hunting bugs, perf, regressions — is the **`sprig:audit`** stage downstream, not
    this skill.
+
+**Fleet hygiene (you own this):** specialists are pinned to `sonnet` in their agent defs —
+don't override to `inherit` (an inherited fleet ran hundreds of mechanical builders on the
+session's expensive tier). Collect each unit's ≤20-line summary; never paste isolate/test
+dumps into the session. Run a big build in a FRESH session and let the workflow return
+counts + red-unit ids — long-lived sessions measured at 400–570K tokens of context re-pay
+that context on every turn.
+
+**Orchestrator conduct:** after spawning agents, END YOUR TURN and let task notifications
+re-invoke you — never `sleep`-poll between stages (measured on a rune build: 32% of wall time
+was orchestrator sleeps). Verify by RECEIPT: a builder's isolate verdicts and the scaffolder's
+smoke result ARE the state — don't re-run their checks inline or re-walk their file trees; a
+mid-build fix re-routes through the owning specialist. For fleets ≤ ~15 units, track the queue
+in your plan text — don't burn an API turn per task-ledger update (measured: 20 bookkeeping
+turns on a 10-agent build). And never search the filesystem yourself — every skill reference
+lives at `~/.claude/skills/<skill>/references/<file>`; read exact paths (an orchestrator was
+measured running `find /` for a reference file whose path it knew).
+
+**Briefing rule (root cause of fleet waste):** a specialist that has to SEARCH was
+under-briefed. Before delegating, YOU resolve — absolute, copied verbatim from `index.md`
+/ stage returns, never retyped by hand — every path the specialist touches (spec folder,
+evidence files, target dir), plus its PORT and any running-server URL. If a specialist
+returns `blocked: missing path`, the brief was wrong: fix the brief and re-delegate; never
+answer "search for it".
 
 ## The annotate review loop (the user owns the server)
 

@@ -88,6 +88,18 @@ run the builder applies it (path 3).
 hot-reload on rewrite, `inline | json` feedback + **⇧⌘+drag** drawings; never point it at
 an HTML file under `spec/ui/design-system/` (it refuses the path outright).
 
+## Orchestrator conduct
+
+- **After spawning the builder, END YOUR TURN** — the task notification re-invokes you;
+  never `sleep`-poll while it works.
+- **Never search the filesystem yourself.** The proto-host template lives at
+  `~/.claude/skills/sprig:prototype/assets/proto-host/` — pass that path to the builder,
+  never find it; the prototype folder is at its fixed `spec/ui/<app>-prototype/` home.
+- **Brief completely — a builder that searches was under-briefed.** Pass absolute paths
+  (the prototype folder, the source, the feedback artifacts) copied verbatim. A builder
+  reporting `blocked: missing path` means the brief was wrong: fix the brief and
+  re-delegate.
+
 ## Hard rule
 
 The build/iterate work — finding the source, writing the prototype files (HTML + the two

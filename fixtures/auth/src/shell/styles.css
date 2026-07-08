@@ -1,0 +1,15 @@
+.app-root {
+  font-family: system-ui, sans-serif;
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+.bar {
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 0.5rem;
+}
+.bar .brand {
+  font-weight: 700;
+  text-decoration: none;
+  color: inherit;
+}

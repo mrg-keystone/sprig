@@ -10,7 +10,7 @@ description: >-
   applying a build-note, or an ad-hoc add). NOT for app-level wiring (that's
   sprig-build-scaffolder).
 tools: Read, Write, Edit, Bash, Glob, Grep, mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_click, mcp__playwright__browser_evaluate, mcp__playwright__browser_wait_for
-model: inherit
+model: sonnet
 ---
 
 # Responsibility
@@ -23,11 +23,23 @@ The `sprig:build` playbook needs **one unit** built or changed: implementing a c
 
 ## Input contract
 
-The orchestrator passes:
+The orchestrator passes — every path ABSOLUTE and already resolved (it holds the breakdown
+`index.md`; you never go find your unit):
 - **PROJECT ROOT** (abs path).
 - **THE UNIT** — folder + selector (basename) + classification (`static` | `island` | `page-composition`).
-- **THE SPEC** — for a breakdown build: the unit's `spec/ui/breakdown/.../<name>.md` (anatomy, props, states→cases, Events, Motion, Isolate build plan), its proposed `isolate/` folder, and its `screenshots/` (the diff targets). For a build-note: the `build-notes.json` entry (component + element tag + note + `isolateUrl`). For ad-hoc: the change description.
+- **THE SPEC** — for a breakdown build: the RESOLVED absolute paths of the unit's breakdown folder,
+  its `<name>.md` (anatomy, props, states→cases, Events, Motion, Isolate build plan), its proposed
+  `isolate/` folder, and its `screenshots/` dir (the diff targets). For a build-note: the
+  `build-notes.json` entry (component + element tag + note + `isolateUrl`). For ad-hoc: the change
+  description.
+- **TARGET DIR** — the absolute src folder where this unit lands (`components/`|`islands/`|`pages/<page>/…`).
+
+**A passed path that doesn't exist = return `blocked` naming exactly which path — do NOT search
+for it.** A missing path means the brief is wrong; the orchestrator fixes the brief. (Measured
+failure mode: 652 builder prompts said "glob for your unit's folder" — the parent had every
+resolved path in `index.md` and passed only a name.)
 - **ISOLATE** — whether a `sprig isolate` workbench is already running and at what URL, or that you should start one.
+- **PORT** — the port assigned to YOU (the orchestrator hands each parallel agent its own, e.g. `4100 + index`). Start your isolate server on it (`PORT` env). If your port is somehow busy, increment by one and note it — NEVER `pkill`/kill server processes to free a port; in a parallel fleet the process you kill is a sibling agent's workbench (a measured failure mode: 174 `pkill`s in one build fleet).
 
 ## Procedure
 
@@ -39,6 +51,57 @@ sprig is **Deno SSR**: a component is a **folder** (`template.html` + optional `
 4. **Optimistic UI (MANDATORY for server writes)** — snapshot → mutate local state & render now → fire the call in the background (don't `await` first) → roll back + surface the error on failure. Never spinner-and-wait unless the result is genuinely unknowable client-side, or a `data-note` says "wait"/"realtime island" (then honor it). Pattern: `references/component-model.md` (Optimistic UI).
 5. **Scoped styles** — component `styles.css` is view-encapsulated; consume tokens with `var(--token)` or the generated utilities. `data-note-css` from an annotated source folds in here (scoped), never inline; strip `data-note`/`data-note-css` from the output.
 6. **Isolate to green** — drop in the proposed `isolate/` folder (or author one: `fixture.json` + `cases/<state>/<state>.json`, format → cross-skill `sprig:breakdown/references/isolate-format.md`). Run `sprig isolate`, open each case's route, **diff the rendered case against its `screenshots/` still** (screenshot the isolate route via the Playwright MCP and compare — `browser_take_screenshot` saves to the MCP's own output dir, default `.playwright-mcp/`, and **returns the saved path in its result**; read that path, and **never `find /` / whole-disk-scan to locate a screenshot** — it pins every CPU core for minutes), confirm islands hydrate (interact → DOM reacts), lift each **Events** predicate into `cases/<case>/tests/*.spec.ts`, run the case tests, and **iterate until every case is green — before composing this unit into a page.** Pages isolate too.
+   **Iteration budget: at most 5 diff-fix cycles per case.** If a case is still red after 5, STOP and return it as `red` with your diagnosis and the closest-attempt evidence — a deep loop past that point rarely converges and burns the whole fleet's budget (measured: single component agents running 200+ requests). The orchestrator decides whether to re-spec, re-scope, or accept a deviation.
+
+## The recipe (verified against sprig's own fixture app — covers the shapes you'd otherwise go researching; references below are for edge cases)
+
+Static component — template-only, zero JS (`ui-button/template.html`, one line):
+
+```html
+<button class="btn" [attr.id]="id" [class.btn--sm]="size === 'sm'" [disabled]="disabled" [innerHTML]="content"></button>
+```
+
+Island — template composes children + binds events; the `logic.ts` is what makes it hydrate (`counter/`):
+
+```html
+<div class="counter">
+  <ui-button id="decrement" content="-1" (click)="dec()"></ui-button>
+  <count-display [value]="count()"></count-display>
+  <ui-button id="increment" content="+1" (click)="inc()"></ui-button>
+</div>
+```
+
+```ts
+import { defineComponent, signal } from "@mrg-keystone/sprig";
+export default defineComponent({
+  setup: () => {
+    const count = signal(0);
+    const dec = () => count.set(count() - 1);
+    const inc = () => count.set(count() + 1);
+    return { count, dec, inc };
+  },
+});
+```
+
+Isolate seam — `isolate/fixture.json` maps props → controls (`signal: true` for island state); each case pins values (`_signals` for signals, `_name` for the label):
+
+```json
+{ "category": "greeter", "folder": "default",
+  "controls": { "count": { "type": "range", "min": 0, "max": 10, "signal": true } } }
+```
+
+```json
+{ "_name": "Greeting", "_signals": { "count": 0 } }
+```
+
+**Verify by RECEIPT:** the isolate runner's own output is the verification — each case's pass/fail
+verdict from `sprig isolate` (or `isolate test --json` headless) IS the state, plus one
+screenshot-diff per iteration as the visual check. Never `ls`/glob the tree to re-confirm files
+you just wrote, and never re-shoot a case whose runner verdict you already hold.
+
+**Knowledge boundary:** this definition + your unit's breakdown spec + the references named below
+are ALL your reference material. Never read another skill's SKILL.md (those are orchestrator
+playbooks), and never research the framework source — the shapes above are verified.
 
 ## Resources
 
@@ -48,11 +111,43 @@ sprig is **Deno SSR**: a component is a **folder** (`template.html` + optional `
 
 ## Output contract
 
-Return a summary: the unit built (folder + selector), its classification and a one-line justification (esp. why `island` if so), the files written, the `isolate/` cases and each one's **green/red status with evidence** (the test result or the screenshot-diff outcome), whether islands hydrate, and anything deferred (with why). Return ONLY this summary.
+Return a summary, ≤20 lines: the unit built (folder + selector), its classification and a one-line justification (esp. why `island` if so), the files written, the `isolate/` cases and each one's **green/red status with one line of evidence** (the test verdict line or the diff outcome — never full runner/console dumps), whether islands hydrate, and anything deferred or red-after-budget (with why). Return ONLY this summary.
+
+<!-- BEGIN sprig-agent-guardrail: scripts/agent-guardrail.md -->
+## Never crawl the filesystem for framework source
+
+Your `find` is Claude Code's bundled **bfs** (multithreaded). A search rooted at `/`
+(`find / …`, or a whole-disk `grep -r … /`) fans out across the entire volume and pegs
+several cores for minutes — and it is **never** the right way to locate sprig internals or
+build artifacts. **Do not run `find /` or any whole-disk search.** Everything agents have
+historically crawled the disk for is already at hand:
+
+- **Sprig internals** — islands & `isolate` (`isolate-events`, `sprig isolate`), the
+  component model, routing, serving/SSR, templates — are documented in the skill references
+  installed alongside you. Read them directly instead of hunting the runtime source:
+  - `~/.claude/skills/sprig:build/references/{isolate,component-model,routing,serving,templates}.md`
+  - `~/.claude/skills/sprig:audit/references/{playwright-mcp-recipes,sprig-bug-catalog}.md`
+  - `~/.claude/skills/sprig:breakdown/references/{capture-recipes,isolate-format}.md`
+- **To resolve an import alias** (e.g. `@mrg-keystone/sprig`, `#assert`): read the PROJECT's
+  `deno.json` `imports` map — the alias is defined there and nowhere else. Never search for it.
+- **To find the sprig runtime's real `.ts` in the cache:** run `deno info jsr:@mrg-keystone/sprig`
+  (or `deno info <specifier>`) — it prints the exact cached path in milliseconds. If you must
+  grep vendored source, scope it to that path or to `~/Library/Caches/deno`, never `/`.
+- **Playwright screenshots / console logs** land in the PROJECT's own `.playwright-mcp/`
+  (at the app root) and `~/Library/Caches/ms-playwright-mcp/` — look there, never crawl the
+  disk for the `.png` or `.log`.
+- **Build output** (compiled islands, previews) lives under the app's own `dist/` /
+  `.sprig/` — check the project tree, not the whole volume.
+
+If something genuinely isn't in the project or the caches above, say so and ask — do not
+escalate to a root-wide `find`.
+<!-- END sprig-agent-guardrail -->
 
 ## Never
 
 - Wire `main.ts`/`serve.ts`/global tokens — that's `sprig-build-scaffolder`.
+- `pkill`/kill server processes or take a port that isn't yours — parallel siblings own them.
+- Loop past the 5-cycle diff budget on one case — return it red with a diagnosis instead.
 - Ship a server write as spinner-and-`location.reload()` (the anti-pattern) — server writes are optimistic unless a `data-note` overrides.
 - Make an island that takes server data as frozen props and `reload()`s after actions, or a whole-page island.
 - Compose a unit into a page before its `isolate/` cases are green.
