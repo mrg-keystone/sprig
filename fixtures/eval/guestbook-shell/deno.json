@@ -1,0 +1,30 @@
+{
+  "name": "@app/eval-app",
+  "version": "0.0.0",
+  "exports": "./src/mod.ts",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "lib": ["dom", "dom.asynciterable", "dom.iterable", "deno.ns", "esnext"]
+  },
+  "imports": {
+    "$": "./src/mod.ts",
+    "$.pages/": "./src/pages/",
+    "$.shared-components/": "./src/shared-components/",
+    "$.services/": "./src/services/",
+    "@mrg-keystone/sprig": "/repos/sprig/framework/.sprig/core.ts",
+    "@mrg-keystone/sprig/keep": "/repos/sprig/packages/keep/mod.ts",
+    "@mrg-keystone/rune": "jsr:@mrg-keystone/rune@^3.1.0",
+    "@preact/signals-core": "npm:@preact/signals-core@^1.8.0",
+    "web-tree-sitter": "npm:web-tree-sitter@^0.25",
+    "reflect-metadata": "npm:reflect-metadata@0.1.13",
+    "@std/path": "jsr:@std/path@^1",
+    "@std/fs": "jsr:@std/fs@^1",
+    "@std/assert": "jsr:@std/assert@^1"
+  },
+  "tasks": {
+    "dev": "sprig dev .",
+    "build": "sprig build .",
+    "start": "deno serve -A --unstable-kv serve.ts"
+  }
+}

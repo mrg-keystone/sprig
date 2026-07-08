@@ -96,10 +96,16 @@ only when FIX applied the change **and** VALIDATE's check passed.
    base URL, project root + map, data-ownership, `user-stories.md` (or "derive"), the
    evidence dir, and the `references/` path. It owns the browser for this stage. →
    take its `bugs[]` / `needs_investigation` / `checked_healthy`.
-2. **ROOT-CAUSE.** For each `bugs[]` entry spawn one **`sprig-audit-root-cause`** —
+2. **ROOT-CAUSE.** First resolve the sprig runtime's cached-source path ONCE
+   (`deno info jsr:@mrg-keystone/sprig` — the printed local path); then for each
+   `bugs[]` entry spawn one **`sprig-audit-root-cause`** with the bug + PROJECT
+   ROOT/MAP + REFERENCES DIR + that **SPRIG RUNTIME SRC** path —
    send them in **one message, multiple Task calls** so they run concurrently (cap
-   ~6–8; cluster tightly-related bugs into one). Each returns confirmed / refuted /
-   needs-repro. **For any `needs_repro`, you own the browser between stages** — run
+   4–6, chunked waves; cluster tightly-related bugs into one — measured on real
+   fleets, wider fan-outs trip the org's rate limits and agents die and re-execute;
+   and parallel root-causers each re-derived the runtime path themselves, two via
+   whole-disk `find /` scans, when it wasn't passed).
+   Each returns confirmed / refuted / needs-repro. **For any `needs_repro`, you own the browser between stages** — run
    the named check yourself and resolve it. Then **assemble `fixes.md`** from the
    confirmed findings (dedupe ones resolving to the same `file:line`).
 3. **FIX.** Delegate to **`sprig-audit-fixer`** with `fixes.md` (and the running URL
@@ -113,6 +119,15 @@ only when FIX applied the change **and** VALIDATE's check passed.
      vs. collateral), loop that issue back through FIX — or re-open ROOT-CAUSE if the
      diagnosis itself was wrong — restart a fresh server, and re-validate. Never
      declare done over a red check.
+
+## Orchestrator conduct
+
+After spawning stage agents, END YOUR TURN — task notifications re-invoke you; never
+`sleep`-poll. Never search the filesystem yourself: skill references live at exact
+`~/.claude/skills/<skill>/references/` paths, and every artifact path you need comes from a
+stage return. Verify by receipt: the fixer's ticked boxes + `**Fixed**` notes and the
+validator's evidence JSON ARE the stage state — never re-run their checks inline; a
+still-red issue re-routes to the owning stage agent.
 
 ## Rules
 

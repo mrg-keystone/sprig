@@ -18,7 +18,9 @@ spec/ui/breakdown/
 ├── shared-components/<name>/   # used on >1 page
 │   ├── <name>.md         # the component spec (see "Each component spec carries")
 │   ├── isolate/          # real fixture.json + cases/<state>/<state>.json
-│   └── screenshots/      # the diff target (+ filmstrip.png/jank.md if animated)
+│   ├── screenshots/      # the diff target (+ filmstrip.png/jank.md if animated)
+│   └── source.html       # the unit's extracted markup region (+ js//css/) — breakdown-internal
+│                         #   reference ground truth; build diffs against screenshots, not this
 └── pages/<page>/
     ├── <page>.md, isolate/, screenshots/   # pages isolate too: real fixture.json + cases/
     └── components/<name>/   # page-local components (same shape)

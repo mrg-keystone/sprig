@@ -1,0 +1,11 @@
+<main class="widget">
+  @if (notFound) {
+    <h1>Widget not found</h1>
+    <p>No widget with id <code>{{ id }}</code>.</p>
+    <p><a href="/ui">← back home</a></p>
+  } @else {
+    <h1>{{ widget.name }}</h1>
+    <p>{{ widget.blurb }}</p>
+    <p><a href="/ui">← back home</a></p>
+  }
+</main>

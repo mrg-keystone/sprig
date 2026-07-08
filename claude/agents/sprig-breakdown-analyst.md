@@ -12,7 +12,7 @@ description: >-
   not render the mock (that's sprig-breakdown-capture) or write per-component
   specs (that's sprig-breakdown-spec-writer).
 tools: Read, Write, Edit, Glob, Grep
-model: inherit
+model: opus
 ---
 
 # Responsibility
@@ -33,12 +33,18 @@ You read the source code; you do not render the mock or write per-component `.md
 - **OUTPUT DIR** — always `<git-root>/spec/ui/breakdown/`. Resolve the root with `git rev-parse --show-toplevel`; never search the filesystem for it or for anything under it (no `find /` / whole-disk scans — they pin every CPU core for minutes).
 - **PHASE** — `opening` or `closing`. For closing, the list of component/page `.md` files the spec-writers produced.
 
+All paths arrive resolved. A passed path that doesn't exist → return `blocked: <path>
+missing`; don't hunt for a replacement. **Knowledge boundary:** this definition + the
+SOURCE files + the `ui-breakdown` contract (`~/.claude/skills/interfaces/ui-breakdown.md`)
+are all your reference material — never read another skill's SKILL.md (orchestrator
+playbooks).
+
 ## Procedure
 
 The rebuild target is **sprig** — Deno SSR, Angular-flavored templates, folder-components, selective island hydration, Tailwind v4. **Not Fresh/Preact/Next/Angular.** Source JS/CSS is reference ground truth, not deliverable.
 
 **OPENING:**
-1. **Survey & page census.** Read every source file end to end. Count pages — a page is *not* an HTML file: a single file can hold many pages via client-side routing (`location.hash`, `#/` links, `hashchange`, History-API, `[data-view]`/`.view.active` toggles). Each route/view → a page under `pages/`. Full-screen overlays (modals, palettes, drawers) are **components**, not pages.
+1. **Survey & page census.** Read every source file end to end. Count pages — a page is *not* an HTML file: a single file can hold many pages via client-side routing (`location.hash`, `#/` links, `hashchange`, History-API, `[data-view]`/`.view.active` toggles). Each route/view → a page under `pages/`. Full-screen overlays (modals, palettes, drawers) are **components**, not pages. **Name every page/component by the SOURCE's own name when it has one** (title, headings, comments, repeated identifiers — a mock that says "guestbook" throughout names the page `guestbook`, never a generic `home`), kebab-cased; invent a name only where the source is nameless. Downstream tooling and diffs key on these names.
 2. **Classify every region** — `static` (pure display / server-rendered content, `template.html` only, zero JS) vs `island` (needs a `logic.ts`: dropdown/modal/palette, client filter/sort, **any server write**, inline validation, drag-drop, realtime) vs `page-composition`. The test is *needs client JS the server can't re-render*, NOT "looks interactive". **Default static; justify every island; a whole-page island is a smell.** Record the finer **tier** (static / pure-client island / optimistic-write island / realtime island), each region's **data source** (`resolve.ts` / `Backend` / island `fetch`), **liveness** (request-response vs pushed/realtime), and **honest-empty** notes. Server writes are **optimistic UI** (snapshot → mutate → call → roll back), never client-toast + `location.reload()`. Shared vs page-local: usage counts AND **authorial signals** (mock comments, shared CSS sections, global mounts) — follow authorial intent, default page-local only when both ambiguous.
 3. **`design-tokens.md`** — palette, type scale, spacing, radii, shadows, easing, z-index, breakpoints → a proposed **Tailwind v4 `@theme`** mapping (CSS custom properties in a `:global(...)` block, NOT a `tailwind.config.js`, NOT daisyUI). Capture **every theme variant** as parallel columns. Record `prefers-reduced-motion` handling.
 4. **The data seam — bind, don't re-derive** (bridge 2 of the cross-repo `contract.md`). First check the git root for a ratified contract: `spec/contract/openapi.json`, else `spec/runes/*.rune` (or a running keep's `/docs/<m>/json`).
@@ -56,7 +62,37 @@ The rebuild target is **sprig** — Deno SSR, Angular-flavored templates, folder
 
 ## Output contract
 
-Return: the files you wrote (paths), and — for the OPENING phase — a structured **inventory** the orchestrator hands to capture + spec-writers: for each page and component its `name`, folder, selector (kebab basename), classification, tier, shared/page-local (+ evidence), data source, and whether it's renderable (needs capture) — plus any binding **drift errors**. For CLOSING, report the Unassigned list and any completeness gaps. Return ONLY this.
+Return: the files you wrote (paths), and — for the OPENING phase — a structured **inventory** the orchestrator hands to capture + spec-writers: for each page and component its `name`, selector (kebab basename), classification, tier, shared/page-local (+ evidence), data source, whether it's renderable (needs capture), **and its `breakdown_dir` — the ABSOLUTE output folder assigned under `<git-root>/spec/ui/breakdown/`** (this is what the orchestrator passes to capture, spec-writers, and later the build; downstream agents never search for their folder) — plus any binding **drift errors**. For CLOSING, report the Unassigned list and any completeness gaps. Return ONLY this.
+
+<!-- BEGIN sprig-agent-guardrail: scripts/agent-guardrail.md -->
+## Never crawl the filesystem for framework source
+
+Your `find` is Claude Code's bundled **bfs** (multithreaded). A search rooted at `/`
+(`find / …`, or a whole-disk `grep -r … /`) fans out across the entire volume and pegs
+several cores for minutes — and it is **never** the right way to locate sprig internals or
+build artifacts. **Do not run `find /` or any whole-disk search.** Everything agents have
+historically crawled the disk for is already at hand:
+
+- **Sprig internals** — islands & `isolate` (`isolate-events`, `sprig isolate`), the
+  component model, routing, serving/SSR, templates — are documented in the skill references
+  installed alongside you. Read them directly instead of hunting the runtime source:
+  - `~/.claude/skills/sprig:build/references/{isolate,component-model,routing,serving,templates}.md`
+  - `~/.claude/skills/sprig:audit/references/{playwright-mcp-recipes,sprig-bug-catalog}.md`
+  - `~/.claude/skills/sprig:breakdown/references/{capture-recipes,isolate-format}.md`
+- **To resolve an import alias** (e.g. `@mrg-keystone/sprig`, `#assert`): read the PROJECT's
+  `deno.json` `imports` map — the alias is defined there and nowhere else. Never search for it.
+- **To find the sprig runtime's real `.ts` in the cache:** run `deno info jsr:@mrg-keystone/sprig`
+  (or `deno info <specifier>`) — it prints the exact cached path in milliseconds. If you must
+  grep vendored source, scope it to that path or to `~/Library/Caches/deno`, never `/`.
+- **Playwright screenshots / console logs** land in the PROJECT's own `.playwright-mcp/`
+  (at the app root) and `~/Library/Caches/ms-playwright-mcp/` — look there, never crawl the
+  disk for the `.png` or `.log`.
+- **Build output** (compiled islands, previews) lives under the app's own `dist/` /
+  `.sprig/` — check the project tree, not the whole volume.
+
+If something genuinely isn't in the project or the caches above, say so and ask — do not
+escalate to a root-wide `find`.
+<!-- END sprig-agent-guardrail -->
 
 ## Never
 

@@ -76,22 +76,41 @@ capture recipes, or component anatomy here.** They live in the agents and in
    region (static vs island vs page-composition, with tiers), and writes `design-tokens.md`
    + the contract **binding** (`spec/contract/binding.md`; legacy `data-model.md` when no
    contract exists). Take its **inventory** (every page/component with classification,
-   tier, shared/local, renderable?) and surface any **drift errors** it reports.
-2. **Capture** (renderable sources only). For the renderable units in the inventory,
-   delegate to **`sprig-breakdown-capture`** (fan out per unit in one message, multiple
-   Task calls) → stills/breakpoints/themes, extracted motion specs, filmstrips, `jank.md`,
-   jank findings, extracted `js/`/`css/`, and the real captured data values. (Skip for
-   image/PDF sources — there's nothing to render.)
+   tier, shared/local, renderable?, and its resolved absolute `breakdown_dir`) and
+   surface any **drift errors** it reports. The inventory's paths are what you pass
+   downstream — capture and spec-writers receive their unit dirs resolved, never a
+   name to go find.
+2. **Capture** (renderable sources only). Resolve the SERVE facts ONCE — the serve command
+   (`deno task start` for a two-seam prototype; `file://` for a legacy mock) and a PORT per
+   agent — and pass them in each brief. Then for the renderable units in the inventory,
+   delegate to **`sprig-breakdown-capture`** (fan out per unit/group) → stills/breakpoints/
+   themes, extracted motion specs, filmstrips, `jank.md`, jank findings, **each unit's
+   `source.html` markup excerpt** plus extracted `js/`/`css/`, and the real captured data
+   values. The excerpts are load-bearing: they are the only markup spec-writers read.
+   (Skip for image/PDF sources — there's nothing to render.)
 3. **Write specs.** For each component and page, delegate to **`sprig-breakdown-spec-writer`**
-   (fan out per unit) with that unit's classification (from step 1) + its evidence (from
-   step 2) → its `<name>.md` (anatomy + Isolate build plan) and its real, runnable
-   `isolate/` folder.
+   with that unit's classification (from step 1), its **Used-on line from the analyst's
+   usage matrix** (the anatomy needs it — an unbriefed writer globs sibling units to
+   derive it), and its UNIT-LOCAL evidence (from step 2 — **the unit's file list copied
+   verbatim from capture's return**) → its `<name>.md` (anatomy + Isolate build plan) and
+   its real, runnable `isolate/` folder. Spec-writers never open the full mock (a measured
+   fleet re-read a 137KB prototype 207 times). **ONE unit per instance — never batch even
+   tiny siblings**: a batched brief can't carry every unit's evidence list within budget
+   (measured: the one batched writer in a fleet was the only one to glob-hunt and bust its
+   prompt budget); the 4–6-concurrent waves are what keep the agent count sane, not
+   batching.
 4. **Close.** Delegate to **`sprig-breakdown-analyst`** (phase `closing`) with the list of
    specs produced → `index.md` (inventory, usage matrix, build order, tier summary,
    Unassigned) + the completeness audit. The **Unassigned list ships even when empty.**
 
-Independent units within steps 2 and 3 run concurrently; respect that step 3 needs step
-1's classification and step 2's evidence for each unit.
+Independent units within steps 2 and 3 run concurrently — **capped at 4–6 concurrent, in
+chunked waves** (`for (const wave of chunks(units, 5)) await parallel(…)` in a Workflow).
+Measured on real fleets: 10+ concurrent agents saturate the org's tokens-per-minute quota,
+die on 429/529, and re-execute from scratch; if a wave still dies of rate limits, halve
+the chunk before resuming. Respect that step 3 needs step 1's classification and step 2's
+evidence for each unit. Specialists are pinned in their defs (analyst = opus judgment;
+capture/spec-writer = sonnet) — don't override to `inherit`. Collect compact per-unit
+returns; run a big breakdown in a fresh session.
 
 ## Source-type routing
 
@@ -105,6 +124,13 @@ Independent units within steps 2 and 3 run concurrently; respect that step 3 nee
 
 - **You delegate; you do not perform a pass.** Hand each specialist its contract and
   summarize its return between hops.
+- **Orchestrator conduct:** after spawning agents, END YOUR TURN — task notifications
+  re-invoke you; never `sleep`-poll between passes. Never search the filesystem yourself
+  (skill references live at exact `~/.claude/skills/<skill>/references/` paths).
+- **Brief completely — a specialist that searches was under-briefed.** Every path you
+  pass is absolute and copied verbatim from a stage return (the analyst's inventory,
+  capture's file lists) — never retyped, never "glob for it". A specialist reporting
+  `blocked: missing path` means the brief was wrong: fix the brief and re-delegate.
 - Classify by **does it need a `logic.ts`**, not "interactive vs not": default **static**,
   justify every island, spec server writes as **optimistic UI** (snapshot → mutate → call
   → roll back). Performance is the build's job; here only flag expensive data *shapes*.
