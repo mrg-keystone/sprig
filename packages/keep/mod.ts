@@ -193,6 +193,42 @@ const FORBIDDEN_METHODS = new Set(["TRACE", "TRACK", "CONNECT"]);
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 const MAX_JSON_DEPTH = 200;
 
+// ───────────────────────────── framework logging (FRAMEWORK_LOGGING) ─────────────────────────────
+// Opt-in, default-off tracing of the decision points serveSprig/keep take at composition and per
+// request — auth mode chosen, session engine surfaced to the gateway, guard verdict — so an
+// integrator can see *why* the framework did what it did without reading its source. NOT app logging
+// and NOT the trace KV: the framework narrating its own branches. Read the env ONCE here (no
+// per-request env reads) into a scope set. `FRAMEWORK_LOGGING=1|true|on|*` turns on every scope; a
+// comma list (`FRAMEWORK_LOGGING=auth,session`) turns on just those. Every line is prefixed with a
+// stable `[fw:<scope>]` tag so `FRAMEWORK_LOGGING=1 sprig dev 2>&1 | grep fw:auth` just works. Never
+// log a secret (idToken/bearer/opaque token); the session id, emails, grants and cookie ATTRIBUTES
+// are already surfaced to the client, so they're fine.
+function parseFwScopes(v: string | undefined): Set<string> {
+  const t = (v ?? "").trim().toLowerCase();
+  if (!t || t === "0" || t === "false" || t === "off") return new Set();
+  if (t === "1" || t === "true" || t === "on" || t === "*" || t === "all") return new Set(["*"]);
+  return new Set(t.split(",").map((s) => s.trim()).filter(Boolean));
+}
+const FW_SCOPES = parseFwScopes(Deno.env.get("FRAMEWORK_LOGGING"));
+/** Is framework logging on for this scope? Cheap: a Set lookup, no env read. */
+function fwOn(scope: string): boolean {
+  return FW_SCOPES.size > 0 && (FW_SCOPES.has("*") || FW_SCOPES.has(scope));
+}
+/** Emit a gated framework-trace line (stderr) — silent unless `FRAMEWORK_LOGGING` names this scope. */
+function fwLog(scope: string, msg: string): void {
+  if (fwOn(scope)) console.error(`[fw:${scope}] ${msg}`);
+}
+const fwWarned = new Set<string>();
+/** Emit an ALWAYS-ON warning at most once per `key` per process (like `assetsGuard`'s loud-once
+ *  degradation notice). Used for the silent-legacy-fallback fix: a valid login that quietly ran in
+ *  legacy mode (no `sprig_session` cookie) must never be invisible, even with `FRAMEWORK_LOGGING`
+ *  off — but a genuinely-legacy deployment should see one line, not one per request. */
+function fwWarnOnce(key: string, msg: string): void {
+  if (fwWarned.has(key)) return;
+  fwWarned.add(key);
+  console.warn(msg);
+}
+
 /** Derive the lookup extension from the BASENAME (the segment after the last
  *  "/"), lower-cased; "" when there is no dot in the basename. Never reads across
  *  a "/" separator (bug 93) and never mis-keys an extensionless name to its
@@ -363,9 +399,19 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days — matches keep's default i
 /** Mint a session in SESSION MODE, or return null to fall back to legacy bearer proxying (when the
  *  store is disabled / unavailable). Sets the httpOnly cookie and returns the profile — no bearer. */
 async function mintSession(keep: SessionEngine, req: Request, input: SessionIntake): Promise<Response | null> {
-  if (!keep.intakeSession) return null;
+  // The public path this mint backs, for the log label (firebase → /auth/login, opaque → /auth/exchange).
+  const label = input.credentialKind === "opaque" ? "/auth/exchange" : "/auth/login";
+  if (!keep.intakeSession) {
+    fwLegacyFallback(label, "no-intakeSession", "session engine ABSENT (keep exposes no intakeSession)");
+    return null;
+  }
   try {
     const { id, creator, email, grants } = await keep.intakeSession(input);
+    fwLog(
+      "auth",
+      `${label} → SESSION MODE: minted id=${id} email=${email ?? "—"}; Set-Cookie ${SESSION_COOKIE} ` +
+        `(HttpOnly; SameSite=Lax; Secure=${new URL(req.url).protocol === "https:"}; Max-Age=${SESSION_MAX_AGE})`,
+    );
     return new Response(JSON.stringify({ name: creator, email: email ?? "", grants }), {
       status: 200,
       headers: {
@@ -375,13 +421,33 @@ async function mintSession(keep: SessionEngine, req: Request, input: SessionInta
       },
     });
   } catch (e) {
-    if (isSessionStoreDisabled(e)) return null; // → legacy proxy below
+    if (isSessionStoreDisabled(e)) {
+      fwLegacyFallback(label, "store-disabled", "session store is DISABLED (KEEP_SESSION_KV off, or no INFRA_URL)");
+      return null; // → legacy proxy below
+    }
     // A real credential rejection (infra said no) — surface as 401, don't leak the store to the app.
+    fwLog("auth", `${label} → 401: intakeSession rejected (${e instanceof Error ? e.message : String(e)})`);
     return new Response(JSON.stringify({ message: "not authorized" }), {
       status: 401,
       headers: { "content-type": "application/json", "cache-control": "no-store" },
     });
   }
+}
+
+/** The silent-legacy-fallback fix. A valid login that quietly degrades to legacy bearer mode sets NO
+ *  `sprig_session` cookie, so the SSR guard bounces every `/ui` back to `/ui/login` — and until this,
+ *  nothing anywhere said so (the bug took ~1h to diagnose from the OUTSIDE, by the ABSENCE of a
+ *  Set-Cookie header). Emit one always-on warning per (path,reason) naming the degrade, plus the full
+ *  `[fw:auth]` detail line when `FRAMEWORK_LOGGING` is on. */
+function fwLegacyFallback(label: string, reason: "no-intakeSession" | "store-disabled", detail: string): void {
+  fwWarnOnce(
+    `legacy:${label}:${reason}`,
+    `[fw:auth] ${label} → LEGACY bearer mode: ${detail}. No ${SESSION_COOKIE} cookie will be set — ` +
+      `the SSR guard will bounce authed pages to /login. If you expected cookie sessions, this is the ` +
+      `bug (set KEEP_SESSION_KV=1 + INFRA_URL, and check the engine reached serveSprig). ` +
+      `Set FRAMEWORK_LOGGING=1 for the full auth trace.`,
+  );
+  fwLog("auth", `${label} → LEGACY FALLBACK: mintSession returned null (reason=${reason}); proxying to infra; NO cookie set`);
 }
 
 /** The session slice of KeepApi the gateway actually touches — lets `sprigAuth` mount the gateway
@@ -427,6 +493,7 @@ async function serveAuthGateway(
         headers: { "content-type": "application/json" },
       });
     }
+    fwLog("auth", `POST /auth/login: credentialKind=firebase email=${email || "—"}`);
     // Preferred: keep mints a server-side session from the idToken and we set the httpOnly cookie.
     const minted = await mintSession(keep, req, { credential: idToken, credentialKind: "firebase", email });
     if (minted) return minted;
@@ -460,6 +527,7 @@ async function serveAuthGateway(
         headers: { "content-type": "application/json" },
       });
     }
+    fwLog("auth", `POST /auth/exchange: credentialKind=opaque`);
     // Preferred: keep swaps the opaque handle for a bearer, stores it server-side, sets the cookie.
     const minted = await mintSession(keep, req, { credential: token, credentialKind: "opaque" });
     if (minted) return minted;
@@ -483,9 +551,16 @@ async function serveAuthGateway(
     const unauth = () =>
       new Response("null", { status: 401, headers: { "content-type": "application/json", "cache-control": "no-store" } });
     const id = decodeURIComponent(readCookie(req, SESSION_COOKIE));
-    if (!id || !keep.sessions) return unauth();
+    if (!id || !keep.sessions) {
+      fwLog("auth", `GET /auth/me: session none (${!id ? "no cookie" : "no session engine"}) → 401`);
+      return unauth();
+    }
     const rec = await keep.sessions.read(id).catch(() => null);
-    if (!rec) return unauth();
+    if (!rec) {
+      fwLog("auth", `GET /auth/me: session id=${id} not found → 401`);
+      return unauth();
+    }
+    fwLog("auth", `GET /auth/me: session resolved id=${id} email=${rec.email ?? "—"}`);
     // grants are UX-only here (the guard still enforces them from the verified bearer per request).
     return new Response(JSON.stringify({ name: rec.name ?? "", email: rec.email ?? "", grants: rec.grants ?? [] }), {
       headers: { "content-type": "application/json", "cache-control": "no-store" },
@@ -496,6 +571,7 @@ async function serveAuthGateway(
     if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: { allow: "POST" } });
     const id = decodeURIComponent(readCookie(req, SESSION_COOKIE));
     if (id && keep.destroySession) await keep.destroySession(id).catch(() => {});
+    fwLog("auth", id && keep.destroySession ? `POST /auth/logout: destroyed id=${id} + cleared cookie` : `POST /auth/logout: cleared cookie (${id ? "no engine" : "no session"})`);
     // Clear the cookie regardless (idempotent) — Max-Age=0 expires it immediately.
     return new Response(null, {
       status: 204,
@@ -518,6 +594,12 @@ export function sprigAuth(
   const infraUrl = config.infraUrl ?? Deno.env.get("INFRA_URL") ?? DEFAULT_INFRA_URL;
   const exchangePath = config.exchangePath ?? Deno.env.get("INFRA_EXCHANGE_PATH") ?? DEFAULT_EXCHANGE_PATH;
   const engine = config.keep ?? {};
+  fwLog("compose", infraUrl ? `sprigAuth: gateway MOUNTED (infraUrl=${infraUrl}, exchangePath=${exchangePath})` : `sprigAuth: gateway NOT mounted (infraUrl empty)`);
+  fwLog(
+    "session",
+    `engine surfaced to gateway: intakeSession=${engine.intakeSession ? "yes" : "no"} ` +
+      `sessions=${engine.sessions ? "yes" : "no"} destroySession=${engine.destroySession ? "yes" : "no"}`,
+  );
   return (req) => infraUrl ? serveAuthGateway(req, engine, infraUrl, exchangePath) : Promise.resolve(null);
 }
 
@@ -720,6 +802,24 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
     throw new Error(`serveSprig: base "${base}" collides with a reserved keep prefix`);
   }
 
+  // Framework-logging: narrate the composition once, so an integrator can see the auth mode and —
+  // the single most useful line for the silent-fallback bug — whether keep's session engine actually
+  // reached the gateway. `intakeSession=no` while KEEP_SESSION_KV is on is the "configured for
+  // cookies but the engine didn't surface" smell.
+  fwLog("compose", `serveSprig: keep backend detected; base=${base}; assetsDir=${assetsDir}`);
+  const authMounts = !!(authInfraUrl || config.keep.sessions || config.keep.destroySession);
+  fwLog(
+    "compose",
+    authMounts
+      ? `auth gateway MOUNTED (infraUrl=${authInfraUrl || "—"}, exchangePath=${authExchangePath})`
+      : `auth gateway NOT mounted (no infraUrl, no session engine)`,
+  );
+  fwLog(
+    "session",
+    `engine surfaced to gateway: intakeSession=${config.keep.intakeSession ? "yes" : "no"} ` +
+      `sessions=${config.keep.sessions ? "yes" : "no"} destroySession=${config.keep.destroySession ? "yes" : "no"}`,
+  );
+
   const backend = backendClient(config.keep.backend.fetch);
   // ONE source of truth for the asset version: the content hash of the dir we ACTUALLY
   // serve. It drives both the renderer's ?v= (via env.assetsVersion) and serveAsset's
@@ -818,6 +918,17 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
       if (config.keep.sessions) {
         const raw = readCookie(req, SESSION_COOKIE);
         if (raw) session = await config.keep.sessions.read(decodeURIComponent(raw)).catch(() => null);
+      }
+      if (fwOn("guard")) {
+        const cookiePresent = !!readCookie(req, SESSION_COOKIE);
+        fwLog(
+          "guard",
+          `path=${path}: session=${
+            session ? `present email=${session.email ?? "—"} grants=[${(session.grants ?? []).join(",")}]` : "absent"
+          }${!session && cookiePresent ? " (cookie present but unresolved)" : ""}${
+            !config.keep.sessions ? " (no session engine — guard parses headers itself)" : ""
+          }`,
+        );
       }
       const app = await getApp();
       return injectHeadMeta(await app.fetch(req, info, { backend, assetsVersion: (await version()) ?? undefined, session }), await buildMeta());
