@@ -85,9 +85,10 @@ one its input contract and summarize what it returns.
    built 6× over 16 hours). In a Workflow script:
    `for (const wave of chunks(units, 5)) await parallel(wave.map(…))`; if a wave still
    dies of rate limits, halve the chunk size before resuming — never relaunch the full
-   fan-out. **Assign each parallel agent its own PORT** (e.g. `4100 + index`) in its
-   prompt so isolate servers never collide (the pkill-a-sibling wars are a measured
-   failure mode). Without a breakdown spec, the same specialist authors a minimal
+   fan-out. **Assign each parallel agent its own PORT** (e.g. `4100 + index`) **and its own
+   workbench root** (`SPRIG_WB_ROOT=/tmp/wb-<port>`, exported on every `isolate` call) in its
+   prompt so isolate servers and workbench regenerations never collide (the pkill-a-sibling
+   wars and the shared-workbench preview race are both measured failure modes). Without a breakdown spec, the same specialist authors a minimal
    `isolate/` and runs the same loop.
 3. **Verify the whole app.** After units are green, have the scaffolder run the prod-build
    smoke (`deno task build` → `deno task start`, hit a real URL). Deeper QA of the running
