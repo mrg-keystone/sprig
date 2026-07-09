@@ -58,7 +58,8 @@ Return a summary: files created/edited (paths), the routes registered (`path` �
 ALSO return a **BUILD BRIEF** — the shared facts every component agent needs, resolved once here
 (the orchestrator inlines them, ≤8 lines, into every builder prompt so no agent re-derives them):
 `{ app_root, aliases (the deno.json import-map names: $, $.pages/, @contract/, …), tokens_path
-(src/css-variables.json), isolate_cmd (how to run the workbench headless), port_base, contract
+(src/css-variables.json), isolate_cmd (how to run the workbench headless — the convention is
+`SPRIG_WB_ROOT=/tmp/wb-<PORT> isolate test <unit> --json`, one workbench root per agent), port_base, contract
 (typed client present? path), browser_posture (playwright available: yes/no) }`.
 
 Return ONLY this summary + brief.
