@@ -50,7 +50,7 @@ hunt the disk. Any legitimate lookup stays inside `<git-root>/spec/ui/breakdown`
 
 ## Procedure
 
-**Read `references/capture-recipes.md` before writing any capture code** — it has verified, copy-adaptable Node/Playwright recipes for everything below, plus how to find a Playwright install (the isolate-runner's bundled `playwright-core` first).
+**Read `~/.claude/skills/sprig:breakdown/references/capture-recipes.md` (that exact absolute path) before writing any capture code** — it has verified, copy-adaptable Node/Playwright recipes for everything below. Playwright: `require()` the isolate-runner's bundled `playwright-core` directly (`~/.isolate-runner/node_modules/playwright-core`) — don't pre-verify it with `ls`. Create your target dirs with one unconditional `mkdir -p` (idempotent) — never pre-check what exists. Make every capture script `console.log` each path as it saves it: that printout IS your receipt (never `ls`/`find` afterward to see what landed).
 
 1. **Serve & settle** — a two-seam prototype folder (`*-prototype/` with `_start.ts`) must be SERVED: run `deno task start` in it (→ `http://localhost:8723`, `PORT` overrides) and navigate there — its UI reads data over the injected seams, so `file://` shows empty states. A legacy single-file mock: `file://` works (incl. hash routes) unless it `fetch()`es (then HTTP). Let entrance animations settle before shooting; stop any host you started when done.
 2. **Stills** — one cropped screenshot per component (its `screenshots/`) + a full-page shot per page. Capture at a desktop viewport **and** at the source's real `@media` breakpoints. If themes exist, capture the non-default theme at least once per page. Summon transient components (modals/menus) before shooting.

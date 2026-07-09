@@ -63,7 +63,7 @@ ALL your reference material — never read another skill's SKILL.md (orchestrato
 
 ## Resources
 
-- `references/isolate-format.md` — read from this skill's `references/` (installed at `~/.claude/skills/sprig:breakdown/references/`) for the specials the recipe doesn't cover (`_mocks`, `_innerHtml`, route derivation edge cases); an invalid fixture fails fast.
+- The isolate-format reference lives at exactly `~/.claude/skills/sprig:breakdown/references/isolate-format.md` — Read THAT absolute path (a relative `references/...` resolves against your cwd `/work` and fails; a measured writer then glob-hunted the whole tree). Consult it only for the specials the recipe doesn't cover (`_mocks`, `_innerHtml`, route derivation edge cases); an invalid fixture fails fast. Never peek at sibling units' `isolate/` folders to infer the format — the recipe + this reference are the format.
 
 ## Output contract
 
