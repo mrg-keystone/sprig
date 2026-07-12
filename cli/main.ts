@@ -7,6 +7,9 @@
 //   isolate update            reinstall the latest skills + this CLI
 //
 // --root <path> points at a Fresh project elsewhere (default: the current dir).
+// NB: json-stdout MUST be the first import — it reroutes console.log to stderr in
+// --json mode BEFORE the command modules' import-time server bootstrap can log.
+import "./lib/json-stdout.ts";
 import { Command } from "@cliffy/command";
 import { colors } from "@cliffy/ansi/colors";
 import { listCmd } from "./commands/list.ts";

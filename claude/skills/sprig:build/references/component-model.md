@@ -120,6 +120,22 @@ Rules of thumb:
 - **Overrides:** an inline `data-note` on the element can demand "wait for the server" or
   "realtime island" — honor it over this default.
 
+## The serialization boundary (island state crosses as JSON)
+
+An island's own enumerable fields are snapshotted on the server and **JSON-round-tripped**
+to the client before hydration. Three measured traps:
+
+- **Never store live handles as fields.** A DI singleton, `ctx.output()` handle, signal, or
+  any class instance stored as `this.x`/a public field arrives client-side as a lossy plain
+  object (`push is not a function`). Capture them as **constructor-local closures** used by
+  arrow-function methods instead. (`#private` fields can also trip bundler brand-checks —
+  closures are the safe shape.)
+- **`[value]` on `<input>`/`<textarea>` only patches the attribute.** After the user types,
+  the live `.value` diverges from your signal; re-sync in `onBrowserInit` with an `effect()`
+  that writes `el.value` from the signal.
+- Serializable data props (strings/numbers/arrays/plain objects) are fine — that's the
+  contract; anything with behavior stays out of fields.
+
 ## Dependency injection
 
 `@Injectable` registers a class; `inject(Token)` resolves it from the active injector.

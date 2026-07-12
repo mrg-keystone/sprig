@@ -39,7 +39,7 @@ for it.** A missing path means the brief is wrong; the orchestrator fixes the br
 failure mode: 652 builder prompts said "glob for your unit's folder" — the parent had every
 resolved path in `index.md` and passed only a name.)
 - **ISOLATE** — whether a `sprig isolate` workbench is already running and at what URL, or that you should start one.
-- **PORT** — the port assigned to YOU (the orchestrator hands each parallel agent its own, e.g. `4100 + index`). Start your isolate server on it (`PORT` env). If your port is somehow busy, increment by one and note it — NEVER `pkill`/kill server processes to free a port; in a parallel fleet the process you kill is a sibling agent's workbench (a measured failure mode: 174 `pkill`s in one build fleet). **Workbench isolation:** export `SPRIG_WB_ROOT=/tmp/wb-<your PORT>` on EVERY `isolate test` / `isolate dev` you run — without it parallel agents regenerate the ONE shared workbench and delete each other's previews mid-run (a measured race). If you start `isolate dev`, record its PID (`isolate dev & echo $!`) and stop it with `kill <that pid>` — never `pkill -f`/kill-by-name (the pattern matches siblings' servers too).
+- **PORT** — the port assigned to YOU (the orchestrator hands each parallel agent its own, e.g. `4100 + index`). Start your isolate server on it (`PORT` env). If your port is somehow busy, increment by one and note it — NEVER `pkill`/kill server processes to free a port; in a parallel fleet the process you kill is a sibling agent's workbench (a measured failure mode: 174 `pkill`s in one build fleet). **Workbench isolation:** export `SPRIG_WB_ROOT=/tmp/wb-<your PORT>` on EVERY `isolate test` / `isolate dev` you run — without it parallel agents regenerate the ONE shared workbench and delete each other's previews mid-run (a measured race). If you start `isolate dev`, record its PID (`isolate dev & echo $! > /tmp/dev-<your PORT>.pid`) and stop it with `kill $(cat /tmp/dev-<your PORT>.pid)`. **`pkill`/`killall` are banned OUTRIGHT — even scoped to your own workbench name** (gate-enforced; the pattern can match siblings' servers). If strays persist after a kill, list them (`ps aux | grep "wb-<your PORT>"`) and `kill <pid> <pid>…` explicitly by number.
 
 ## Procedure
 
@@ -94,10 +94,65 @@ Isolate seam — `isolate/fixture.json` maps props → controls (`signal: true` 
 { "_name": "Greeting", "_signals": { "count": 0 } }
 ```
 
+Case test — the ONLY dialect the headless runner loads (`isolate test <unit> --json` runs
+specs with **Node** Playwright; `@std/expect`, `jsr:`/`#alias`, and every other Deno-only
+import fails at load time):
+
+```ts
+import { expect, test } from "@playwright/test";
+const BASE = process.env.ISOLATE_BASE_URL ?? "http://127.0.0.1:8000";
+
+test("greeting renders", async ({ page }) => {
+  await page.goto(`${BASE}/components/greeter/default/greeting`); // route from fixture.json, never the src path
+  await expect(page.locator(".counter")).toHaveCount(1);
+});
+```
+
+Before interacting with an ISLAND, gate on hydration (async — a click before it is a silent
+no-op). Prefer `waitHydrated` from `isolate-events` (it works under the headless runner and
+also waits for the case's `_signals` to be applied):
+
+```ts
+import { waitHydrated } from "isolate-events";
+await waitHydrated(page); // after page.goto, before the first interaction
+```
+
+(the bare hydration marker also works, but it lands BEFORE signal seeding:
+`page.waitForSelector('sprig-island[data-sel="counter"][data-sprig-hydrated]', { state: "attached", timeout: 8000 })`)
+
+Island preview props: preview targets get NO static prop bindings — declare each needed
+prop as a `"signal": true` control in `fixture.json` and seed it via `_signals.<prop>` in
+the case JSON (`waitHydrated` gates on the seeding having landed).
+
 **Verify by RECEIPT:** the isolate runner's own output is the verification — each case's pass/fail
-verdict from `sprig isolate` (or `isolate test --json` headless) IS the state, plus one
+verdict from `sprig isolate` (or `isolate test --json` headless; add `--failures-only` once a
+unit has >5 cases — counts stay full, only red rows print, and your context stops paying for
+green rows every turn) IS the state, plus one
 screenshot-diff per iteration as the visual check. Never `ls`/glob the tree to re-confirm files
 you just wrote, and never re-shoot a case whose runner verdict you already hold.
+
+**Screenshot discipline (images are the most expensive thing in your context):** an image
+read is re-paid on EVERY turn after it — a measured agent read 1.1MB of PNGs at turn 52 of
+345 and re-paid them ~293 more times. So: build STRUCTURE first (template, cases, tests
+green) and do the visual pass LAST; diff against the breakdown's **cropped per-component
+stills**, never a full-page shot unless your unit IS the page; read any given image at most
+ONCE — never re-read one you've already seen; one screenshot-diff per case iteration max
+(the receipt rule above).
+
+**Timed behaviors in case tests: assert the durable END-STATE** (element removed, row
+present, final class set) with a generous poll — never a fixed delay + an ephemeral
+intermediate (an `-exiting` class, a spinner, a transient focus): that shape is flaky by
+construction under parallel load (three measured fleet flakes). Freeze an intermediate
+state via a pinned `_signals` case if it must be asserted.
+
+**`{ "ran": false, "total": 0 }` tripwire:** that verdict means your spec files never
+EXECUTED — a spec failed to load (the report's `error` field names the import; fix it against
+the case-test recipe above and re-run). It is never a server/port/process problem — do not
+restart servers, kill processes, hand-roll Playwright scripts, or read runner internals over
+it (a measured agent burned 154 calls and its whole session doing exactly that). The iteration
+budget counts EVERY non-green verdict, not just red cases: three consecutive identical
+non-green verdicts from the same command — red, empty, or errored — exhausts it; stop and
+return `blocked` with the verdict text.
 
 **Knowledge boundary:** this definition + your unit's breakdown spec + the references named below
 are ALL your reference material. Never read another skill's SKILL.md (those are orchestrator
@@ -105,13 +160,35 @@ playbooks), and never research the framework source — the shapes above are ver
 
 ## Resources
 
-- `references/component-model.md`, `references/templates.md`, `references/isolate.md` — read from this skill's `references/` (installed at `~/.claude/skills/sprig:build/references/`).
-- **Cross-skill:** the fixture/case format is `sprig:breakdown/references/isolate-format.md` (installs as a flat sibling at `~/.claude/skills/sprig:breakdown/references/isolate-format.md`) — read it before writing any `isolate/` files; a malformed fixture makes `sprig isolate` fail fast.
+- **First stop: the build CHEATSHEET** when your brief carries its path
+  (`spec/misc/build/cheatsheet.md`) — sibling prop/event APIs, store seams, facts, and the
+  app's gotchas, pre-digested. Read it INSTEAD of sibling templates and instead of the
+  references below.
+- The references (`~/.claude/skills/sprig:build/references/{component-model,templates,isolate}.md`,
+  cross-skill `~/.claude/skills/sprig:breakdown/references/isolate-format.md`) are
+  **failure-time material, not a preamble**: open ONE only when the recipe above + the
+  cheatsheet don't cover the exact shape you're implementing (an unfamiliar construct, a
+  malformed-fixture error, a red you can't diagnose). Reading all four up front is a
+  measured fleet-wide waste (every builder re-buying the same education).
 - When building from a breakdown spec, the unit's `.md` Isolate build plan is your recipe; its `screenshots/` are the diff targets; its case JSON carries the real captured values.
+
+## Checkpoint (the quadratic rule)
+
+Your context re-bills every prior tool result on EVERY turn — a long grind pays
+quadratically. **Every budget stop IS a checkpoint** (measured: a "checkpoint when you
+feel long" rule never fired — you cannot observe your own turn count, so the trigger is
+the budgets that ALREADY stop you): whenever the iteration budget halts you (3 identical
+non-green verdicts, or 5 diff-fix cycles on a case), or your brief carries an explicit
+stopping contract (e.g. "one fix pass then return"), write
+`spec/misc/build/<unit>.checkpoint.md` BEFORE returning: green cases; red cases with each
+one's exact failing assertion + your root-cause note; files you wrote; **what you RULED
+OUT and how** — the successor must not re-try your dead ends; the single next step you'd
+take. Then return `checkpoint` with its path. A fresh successor with your findings inlined
+fixes cheaper than you can from turn 60 — this is by design, not failure.
 
 ## Output contract
 
-Return a summary, ≤20 lines: the unit built (folder + selector), its classification and a one-line justification (esp. why `island` if so), the files written, the `isolate/` cases and each one's **green/red status with one line of evidence** (the test verdict line or the diff outcome — never full runner/console dumps), whether islands hydrate, and anything deferred or red-after-budget (with why). Return ONLY this summary.
+Return a summary, ≤20 lines: the unit built (folder + selector), its classification and a one-line justification (esp. why `island` if so), the files written, the `isolate/` cases and each one's **green/red status with one line of evidence** (the test verdict line or the diff outcome — never full runner/console dumps), whether islands hydrate, and anything deferred or red-after-budget (with why). If you had to DERIVE a framework semantic the cheatsheet + references didn't cover, add one `DOC GAP:` line stating it — the orchestrator appends it to the cheatsheet and it feeds the docs. Return ONLY this summary.
 
 <!-- BEGIN sprig-agent-guardrail: scripts/agent-guardrail.md -->
 ## Never crawl the filesystem for framework source
@@ -146,9 +223,11 @@ escalate to a root-wide `find`.
 ## Never
 
 - Wire `main.ts`/`serve.ts`/global tokens — that's `sprig-build-scaffolder`.
-- `pkill`/kill server processes or take a port that isn't yours — parallel siblings own them.
-- Loop past the 5-cycle diff budget on one case — return it red with a diagnosis instead.
+- `pkill`/`killall` — ever, even aimed at your own workbench name; kill explicit recorded PIDs only. Never take a port that isn't yours — parallel siblings own them.
+- Loop past the iteration budget on one case OR one failing command (3 identical non-green verdicts = exhausted, `ran: false` included) — return it red/blocked with a diagnosis instead.
 - Ship a server write as spinner-and-`location.reload()` (the anti-pattern) — server writes are optimistic unless a `data-note` overrides.
 - Make an island that takes server data as frozen props and `reload()`s after actions, or a whole-page island.
 - Compose a unit into a page before its `isolate/` cases are green.
+- Read a full-page breakdown screenshot for a component unit, re-read ANY image, or read
+  images before the unit's structure is green — visual polish is the LAST phase.
 - Emit `data-note`/`data-note-css` attributes into the built template, or reach for a `.tsx`/JSX/Fresh/Next habit.

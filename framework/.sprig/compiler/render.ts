@@ -289,7 +289,14 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
     // a fresh re-render the child neither owns nor disposes, and (b) emit a bare element/inline
     // body that morph would mismatch against the live <sprig-island> host and destroy it (bug AJ).
     if (opts.handlers) {
-      return islandHost(childScope, comp.selector, comp.island.trigger, {}, "");
+      // The shell carries the parent-computed inputs (+ mocks) as its props bridge: for a
+      // child with a live hydrated host the morph discards the shell (the live host is the
+      // authority, its state untouched), but a child that first appears in THIS re-render —
+      // data-driven, never server-rendered, so no live host to match — is appended as-is and
+      // must hydrate from these props once the post-render re-scan arms it (rescanIslands).
+      const shellProps: Record<string, unknown> = { ...inputs };
+      if (opts.mocks) shellProps.__mocks = opts.mocks;
+      return islandHost(childScope, comp.selector, comp.island.trigger, shellProps, "");
     }
     // an island: use the scope the async pre-pass already resolved for this node (its
     // onServerInit has run + awaited); else build it synchronously now.

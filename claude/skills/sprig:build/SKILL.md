@@ -70,6 +70,22 @@ one its input contract and summarize what it returns.
    alias names, tokens path, isolate command, port base, contract + browser posture) —
    **inline those ≤8 fact lines into every component prompt** so no builder re-derives
    them; facts inline, bulk behind paths.
+   **Then, for any multi-unit build (≥3 units): spawn `sprig-build-analyst` ONCE** (before
+   the first wave, synchronously) with the app root, breakdown root, the facts block, and
+   the unit list — it digests the specs' prop/event APIs, the store/DI seams, and the
+   framework gotchas into `spec/misc/build/cheatsheet.md` (≤3KB). Every builder brief then
+   carries the CHEATSHEET PATH instead of a references reading list — one agent buys the
+   education, N read the digest (measured without it: nine page agents each re-read the
+   same four reference docs and twelve sibling templates).
+   **The delegation is MANDATORY, and it caps YOUR OWN reading: before Wave 1 you open
+   `index.md` and the scaffolder's BUILD BRIEF — nothing else.** If you catch yourself
+   opening a unit spec, a reference doc, extracted source, or a fixture app "to brief the
+   builders accurately", you are doing the analyst's job on the expensive tier: STOP and
+   spawn it (measured: an orchestrator spent ~16 serial reading steps building the
+   cheatsheet itself and the run hit the wall clock with two units never started). A
+   builder-returned gotcha propagates by APPENDING one line to the cheatsheet — never by
+   fattening later briefs. Before a page-composition wave, optionally re-spawn the analyst
+   to refresh the sheet against as-built props.
 2. **Build each unit in isolation, in build order.** Walk the breakdown `index.md` build
    order — **tokens → shared components (primitives before composites) → page-local
    components → page compositions** — and for each unit delegate to **`sprig-build-component`**
@@ -78,8 +94,13 @@ one its input contract and summarize what it returns.
    `screenshots/`, and the target src dir. Never brief a specialist with just a name and
    "glob for it" — a measured fleet did that 652 times and every agent re-searched the
    tree the orchestrator already held. Each unit must
-   be green in `sprig isolate` **before** the units that compose it. Independent units run
-   in parallel, **capped at 4–6 concurrent, in chunked waves** — measured on real fleets,
+   be green in `sprig isolate` **before** the units that compose it — and start each
+   composition the moment ITS OWN direct children are green, never parked behind unrelated
+   stragglers (three measured runs died with every leaf green and the page never composed).
+   Independent units run
+   in parallel, **capped at 4–6 concurrent, in chunked waves — and floored at 4 while ≥4
+   units are unblocked** (measured: waves of 1–2 stretched a 7-unit build past its wall
+   clock) — measured on real fleets,
    10+ concurrent builders saturate the org's tokens-per-minute quota, agents die on
    429/529 and re-execute from scratch (one fleet: 78 units → 329 executions, one unit
    built 6× over 16 hours). In a Workflow script:
@@ -90,8 +111,46 @@ one its input contract and summarize what it returns.
    prompt so isolate servers and workbench regenerations never collide (the pkill-a-sibling
    wars and the shared-workbench preview race are both measured failure modes). Without a breakdown spec, the same specialist authors a minimal
    `isolate/` and runs the same loop.
-3. **Verify the whole app.** After units are green, have the scaffolder run the prod-build
-   smoke (`deno task build` → `deno task start`, hit a real URL). Deeper QA of the running
+   **Long-unit split (the quadratic rule).** An agent loop re-sends its whole history
+   every turn — input cost grows with the SQUARE of loop length, so one 150-turn
+   build-diagnose-fix-verify marathon costs ~4× two 75-turn agents. When a builder stops
+   at its iteration budget (or returns `checkpoint`), do NOT tell it to keep going:
+   spawn a FRESH `sprig-build-component` whose brief inlines the predecessor's exact
+   findings — the red rows verbatim, the files it wrote, its root-cause notes — with the
+   instruction "fix exactly these; do not re-discover". A fresh agent restarts the meter
+   at ~17K and its early turns are its cheapest. **Page compositions are STRUCTURALLY two
+   spawns, always** (the measured 250–345-turn monolith class). Two rules learned the
+   hard way about briefing them: a "split when stuck" trigger never fires (agents can't
+   observe their own turn count), and a "build green but stop after one fix pass" caveat
+   loses to the green-seeking goal (measured: spawn-1 ran to 244K ctx past its contract).
+   So spawn #1's brief carries a DIFFERENT GOAL, not a limited version of the same one:
+   its deliverable IS the checkpoint — "compose the template, author the cases, run the
+   suite ONCE, write `spec/misc/build/<page>.checkpoint.md`, return. Reds in the
+   checkpoint are EXPECTED output, not your failure; fixing them is the next agent's
+   job, and fixing them yourself is exceeding your brief." Spawn #2 (only if reds) gets
+   the checkpoint inlined and owns green.
+   **Seam safety (how the split cannot cost accuracy):**
+   - **Validate the checkpoint before spawning.** Required sections: greens; reds with
+     exact failing assertions; root-cause notes; files written; RULED-OUT list; next
+     step. A checkpoint missing any of these is a wrong brief — bounce it back one turn
+     ("complete the checkpoint"), never hand a successor a vague seam.
+   - **Predecessor greens are pinned.** The successor's definition of done is the FULL
+     case set green — its brief says so explicitly; a fix that breaks a predecessor's
+     green case is a regression, not progress.
+   - **Escalate, don't repeat.** Successor #1 is a FIXER (findings inlined). If it
+     checkpoints on the SAME failing assertions, that repetition is the ping-pong
+     signal — the bug is deeper than a patch. Successor #2 is then a DIAGNOSER: its
+     brief forbids code edits until it states a root-cause hypothesis that explains ALL
+     evidence from BOTH checkpoints (it reads them plus the diff of prior changes),
+     then it fixes against that hypothesis.
+   - **Cap = 3 agents, and a capped-out unit returns RED carrying its checkpoint
+     trail** — two diagnoses and a hypothesis history is a well-documented bug report
+     for the human, not silent churn.
+3. **Verify the whole app.** After units are green: first the whole-suite receipt — one
+   `SPRIG_WB_ROOT=/tmp/wb-final isolate test --json` at the app root, every case in a single
+   run (units were only ever proven one at a time; a composition can break a sibling's case
+   and per-unit verdicts won't show it) — then have the scaffolder run the prod-build smoke
+   (`deno task build` → `deno task start`, hit a real URL). Deeper QA of the running
    app — hunting bugs, perf, regressions — is the **`sprig:audit`** stage downstream, not
    this skill.
 
@@ -104,7 +163,13 @@ that context on every turn.
 
 **Orchestrator conduct:** after spawning agents, END YOUR TURN and let task notifications
 re-invoke you — never `sleep`-poll between stages (measured on a rune build: 32% of wall time
-was orchestrator sleeps). Verify by RECEIPT: a builder's isolate verdicts and the scaffolder's
+was orchestrator sleeps). **Unattended runs are the exception** (headless `claude -p`, CI,
+evals — any brief that says "work fully autonomously"): there, end-turn-and-wait is FATAL —
+the CLI terminates the whole run when background tasks are still running ~600s after your
+turn ends (measured: a fleet died mid-wave exactly this way, page never composed). In an
+unattended run spawn each wave SYNCHRONOUSLY — all of the wave's Agent calls in ONE message
+with `run_in_background: false`, so they run concurrently and your turn continues when the
+wave returns — and still never sleep-poll. Verify by RECEIPT: a builder's isolate verdicts and the scaffolder's
 smoke result ARE the state — don't re-run their checks inline or re-walk their file trees; a
 mid-build fix re-routes through the owning specialist. For fleets ≤ ~15 units, track the queue
 in your plan text — don't burn an API turn per task-ledger update (measured: 20 bookkeeping
@@ -117,7 +182,13 @@ under-briefed. Before delegating, YOU resolve — absolute, copied verbatim from
 / stage returns, never retyped by hand — every path the specialist touches (spec folder,
 evidence files, target dir), plus its PORT and any running-server URL. If a specialist
 returns `blocked: missing path`, the brief was wrong: fix the brief and re-delegate; never
-answer "search for it".
+answer "search for it". **Spec-pending units** (regions with no written spec) get the
+breakdown's extracted-source folder path for their region passed EXPLICITLY — without it,
+builders hunt the original prototype file across the tree (measured: `find -name
+*prototype*` hunts in an otherwise clean run). Briefs stay lean — facts inline (≤8 lines), spec content by PATH: a
+builder brief past ~5KB (scaffolder ~2.5KB) is inlining prose the specialist should read
+from disk (measured: an orchestrator pre-digested each unit's spec into 5–7KB briefs and
+blew every prompt budget while the specialists re-read the specs anyway).
 
 ## The annotate review loop (the user owns the server)
 

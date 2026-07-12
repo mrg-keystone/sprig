@@ -82,6 +82,25 @@ Scope a slot with `select="tag" / ".class" / "[attr]"`; the unmatched remainder 
 default `<content/>`. A slot's own children are the fallback shown when nothing is projected:
 `<content>default label</content>`.
 
+## Expression language limits (a sandboxed subset, not JavaScript)
+
+Template expressions (`{{ }}`, `[prop]`, `@if`/`@let`…) evaluate in a sandbox against the
+component scope — three traps measured on real fleets (agents reverse-engineered the
+compiler to learn these; don't):
+
+- **`|` is the PIPE operator** (Angular-style: `{{ 0.575 | percent }}`), so bitwise OR can
+  never work — `expr | 0` is parsed as a pipe, not a floor. Floor/round without `Math`:
+  integer arithmetic (`(n - (n % 60)) / 60`) or compute in `logic.ts`.
+- **Host globals (`Math`, `Date`, `JSON`…) are not in scope** — expressions see the
+  component's fields/`@let` locals only. Derive anything non-trivial in `logic.ts` (islands)
+  or via `@let` arithmetic (static templates).
+- **`@let` is ONE physical line** — a multi-line `@let` doesn't parse. Split long
+  derivations into several `@let`s.
+
+Static (no-`logic.ts`) components render **inlined server-side** — no
+`<my-component>` wrapper element survives into the served HTML. Tests and parent styles must
+target the rendered inner DOM (e.g. `.avatar img`), never the component-tag selector.
+
 ## The shell + `<router-outlet>`
 
 `src/shell/template.html` is the document layout; the matched page renders where you place

@@ -1,0 +1,50 @@
+ACROSS THE 5 HEAVIEST PAGE AGENTS (env-detail, org-detail, app-detail, apps, dashboard)
+
+== Most re-read files ==
+  6x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/pages/app-detail/resolve.ts
+  5x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/pages/app-shell/template.html
+  5x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/pages/login/resolve.ts
+  5x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/lib/backend.ts
+  5x  /Users/raphaelcastro/.claude/skills/sprig:build/references/routing.md
+  5x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/pages/env-detail/template.html
+  4x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/pages/account/template.html
+  4x  /Users/raphaelcastro/.claude/skills/sprig:build/references/templates.md
+  4x  /Users/raphaelcastro/.claude/skills/sprig:build/references/component-model.md
+  4x  /Users/raphaelcastro/.claude/skills/sprig:build/references/serving.md
+  4x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/shared-components/ui-glyph/template.html
+  4x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/shared-components/app-shell/app-shell.md
+  4x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/pages/apps/template.html
+  3x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/lib/session.ts
+  3x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/index.md
+  3x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/shared-components/empty-state/template.html
+  3x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/shared-components/section-card/template.html
+  3x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/shared-components/ui-badge/template.html
+  3x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/pages/app-detail/template.html
+  3x  /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/mod.ts
+
+== Tool results >8KB (63 total, 2957KB combined) ==
+ 554KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/screenshots/app-overview-deploy/page--app-not-found--1280-
+ 429KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/screenshots/app-overview-deploy/page--overview--infra--128
+ 353KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/screenshots/orgs/org-detail--page--1280.png"}
+ 345KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/screenshots/orgs/org-detail-acme--page--1280.png"}
+ 246KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/screenshots/orgs/org-detail--page--loading-1280.png"}
+  92KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/main/org-detail-default-attempt1.png"}
+  40KB  Bash   {"command": "cd /Users/raphaelcastro/Documents/programming/infra/ui-rework/ui && deno info \"jsr:@mrg-keystone/sprig@0.20.29/keep\" 2>&1"}
+  39KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/main/org-detail-default-attempt2.png"}
+  36KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/pages/env-detail/env-detail.md"}
+  29KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/pages/env-detail/components/secrets-table/secrets-table.md
+  28KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/pages/env-detail/components/env-import/env-import.md"}
+  27KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/contract/binding.md"}
+  25KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/pages/org-detail/org-detail.md"}
+  25KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/pages/apps/apps.md"}
+  25KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/pages/dashboard/dashboard.md"}
+  24KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/shared-components/ui-glyph/template.html"}
+  24KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/shared-components/ui-glyph/template.html"}
+  24KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/shared-components/ui-glyph/template.html"}
+  24KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/shared-components/ui-glyph/template.html"}
+  24KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/screenshots/orgs/org-detail--identity-chips.png"}
+  23KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/pages/app-detail/components/maintenance-card/maintenance-c
+  22KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/index.md"}
+  22KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/index.md"}
+  22KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/spec/ui/breakdown/pages/app-detail/app-detail.md"}
+  20KB  Read   {"file_path": "/Users/raphaelcastro/Documents/programming/infra/ui-rework/ui/src/islands/variables-card/logic.ts"}

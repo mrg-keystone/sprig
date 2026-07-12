@@ -149,10 +149,29 @@ export function componentsForPage(page: string | null): Registry {
           island: { scope: (i: Scope) => i, trigger: islandTrigger(sel) },
         };
       }
+      // Not loaded yet but KNOWN to be an island (the eager loader registers every island
+      // selector the build produced): resolve to the same minimal island def so the client
+      // re-render emits a <sprig-island> shell — which the post-render re-scan arms and
+      // lazy-loads — instead of a bare custom element. The template is an inert stub: the
+      // client island branch never renders a child's body, only the shell.
+      const scope = islandSelectorScopes.get(sel);
+      if (scope !== undefined) {
+        return {
+          selector: sel,
+          template: fromSerialized(STUB_TEMPLATE),
+          scope,
+          island: { scope: (i: Scope) => i, trigger: islandTrigger(sel) },
+        };
+      }
       return undefined;
     },
   };
 }
+// An empty template for the not-yet-loaded-island ComponentDef above: renderComponent's
+// client island branch returns the shell before ever walking the child's template, so an
+// empty root (no children, no fields) is sufficient and inert.
+const STUB_TEMPLATE: SerializedTemplate = { source: "", root: { t: "document", s: 0, e: 0, c: [], n: [], f: {} } };
+
 /** The trigger a child-island host should advertise during a parent re-render. We don't have
  *  the original SSR trigger in the island entry, so fall back to the live host's data-trigger
  *  if one is mounted, else "load". (The shell is matched to the live host by morph regardless;
@@ -180,6 +199,16 @@ export function currentPage(): string | null {
 const registry = new Map<string, IslandEntry>();
 // selectors whose chunk import() is in flight (de-dupe concurrent triggers)
 export const loading = new Set<string>();
+
+// selector → scope marker for EVERY island the build produced (loaded or not), registered
+// by the generated eager loader. This is what lets a parent island's client re-render
+// resolve a child island whose chunk has NOT loaded yet: a data-driven child that never
+// appeared in the SSR HTML (so was never armed at the bootstrap scan) would otherwise
+// resolve to undefined and fall through to a bare, inert custom element.
+const islandSelectorScopes = new Map<string, string>();
+export function registerIslandSelectors(map: Record<string, string>): void {
+  for (const [sel, scope] of Object.entries(map)) islandSelectorScopes.set(sel, scope);
+}
 
 /** Fired right after an island's setup() runs, handing external tooling a live
  *  handle on the mounted island — its element, selector, raw inputs, and the
@@ -371,8 +400,14 @@ function maybeRecoverDualRuntime(): void {
 }
 
 // ───────────────────────────── the eager loader ─────────────────────────────
+// The cfg captured at bootstrap, so islands that first APPEAR after the bootstrap scan
+// (a parent's data-driven re-render emitting a child <sprig-island> shell that was never
+// in the SSR HTML) can still be armed + lazy-loaded (see rescanIslands).
+let bootCfg: SprigConfig | null = null;
+
 /** Scan `root` for <sprig-island> and schedule each one's chunk to load on its trigger. */
 export function bootstrapIslands(cfg: SprigConfig, root: ParentNode = document): void {
+  bootCfg = cfg;
   // record the matched page so islands without a data-page host attr still resolve their
   // child components against the right page-local registry (registryForPage parity).
   setCurrentPage(cfg.page);
@@ -382,6 +417,18 @@ export function bootstrapIslands(cfg: SprigConfig, root: ParentNode = document):
   // Guarding with `if (cfg.base)` treated "" as absent and left hmrBase at the "/ui" default,
   // so islands fetched /ui/_sprig/ast/* (404). `??` keeps the default ONLY for a missing base.
   hmrBase = cfg.base ?? hmrBase;
+  root.querySelectorAll("sprig-island").forEach((el) => scheduleLoad(el as HTMLElement, cfg));
+}
+
+/** Arm + lazy-load any not-yet-armed <sprig-island> under `root`. Called after each island
+ *  re-render: a data-driven re-render can emit a child-island SHELL with no live host to
+ *  morph-match (the child was never server-rendered), so it lands in the DOM as a NEW host
+ *  that the one-shot bootstrap scan never saw. Without this re-scan such an island stays a
+ *  permanently inert element. scheduleLoad skips hosts already armed or hydrated, so
+ *  re-scanning on every render is idempotent and cheap. */
+export function rescanIslands(root: ParentNode): void {
+  if (!bootCfg) return; // pre-bootstrap render (SSR/tests): nothing to arm against yet
+  const cfg = bootCfg;
   root.querySelectorAll("sprig-island").forEach((el) => scheduleLoad(el as HTMLElement, cfg));
 }
 
@@ -772,6 +819,11 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
     patchInnerHtml(el, html); // morph (preserves focus/caret/scroll) instead of wholesale replace
     handlers = hs;
     wire(); // (re)attach delegated listeners for any event base this render introduced
+    // a data-driven re-render can emit NEW child-island shells (no SSR host to morph-match);
+    // arm them now or they stay inert. Safe inside the effect: hydrating a child creates its
+    // own effect, and @preact/signals-core stacks the eval context, so the child's signal
+    // reads never leak into THIS effect's dependency set.
+    rescanIslands(el);
   });
 
   // client lifecycle (duck-typed — a plain { setup } object simply omits these). The
