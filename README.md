@@ -78,3 +78,17 @@ tree-sitter-angular-template/  # grammar source → build the wasm, store it as 
 deno test -A framework/.sprig/compiler/compiler.test.ts   # framework unit tests
 deno test -A app/spine.test.ts                            # the example app's SSR/API spine
 ```
+
+## Releasing
+
+Before bumping `version` in `deno.json` and publishing:
+
+1. **Agent-facing docs move WITH the API.** If the release changes any public runtime/
+   compiler surface (`framework/.sprig/core.ts` exported types, template semantics, the
+   isolate CLI's flags or report shape), the same commit must update the matching
+   `claude/skills/*/references/*.md` and agent defs. A release that ships an API the refs
+   don't describe sends every build fleet reverse-engineering the Deno cache (measured:
+   112 tool calls re-deriving `ResolveCtx` after 0.20.29 shipped it undocumented).
+2. Run the framework + runner tests (above) and `deno check cli/main.ts`.
+3. Spot-check `claude/skills/sprig:build/references/` examples still typecheck against the
+   new surface.

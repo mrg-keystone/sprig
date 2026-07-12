@@ -114,12 +114,12 @@ your screenshot — so the case must reproduce exactly what the screenshot shows
 names, dates, ids, series). For large data sets, carry the exact visible slice, not the full set
 and not invented lookalikes.
 
-## Events → `capture(page)` predicates
+## Events → test predicates
 
 isolate's test bridge (`isolate-events`) exposes every DOM event a component fires as
 `IsolateEvent = { time, source, type, detail }` — `source` is `tag` or `tag#id`
 (`"button#submit"`, `"input#email"`), `detail` carries the input value / pressed key / element
-label. A spec gets them via:
+label. In the **interactive workbench** (`sprig isolate` in a browser) a spec can read them via:
 
 ```ts
 import { capture, waitHydrated } from "isolate-events";
@@ -131,9 +131,33 @@ await page.locator("#confirm").click();
 await ev.expect(e => e.source === "button#confirm" && e.type === "click", { timeout: 3000 });
 ```
 
-Write each row of a component's **Events** section as one of these predicate sketches against the
-real `source`/`type`/`detail` values you observed — the build session lifts them into
-`tests/*.spec.ts` unchanged.
+**Headless caveat — what actually runs under `isolate test`.** The headless runner executes
+specs with **Node** Playwright: `@std/expect` and every other Deno-only specifier fail to load
+(the run reports `ran: false, total: 0` and names the import). The `isolate-events` helpers
+(`capture`/`waitHydrated`) DO fire there — the stage-bridge produces both signals under direct
+navigation. A runnable case test is plain Playwright:
+
+```ts
+import { expect, test } from "@playwright/test";
+import { waitHydrated } from "isolate-events";
+
+// The runner exposes the preview server as ISOLATE_BASE_URL; no config sets a baseURL.
+const BASE = process.env.ISOLATE_BASE_URL ?? "http://127.0.0.1:8000";
+
+test("confirm closes the modal", async ({ page }) => {
+  await page.goto(`${BASE}/components/overlays/modal/danger-open`);
+  // islands hydrate async — waitHydrated resolves once the target island's scope is
+  // attached AND the case's _signals are applied (statics: immediately)
+  await waitHydrated(page);
+  await page.locator("#confirm").click();
+  await expect(page.locator(".modal")).toBeHidden();  // the observable effect
+});
+```
+
+Write each row of a component's **Events** section as a predicate sketch against the real
+`source`/`type`/`detail` values you observed — the build session lifts the predicate into
+`tests/*.spec.ts`, either via `capture(page)` (call it BEFORE `page.goto`) asserting the bridge
+event itself, or as the event's observable DOM effect.
 
 ## Gotchas to encode in proposals
 
@@ -144,7 +168,9 @@ real `source`/`type`/`detail` values you observed — the build session lifts th
   **signal-backed** state (`signal: true` controls / `_signals` cases) survives. Prefer
   signal-backed for anything a reviewer will toggle while inspecting state.
 - **Hydration is async** — interacting before it completes is a silent no-op; gate island
-  interactions on `waitHydrated(page)`.
+  interactions on `waitHydrated(page)` (interactive workbench) or the
+  `sprig-island[data-sel="…"][data-sprig-hydrated]` selector wait above (headless
+  `isolate test`).
 - Props crossing into an island must be **serializable** — no functions, no class instances. If
   the source passes a callback, redesign the prop as an event the island emits (`ctx.output`) and
   note it in the Events section.

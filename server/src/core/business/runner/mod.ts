@@ -10,7 +10,12 @@ import { discover as realDiscover } from "../discover/mod.ts";
 const HOME = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? "";
 const RUNNER_DIR = `${HOME}/.isolate-runner/node_modules`;
 const PW_BIN = `${RUNNER_DIR}/.bin/playwright`;
-const DEFAULT_TIMEOUT_MS = 120_000;
+// A whole-app suite is ONE playwright spawn: 120s fits a component-sized app but a real
+// app's full suite exceeds it (twice measured on a 20+-page suite — the run dies as
+// error:"timeout" with nothing wrong). ISOLATE_SPAWN_TIMEOUT_MS raises the ceiling for
+// CI/gates without touching per-unit default behavior.
+const DEFAULT_TIMEOUT_MS =
+  Number(Deno.env.get("ISOLATE_SPAWN_TIMEOUT_MS")) || 120_000;
 
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 
@@ -93,11 +98,20 @@ export function parseReport(
   root: string,
 ): TestReport {
   const testResults: TestResult[] = [];
+  const loadErrors: string[] = [];
   let parsed = false;
   try {
     // deno-lint-ignore no-explicit-any
     const j: any = JSON.parse(new TextDecoder().decode(stdout));
     parsed = true;
+    // Playwright's top-level `errors` are the only trace of a spec that failed
+    // to LOAD (unresolvable import, syntax error): no suite, no spec, and
+    // usually an empty stderr. Dropping them leaves a contentless
+    // { ran: false, total: 0 } report.
+    for (const e of (j.errors ?? [])) {
+      const m = e?.message ?? e?.value ?? "";
+      if (m) loadErrors.push(stripAnsi(String(m)).trim());
+    }
     // deno-lint-ignore no-explicit-any
     const walk = (suite: any, file?: string) => {
       const f: string = suite.file ?? file ?? "";
@@ -127,13 +141,16 @@ export function parseReport(
   } catch { /* not JSON */ }
   const failed = testResults.filter((t) => !t.ok).length;
   return {
-    ok: parsed && testResults.length > 0 && failed === 0,
+    ok: parsed && testResults.length > 0 && failed === 0 &&
+      loadErrors.length === 0,
     ran: parsed && testResults.length > 0,
     total: testResults.length,
     passed: testResults.length - failed,
     failed,
     testResults,
-    error: (!parsed || testResults.length === 0)
+    error: loadErrors.length
+      ? loadErrors.join("\n\n").slice(0, 1600)
+      : (!parsed || testResults.length === 0)
       ? (stripAnsi(new TextDecoder().decode(stderr)).trim().slice(-800) ||
         undefined)
       : undefined,
@@ -274,5 +291,15 @@ export async function runTests(
     timeoutMs,
     root,
   );
-  return parseReport(stdout, stderr, byFile, root);
+  const report = parseReport(stdout, stderr, byFile, root);
+  if (!report.ran && !report.error) {
+    // Parsed-but-empty with a silent stderr: the specs never executed. The one
+    // cause observed in the field is a spec the Node runner can't load.
+    report.error =
+      `playwright produced no test results for ${safe.length} spec file(s) — ` +
+      `a spec that fails to load (unresolvable import such as "@std/expect" ` +
+      `or any Deno-only specifier, or a syntax error) reports nothing. Specs ` +
+      `must import { test, expect } from "@playwright/test".`;
+  }
+  return report;
 }

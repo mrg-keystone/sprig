@@ -118,7 +118,7 @@ function freePort(start: number): number {
 /** Identify an annotate server already answering on `port` (its mode + file), or null. Lets a
  *  relaunch REUSE the running one (same URL) instead of drifting to a new port — the fix for
  *  "the annotate port keeps switching." */
-async function annotatePing(port: number): Promise<{ ok: true; mode?: string; file?: string } | null> {
+async function annotatePing(port: number): Promise<{ ok: true; mode?: string; file?: string; notes?: string } | null> {
   try {
     const r = await fetch(`http://localhost:${port}/__annotate/ping`, { signal: AbortSignal.timeout(500) });
     if (!r.ok) return null;
@@ -279,7 +279,10 @@ async function pidAlive(pid: number): Promise<boolean> {
 /** Kill whatever is bound to `port` — an orphaned server/workbench a dead owner left behind. */
 async function killPort(port: number): Promise<void> {
   try {
-    const out = await new Deno.Command("lsof", { args: ["-ti", `tcp:${port}`], stdout: "piped", stderr: "null" }).output();
+    // LISTEN only: a bare `tcp:<port>` also matches CLIENT sockets on that port —
+    // including the probe fetch the CALLER just made, i.e. killPort would SIGKILL
+    // the very process doing the reclaiming (silent self-kill mid-boot).
+    const out = await new Deno.Command("lsof", { args: ["-ti", `tcp:${port}`, "-sTCP:LISTEN"], stdout: "piped", stderr: "null" }).output();
     for (const s of new TextDecoder().decode(out.stdout).split("\n")) {
       const p = Number(s.trim());
       if (p > 1) try { Deno.kill(p, "SIGKILL"); } catch { /* already gone */ }
@@ -334,10 +337,18 @@ class DevLog {
  *  (following rotation to the next file). Ctrl-C just detaches — the shared process keeps running. */
 async function attachShared(repo: string, e: DevLockEntry): Promise<void> {
   const folder = e["log-folder"];
+  // The ONLY visible difference from a single instance is this banner — below it,
+  // the live log streams exactly as if this terminal owned the process.
+  const msg = "THIS IS A SHARED INSTANCE BE POLITE";
+  const pad = `   ${msg}   `;
+  const bar = "═".repeat(pad.length);
   console.log(
-    `%c⟶ sprig dev — a shared process for "${repo}" is already running (pid ${e.pid}).%c\n` +
-      `  Streaming its live log; hot-reloads happen on edit. Ctrl-C detaches (it keeps running).\n` +
-      `  older logs: ${folder}  (only open if you really need them)\n`,
+    `%c\n╔${bar}╗\n║${pad}║\n╚${bar}╝\n`,
+    "color:#f59e0b;font-weight:bold",
+  );
+  console.log(
+    `%c⟶ sprig dev — shared process for "${repo}" (pid ${e.pid}); streaming its live log.%c\n` +
+      `  Hot-reloads happen on edit. Ctrl-C detaches (it keeps running). older logs: ${folder}\n`,
     "color:#7c3aed;font-weight:bold",
     "",
   );
@@ -1047,6 +1058,58 @@ async function loadDotEnv(path: string): Promise<void> {
   }
 }
 
+/** Load the project's DEFAULT DEV environment: `<projectRoot>/env/dev`, a flat
+ *  dotenv-format file per the infra convention (`env/<name>`, cf. `infra resolve`).
+ *  Loaded whenever sprig serves locally — after any explicit `.env` and never
+ *  overriding vars already set, so `.env` and the shell still win. */
+async function loadDefaultDevEnv(fromAbs: string): Promise<void> {
+  const p = join(findProjectRoot(fromAbs), "env", "dev");
+  try {
+    if (!(await Deno.stat(p)).isFile) return;
+  } catch {
+    return; // no env/dev — nothing to load
+  }
+  await loadDotEnv(p);
+  console.log(`[sprig] env: loaded default dev environment → ${p}`);
+}
+
+/** Restart the dev child on ANY change under the PROJECT root outside the app dir
+ *  (monorepo parity: a keep/server edit restarts dev just like an app logic edit).
+ *  The compiler's own watcher owns the app subtree (template/CSS HMR in place,
+ *  logic/server edits already exit DEV_RESTART_CODE), so it is excluded — as are
+ *  specs (annotate writes build-notes.json on every click), dot-paths (.git),
+ *  node_modules, test output, and logs, else dev would restart-storm itself.
+ *  No-op when the app IS the project root (the compiler's watcher already owns it). */
+function watchProjectForRestart(rootAbs: string, appAbs: string, restart: (why: string) => void): void {
+  if (rootAbs === appAbs) return;
+  const appRel = relative(rootAbs, appAbs).replace(/\\/g, "/");
+  const ignored = (p: string): boolean => {
+    const rel = relative(rootAbs, p).replace(/\\/g, "/");
+    if (!rel || rel.startsWith("..")) return true;
+    if (rel === appRel || rel.startsWith(`${appRel}/`)) return true;
+    return rel.split("/").some((seg) =>
+      seg.startsWith(".") || seg === "node_modules" || seg === "spec" ||
+      seg === "test-results" || seg === "coverage" || seg.endsWith(".log") ||
+      // deno.lock (and deno's atomic-write temps, deno.<hash>.tmp) are derived
+      // tooling output the child's own boot rewrites — without this a cold start
+      // restarts itself once per lockfile write.
+      seg === "deno.lock" || seg.endsWith(".tmp")
+    );
+  };
+  console.log(`[sprig dev] watching ${rootAbs} — changes outside ${appRel}/ restart the server`);
+  (async () => {
+    let timer: number | undefined;
+    for await (const ev of Deno.watchFs(rootAbs, { recursive: true })) {
+      const hit = ev.paths.find((p) => !ignored(p));
+      if (hit === undefined) continue;
+      clearTimeout(timer);
+      timer = setTimeout(() => restart(relative(rootAbs, hit)), 300);
+    }
+  })().catch((e) => {
+    console.error(`[sprig dev] repo watcher lost (${e}) — app-dir HMR still active; repo-wide restarts are not`);
+  });
+}
+
 /** Add one entry to <gitRoot>/.gitignore (created if absent) unless already there. */
 async function ensureGitignore(gitRoot: string, entry: string): Promise<void> {
   const p = join(gitRoot, ".gitignore");
@@ -1215,6 +1278,7 @@ async function serve(entry = "serve.ts"): Promise<void> {
   // the APP's deno.json from the cwd — the host imports @danet/core + the `$` aliases,
   // which the installed CLI's own (~/.sprig) config does not define. The host self-serves
   // (it calls app.listen()); we just forward stdio + the exit code.
+  await loadDefaultDevEnv(resolve(".")); // <projectRoot>/env/dev — inherited by the child below
   const { code } = await new Deno.Command(Deno.execPath(), {
     args: ["run", "-A", entry],
     stdin: "inherit",
@@ -1419,7 +1483,7 @@ async function devSupervisor(rawArgs: string[]): Promise<void> {
         stderr: "piped",
       }).spawn();
       const pump = async (r: ReadableStream<Uint8Array>) => {
-        for await (const c of r) await log.write(c);
+        for await (const c of r) await log.write(c); // DevLog tees to this terminal itself
       };
       const pumps = Promise.all([pump(child.stdout), pump(child.stderr)]).catch(() => {});
       const fwd = () => {
@@ -1428,7 +1492,10 @@ async function devSupervisor(rawArgs: string[]): Promise<void> {
       Deno.addSignalListener("SIGINT", fwd);
       Deno.addSignalListener("SIGTERM", fwd);
       const status = await child.status;
-      await pumps;
+      // Grace-bounded: a grandchild (the isolate workbench) that inherited the
+      // child's stdout keeps the pipe open after the child dies — an unbounded
+      // await here wedges the supervisor (no respawn, dead port, silent).
+      await Promise.race([pumps, new Promise((r) => setTimeout(r, 2000))]);
       Deno.removeSignalListener("SIGINT", fwd);
       Deno.removeSignalListener("SIGTERM", fwd);
       if (status.code !== DEV_RESTART_CODE) {
@@ -1499,17 +1566,28 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   const wantPort = Number(Deno.env.get("PORT")) || appPort(basename(resolve(appDir)));
   const ping = await annotatePing(wantPort);
   if (ping) {
-    if (ping.mode !== "prototype") {
+    // A registered shared process never reaches here — the supervisor attaches
+    // before spawning a child. So an annotate server answering on OUR port is a
+    // squatter: either an UNMANAGED server for this same app (a zombie from a
+    // dead/old-generation supervisor — silently "reusing" it serves stale code
+    // with no reload path and no error, the worst failure mode) or a different
+    // app entirely. Reclaim the former, refuse the latter loudly.
+    // Same derivation as makeAnnotate's notesPath: <specRoot>/spec/ui/build-notes.json.
+    const expectedNotes = join(specRootOf(resolve(appDir)), "spec", "ui", "build-notes.json");
+    if (ping.mode !== "prototype" && ping.notes === expectedNotes) {
       console.log(
-        `sprig annotate already running → http://localhost:${wantPort}${base}\n` +
-          `  Reusing it. Annotate there; I'll read spec/ui/build-notes.json. (Leave it running.)`,
+        `sprig dev: port ${wantPort} was held by an unmanaged dev server for this app — reclaiming it.`,
       );
-      return;
+      await killPort(wantPort);
+      await new Promise((r) => setTimeout(r, 300));
+    } else {
+      console.error(
+        `sprig dev: port ${wantPort} is already serving ${
+          ping.mode === "prototype" ? "a prototype annotate server" : `a DIFFERENT app${ping.notes ? ` (${ping.notes})` : ""}`
+        }. Stop it, or set a different PORT.`,
+      );
+      Deno.exit(1);
     }
-    console.error(
-      `sprig dev: a prototype annotate server is already on port ${wantPort}. Stop it, or set a different PORT.`,
-    );
-    Deno.exit(1);
   }
   if (!portIsFree(wantPort)) {
     console.error(
@@ -1550,6 +1628,9 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   //       concurrently with the renderer + keep below rather than sequentially after them.
   const rune = await detectRuneComposition(resolve(appDir));
   if (rune) await loadDotEnv(join(rune.gitRoot, ".env"));
+  // The infra env convention: <projectRoot>/env/dev is the default local
+  // environment. Loaded after .env (loadDotEnv never overrides, so .env wins).
+  await loadDefaultDevEnv(resolve(appDir));
   const keepPromise = rune
     ? import(toFileUrl(join(rune.gitRoot, rune.serverRel, "bootstrap", "mod.ts")).href)
     : null;
@@ -1622,6 +1703,18 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   const specRoot = specRootOf(appAbs);
   const { makeAnnotate } = await import("./.sprig/annotate.ts");
   const annotate = await makeAnnotate({ specRoot, srcDir: join(appAbs, "src"), isolateBase: isoBase });
+  // Monorepo watch: any change under the project root OUTSIDE the app dir (the
+  // keep/server half, shared config) restarts this child via the supervisor.
+  // The workbench MUST die with us (same as onServerReload): it inherits this
+  // process's stdout pipe, and a surviving workbench after a silent exit wedges
+  // the supervisor's log pump — no respawn, dead port, no error.
+  watchProjectForRestart(findProjectRoot(appAbs), appAbs, (why) => {
+    console.log(`[sprig dev] repo change: ${why} → restarting…`);
+    try {
+      wb?.kill("SIGTERM");
+    } catch { /* already gone */ }
+    Deno.exit(DEV_RESTART_CODE);
+  });
   const onSig = () => {
     try {
       wb?.kill("SIGTERM");

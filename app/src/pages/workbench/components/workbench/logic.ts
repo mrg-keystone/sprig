@@ -360,11 +360,20 @@ export default defineComponent({
             instances: d.instances || [],
           });
           if (d.background) bg.set(d.background);
+          // mirror the stage's readiness onto THIS frame: isolate-events waitHydrated()
+          // polls the MAIN frame's __isolateReady, and when a spec drives the shell the
+          // stage lives in the iframe. `hydrated` is stamped by the bridge (true once the
+          // target island's scope is captured + case signals applied / static SSR final).
+          (globalThis as { __isolateReady?: boolean }).__isolateReady = !!d.hydrated;
         } else if (d.type === "instances") {
           const s = surface();
           if (s) surface.set({ ...s, instances: d.instances || [] });
         } else if (d.type === "event") {
           events.set([{ id: ++evSeq, ...d.payload } as StageEvent, ...events()].slice(0, 300));
+          // forward to the isolate-events capture() binding when a spec installed it
+          // (exposeBinding lands in every frame; the stage only self-emits when it has no
+          // parent, so exactly one producer fires per event).
+          (globalThis as { __isolateEmit?: (e: unknown) => void }).__isolateEmit?.(d.payload);
         }
       });
       // focus the palette input when it opens

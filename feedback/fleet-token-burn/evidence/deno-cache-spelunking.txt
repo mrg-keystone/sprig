@@ -1,0 +1,65 @@
+Tool calls where fleet agents grepped/read hashed framework files in ~/Library/Caches/deno
+(reverse-engineering resolve.ts/ResolveCtx because the reference docs do not document the contract)
+
+[agent-a8d36df1dd65e752b.jsonl] Bash: {"command": "rg -n \"type Resolve|interface RouteContext|type RouteContext|resolve:.*ctx|ResolveCtx\" /Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f/framework/.sprig/core.ts 2>&1 | head -30"}
+
+[agent-a8d36df1dd65e752b.jsonl] Bash: {"command": "F=\"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f\"; file \"$F\" 2>&1; rg -n \"type Resolve|RouteContext|interface Ctx|resolve\\?:\" \"$F\" 2>&1 | head -40"}
+
+[agent-a8d36df1dd65e752b.jsonl] Bash: {"command": "F=\"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f\"; rg -n \"ResolveCtx|interface Guard|type Guard|GuardCtx\" \"$F\" 2>&1 | head -20"}
+
+[agent-a8d36df1dd65e752b.jsonl] Read: {"file_path": "/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f", "offset": 380, "limit": 80}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "rg -n \"Resolve\" /Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f/framework/.sprig/core.ts | head -30"}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "file \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f\" 2>&1\nls -la \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/\" | head -5"}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "grep -o \"Resolve[^;]*;\" \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f\" | head -20\necho \"---\"\ngrep -o \"type Resolve[^}]*}\" \"/Users/raphaelcastro/Library/Caches/deno/remote/http
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "grep -o \"ResolveCtx[^;]*;\" \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f\" | head -5\necho \"---interface---\"\npython3 - <<'EOF'\nimport re\npath = \"/Users/raphaelcastro/Library/Cac
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "python3 - <<'EOF'\npath = \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f\"\ndata = open(path, encoding='utf-8').read()\nidx = data.find(\"The per-request context a route's logic.ts\")\np
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "python3 - <<'EOF'\npath = \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f\"\ndata = open(path, encoding='utf-8').read()\nimport re\nfor m in re.finditer(r\"headers\", data):\n    print(m.
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "python3 - <<'EOF'\npath = \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f\"\ndata = open(path, encoding='utf-8').read()\nimport re\nfor m in re.finditer(r\"onServerInit\", data):\n    pri
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "grep -rn \"ServerInit\\|BrowserInit\\|serverInit\\|onServerLoad\" \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f\" 2>&1 | head -20"}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "python3 - <<'EOF'\npath = \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f\"\ndata = open(path, encoding='utf-8').read()\nidx = data.find(\"per-request route ctx (url/params/session) a rou
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "P=\"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/d1c78bb1342e64b6c8948ec9849cf63e9c79363f6709772fd64341b03f793a09\"\ngrep -n \"resolve.ts\\|logic.ts\\|modules\\[\" \"$P\" | head -60"}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "grep -rl \"onServerInit\" \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/\" 2>/dev/null | while read f; do echo \"== $f ==\"; grep -n \"onServerInit\" \"$f\" | head -5; done"}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "cat \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/80d7d006fe08a8c43204603c485d11e11475ba924f46fdcb9d4864797274faff\""}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "P=\"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/048900383d0e8a01b846c63cc2933e0cba67f1924a769636ed1c4d93a2fb0ce8\"\nsed -n '520,610p' \"$P\""}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "grep -rl \"RouteCtx\" \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/\" 2>/dev/null"}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "P=\"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f\"\ngrep -n \"RouteCtx\\|ROUTE_CTX\\|routeCtx\" \"$P\""}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "P=\"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/d1c78bb1342e64b6c8948ec9849cf63e9c79363f6709772fd64341b03f793a09\"\ngrep -n \"reqCtx\" \"$P\""}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "grep -rl \"reqCtx\" \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/\" 2>/dev/null"}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "for f in $(grep -rl \"reqCtx\" \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/\" 2>/dev/null); do\n  if grep -q \"renderDocument\\|renderStream\" \"$f\" 2>/dev/null; then echo \"$f\"; fi\ndone"}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "for f in $(grep -rl \"reqCtx\" \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/\" 2>/dev/null); do\n  sz=$(wc -c < \"$f\")\n  if [ \"$sz\" -gt 20000 ] && [ \"$sz\" -lt 60000 ]; then echo \"$f ($sz bytes)\"; fi\ndone"}
+
+[agent-a022900bb71ce404c.jsonl] Bash: {"command": "F=\"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/ffa71d5ffb276f51dd0cd86f37089535194f7b28611a8d59a4dae197608896d8\"\ngrep -n \"resolveFn\\|resolve(\\|Cls\\|new .*(\\|params\" \"$F\" | head -60"}
+
+[agent-ad557112ca3b33e5c.jsonl] Bash: {"command": "rg -n \"interface Resolve|type Resolve|ResolveCtx|resolve:.*Resolve|export interface ResolveContext\" /Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f/framework/.sprig/core.ts | head -30"}
+
+[agent-ad557112ca3b33e5c.jsonl] Bash: {"command": "rg -n \"interface Resolve|type Resolve\\b|ResolveCtx|export function resolve|Resolve =|headers\" \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f\" 2>&1 | head -40"}
+
+[agent-ad557112ca3b33e5c.jsonl] Bash: {"command": "sed -n '380,470p' \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f\""}
+
+[agent-ad557112ca3b33e5c.jsonl] Bash: {"command": "rg -n \"class Session|Session =|inject(Session)|RequestHeaders|HeadersToken|injector\\.|new Injector|runInInjectionContext|provide.*Headers|Backend =|class Backend\" \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacd
+
+[agent-ad557112ca3b33e5c.jsonl] Bash: {"command": "grep -n \"class Backend\\|Backend =\\|export class Backend\\|serveSprig\\|sessionMode\\|session mode\\|SessionProfile\\|env?.session\\|opts.session\\|readSession\\|createRenderer\" \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/d1c78bb1342e64b6c8948ec
+
+[agent-a8e5088856e87ada8.jsonl] Bash: {"command": "rg -n \"type Resolve|interface Resolve|headers\" \"/Users/raphaelcastro/Library/Caches/deno/remote/https/jsr.io/473205fd53864831805c09afdfb6c1173fdacda8f3624e02acbc1e6833fd9b6f/framework/.sprig/core.ts\" | head -40"}
+
+
+TOTAL such tool calls across the run: 112

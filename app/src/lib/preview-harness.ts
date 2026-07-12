@@ -28,6 +28,9 @@ interface ControlDef {
 interface Meta {
   name: string;
   selector: string;
+  /** the discovered entry kind ("island" | "component" | "page") — how the ready gate
+   *  knows whether to wait for a target island's scope or declare the static SSR final. */
+  kind?: string;
   background?: string;
   controlDefs: Record<string, ControlDef>;
   subControlDefs?: Record<string, Record<string, ControlDef>>;
@@ -65,9 +68,14 @@ function describe(el: Element): string {
 }
 function detailOf(e: Event, el: Element): string {
   if (e instanceof KeyboardEvent) return `key=${e.key}`;
-  const i = el as HTMLInputElement;
-  if (i && typeof i.value === "string" && "type" in i) {
-    return i.type === "checkbox" ? `checked=${i.checked}` : `value="${i.value}"`;
+  // value-carrying FORM FIELDS only. A <button> also has .value/.type (so a duck-typed
+  // check hijacks it into a useless `value=""`); its meaningful detail is its label, so
+  // it falls through to textContent with everything else.
+  if (el instanceof HTMLInputElement) {
+    return el.type === "checkbox" ? `checked=${el.checked}` : `value="${el.value}"`;
+  }
+  if (el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+    return `value="${el.value}"`;
   }
   return (el.textContent || "").trim().slice(0, 40);
 }
@@ -85,10 +93,15 @@ function bindOnce(): void {
       const el = (e.target as Element)?.closest?.(INTERACTIVE);
       // a disabled / aria-disabled control is inert — don't log its events
       if (!el || (el as HTMLButtonElement).disabled || el.getAttribute("aria-disabled") === "true") return;
-      up({
-        type: "event",
-        payload: { time: new Date().toLocaleTimeString(), source: describe(el), type: e.type, detail: detailOf(e, el) },
-      });
+      const payload = { time: new Date().toLocaleTimeString(), source: describe(el), type: e.type, detail: detailOf(e, el) };
+      up({ type: "event", payload });
+      // Direct `playwright test` navigation (no shell iframe): the isolate-events capture()
+      // binding — when a spec installed it — is the event stream's only consumer, so feed it
+      // here. Inside the shell the postMessage above reaches the shell, which forwards to
+      // the binding itself (one producer per context, never both).
+      if (parent === window) {
+        (globalThis as { __isolateEmit?: (e: unknown) => void }).__isolateEmit?.(payload);
+      }
     }, { capture: true });
   }
   addEventListener("message", (e: MessageEvent) => {
@@ -186,7 +199,17 @@ export default defineComponent({
     const up = (msg: Record<string, unknown>) => {
       if (isClient && parent !== window) parent.postMessage({ source: "isolate-stage", ...msg }, "*");
     };
-    const publish = () => up({ type: "ready", ...surface() });
+    // stageReady = the isolate-events waitHydrated() contract: the stage is interactive —
+    // an island target's scope is captured and the case's _signals applied, or the target
+    // is static (the SSR markup IS the final markup). Stamped on THIS frame's globalThis
+    // (direct playwright navigation polls it) and carried on every "ready" message (the
+    // shell stamps its own frame from it — waitForFunction only sees the main frame).
+    let stageReady = false;
+    const markReady = () => {
+      stageReady = true;
+      (globalThis as { __isolateReady?: boolean }).__isolateReady = true;
+    };
+    const publish = () => up({ type: "ready", hydrated: stageReady, ...surface() });
 
     // edit a static prop / innerHtml / child-component prop by reloading the preview
     // with the value as a query override (the resolver merges it, the server re-renders).
@@ -221,6 +244,13 @@ export default defineComponent({
     if (isClient) {
       active = { publish, applySet }; // this case is now the active bridge
       bindOnce();
+      // reset the ready flag for THIS case (soft-nav re-hydrates a new bridge in the same
+      // document — the previous case's true must not leak into the new case's wait).
+      (globalThis as { __isolateReady?: boolean }).__isolateReady = false;
+      // static target: no island scope to wait for — the server-rendered markup is final.
+      // (kind fallback: a missing kind — an older manifest — infers from the island host.)
+      const islandTarget = meta.kind ? meta.kind === "island" : !!document.querySelector(`sprig-island[data-sel="${meta.selector}"]`);
+      if (!islandTarget) markReady();
       // grab the target island's scope off its DOM node (robust to chunk boundaries),
       // apply the case's initial _signals, then publish. Retry for hydration order.
       const tryAttach = (tries = 0) => {
@@ -232,6 +262,7 @@ export default defineComponent({
           for (const [k, v] of Object.entries(cas.signals)) {
             if (isSignal(target[k])) (target[k] as { set: (x: unknown) => void }).set(v);
           }
+          markReady(); // scope captured + case signals applied → the island is interactive
           publish();
         } else if (tries < 60) {
           setTimeout(() => tryAttach(tries + 1), 40);

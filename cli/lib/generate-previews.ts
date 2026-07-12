@@ -114,6 +114,7 @@ export async function generatePreviews(entries: ComponentEntry[], appSrcDir: str
     const meta = {
       name: e.label,
       selector,
+      kind: e.kind, // the ready gate: island targets wait for scope attach, statics are ready at SSR
       background: e.background,
       controlDefs: e.controlDefs,
       subControlDefs: e.subControlDefs, // per-child-component control widgets

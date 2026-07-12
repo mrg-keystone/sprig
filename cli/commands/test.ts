@@ -7,6 +7,7 @@ import { generatePreviews } from "../lib/generate-previews.ts";
 import { materializeWorkbench } from "../lib/workbench.ts";
 import { buildClient } from "../../framework/.sprig/compiler/build.ts";
 import { formatProblems, printReport } from "../lib/format.ts";
+import { emitJson } from "../lib/json-stdout.ts";
 
 const REPO = fromFileUrl(new URL("../../", import.meta.url));
 
@@ -41,7 +42,11 @@ async function startServer(projectRoot: string, wbRoot?: string, wbApp?: string)
     stdout: "null",
     stderr: "null",
   }).spawn();
-  const baseURL = `http://localhost:${port}`;
+  // IPv4-explicit: `deno serve` binds 0.0.0.0 (IPv4 only), but Chromium/Node/Deno resolve
+  // `localhost` → ::1 FIRST — where an unrelated listener can answer (404 on every request,
+  // while curl's IPv4 health checks pass). The runner + specs must never depend on the
+  // environment's localhost resolution.
+  const baseURL = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 60; i++) {
     try {
       const r = await fetch(baseURL + "/", { signal: AbortSignal.timeout(500) });
@@ -57,17 +62,33 @@ export const testCmd = new Command()
   .description("Run every case's Playwright tests headlessly.")
   .arguments("[filter:string]")
   .option("-j, --json", "Output the full report as JSON (for agents/CI).")
+  .option("--failures-only", "With --json: keep full counts but list only failing tests (small tool output for agents).")
   .option("--base-url <url:string>", "Reuse a running preview server instead of spawning one.")
   .action(async (opts, filter) => {
-    const o = opts as unknown as { root: string; json?: boolean; baseUrl?: string };
+    const o = opts as unknown as { root: string; json?: boolean; failuresOnly?: boolean; baseUrl?: string };
     const root = resolve(o.root);
+    // --json promises "stdout is exactly one JSON document". The import-time reroute in
+    // lib/json-stdout.ts (main.ts's first import) already sends every console.log/info —
+    // including the server modules' boot logs, which fire before this action runs — to
+    // stderr; the report itself must therefore bypass console and write raw stdout.
+    if (o.json) {
+      console.log = console.info = (...a: unknown[]) => console.error(...a); // belt-and-suspenders for non-main entry
+    }
+    const printJson = (report: unknown) => {
+      // deno-lint-ignore no-explicit-any
+      const r = report as any;
+      if (o.failuresOnly && Array.isArray(r?.testResults)) {
+        r.testResults = r.testResults.filter((t: { ok?: boolean }) => !t.ok);
+      }
+      emitJson(JSON.stringify(r, null, 2));
+    };
     const { entries, problems } = await discover(root);
 
     // Fail fast on real config errors; _mocks "unsupported" notes are advisory.
     const fatal = problems.filter((p) => p.kind !== "unsupported");
     if (fatal.length) {
       if (o.json) {
-        console.log(JSON.stringify({ ok: false, ran: false, total: 0, testResults: [], problems: fatal }, null, 2));
+        printJson({ ok: false, ran: false, total: 0, testResults: [], problems: fatal });
       } else {
         console.error(`✗ isolate found ${fatal.length} config problem(s):\n\n${formatProblems(fatal, root)}\n`);
       }
@@ -84,55 +105,73 @@ export const testCmd = new Command()
       files = files.filter((p) => p.includes(f) || (byCase.get(p) ?? "").includes(f));
     }
     if (files.length === 0) {
-      console.log(o.json ? JSON.stringify({ ok: true, ran: false, total: 0, testResults: [] }) : "No matching tests.");
+      if (o.json) printJson({ ok: true, ran: false, total: 0, testResults: [] });
+      else console.log("No matching tests.");
       return;
     }
 
     if (!(await ensureRunner())) {
       const msg = "Playwright runner unavailable (~/.isolate-runner) — see the warning above.";
-      if (o.json) console.log(JSON.stringify({ ok: false, ran: false, total: 0, testResults: [], error: msg }, null, 2));
+      if (o.json) printJson({ ok: false, ran: false, total: 0, testResults: [], error: msg });
       else console.error(`✗ ${msg}`);
       Deno.exit(1);
     }
 
     // Generate the sprig previews + build the workbench app (so the specs have
     // routes to hit) — into the private SPRIG_WB_ROOT workbench when set, else
-    // the legacy shared install dir.
+    // the legacy shared install dir. Any failure here must still emit the JSON
+    // envelope in --json mode: exiting without a verdict leaves callers (agents,
+    // gates) staring at boot logs with no diagnosis.
     const wbRoot = workbenchRoot();
     let wbApp: string | undefined;
-    if (wbRoot) {
-      wbApp = await materializeWorkbench(wbRoot, root);
-      await generatePreviews(entries, join(wbApp, "src"), resolve(root, "src"));
-      const built = await buildClient(join(wbApp, "src"), join(wbRoot, "static"));
-      if (!o.json) console.error(`workbench built: ${built.islands.length} island chunk(s) → ${join(wbRoot, "static")}`);
-    } else {
-      await generatePreviews(entries, resolve(REPO, "app/src"), resolve(root, "src"));
-      const build = await new Deno.Command("deno", {
-        args: ["run", "-A", resolve(REPO, "framework/cli.ts"), "build", "app"],
-        cwd: REPO,
-        stdout: "null",
-        stderr: "inherit",
-      }).output();
-      if (!build.success) Deno.exit(build.code);
-    }
-
     let child: Deno.ChildProcess | undefined;
     let baseUrl = o.baseUrl;
-    if (!baseUrl) {
-      if (!o.json) console.error("Starting preview server…");
-      const s = await startServer(root, wbRoot, wbApp);
-      child = s.child;
-      baseUrl = s.baseURL;
+    try {
+      if (wbRoot) {
+        wbApp = await materializeWorkbench(wbRoot, root);
+        await generatePreviews(entries, join(wbApp, "src"), resolve(root, "src"));
+        const built = await buildClient(join(wbApp, "src"), join(wbRoot, "static"));
+        if (!o.json) console.error(`workbench built: ${built.islands.length} island chunk(s) → ${join(wbRoot, "static")}`);
+      } else {
+        await generatePreviews(entries, resolve(REPO, "app/src"), resolve(root, "src"));
+        const build = await new Deno.Command("deno", {
+          args: ["run", "-A", resolve(REPO, "framework/cli.ts"), "build", "app"],
+          cwd: REPO,
+          stdout: "null",
+          stderr: "inherit",
+        }).output();
+        if (!build.success) {
+          throw new Error(`workbench app build failed (exit ${build.code})`);
+        }
+      }
+
+      if (!baseUrl) {
+        if (!o.json) console.error("Starting preview server…");
+        const s = await startServer(root, wbRoot, wbApp);
+        child = s.child;
+        baseUrl = s.baseURL;
+      }
+    } catch (e) {
+      const msg = `preview/build stage failed before any test ran: ${(e as Error).message}`;
+      if (o.json) {
+        printJson({ ok: false, ran: false, total: 0, testResults: [], error: msg });
+      } else {
+        console.error(`✗ ${msg}`);
+      }
+      try {
+        child?.kill("SIGTERM");
+      } catch { /* dead */ }
+      Deno.exit(1);
     }
 
     try {
       const report = await runTests({ files, baseUrl, projectRoot: root });
-      if (o.json) console.log(JSON.stringify(report, null, 2));
+      if (o.json) printJson(report);
       else printReport(report, root);
       Deno.exit(report.ran && report.failed === 0 ? 0 : 1);
     } catch (e) {
       const msg = (e as Error).message;
-      if (o.json) console.log(JSON.stringify({ ok: false, ran: false, total: 0, testResults: [], error: msg }, null, 2));
+      if (o.json) printJson({ ok: false, ran: false, total: 0, testResults: [], error: msg });
       else console.error(`✗ test run failed: ${msg}`);
       Deno.exit(1);
     } finally {

@@ -83,6 +83,29 @@ Deno.test("runSpec — aborts and throws timeout", async () => {
   );
 });
 
+Deno.test("parseReport — surfaces top-level load errors", () => {
+  const json = JSON.stringify({
+    suites: [],
+    errors: [{ message: "Error: Cannot find package '@std/expect'" }],
+  });
+  const r = parseReport(enc(json), enc(""), new Map(), "/root");
+  assertEquals(r.ok, false);
+  assertEquals(r.ran, false);
+  assertEquals(r.total, 0);
+  assert(r.error?.includes("@std/expect"));
+});
+
+Deno.test("runTests — parsed-but-empty report carries the didn't-load hint", async () => {
+  const r = await runTests({ projectRoot: "/root", files: ["/root/a.spec.ts"] }, {
+    runnerPresent: () => Promise.resolve(true),
+    runSpec: () =>
+      Promise.resolve({ stdout: enc(JSON.stringify({ suites: [] })), stderr: enc("") }),
+  });
+  assertEquals(r.ran, false);
+  assert(r.error?.includes("@playwright/test"));
+  assert(r.error?.includes("1 spec file(s)"));
+});
+
 Deno.test("parseReport — counts failures", () => {
   const json = JSON.stringify({
     suites: [{
