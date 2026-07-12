@@ -263,6 +263,14 @@ export async function createRenderer(
     const defs = bySelector.get(selector);
     return defs && defs.length ? defs[0] : undefined;
   };
+  /** The ISLAND def for a bare selector. A page may legally share its basename with the
+   *  island it mounts (pages/workbench mounting components/workbench — "the page mounts
+   *  the shell island" pattern); findBySelector's first-registered def is then the PAGE,
+   *  whose template renders the island itself. Callers that serve an island chunk (the
+   *  dev AST endpoint) must resolve the island def, or hydration is poisoned with a
+   *  template that emits the island inside itself — an unbounded self-nesting loop. */
+  const findIslandBySelector = (selector: string): ComponentDef | undefined =>
+    (bySelector.get(selector) ?? []).find((d) => !!d.island);
 
   /** Render ONE level of the matched chain (a leaf page, a layout router, or the shell):
    *  run its logic.ts (onServerInit → render scope), render its template with `outlet` (keyed
@@ -425,8 +433,10 @@ export async function createRenderer(
     },
     astFor(id) {
       // relDir first (dev watcher / HMR — addresses the exact component), else a bare
-      // selector (island fetchAst, keyed by selector — unambiguous for unique basenames).
-      const def = byRelDir.get(id) ?? findBySelector(id);
+      // selector. A bare selector is an ISLAND chunk's fetchAst (keyed by data-sel), so
+      // the ISLAND def must win over a same-basename page (see findIslandBySelector);
+      // statics/pages still resolve for unique basenames via the plain fallback.
+      const def = byRelDir.get(id) ?? findIslandBySelector(id) ?? findBySelector(id);
       return def ? serialize(def.template) : null;
     },
   };

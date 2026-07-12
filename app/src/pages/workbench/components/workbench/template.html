@@ -129,7 +129,7 @@
           <div class="stage-canvas" [class.with-kbd]="kbd()" [class.kbd-overlay]="kbd() && kbdMode() === 'ios'" [class.kbd-resize]="kbd() && kbdMode() === 'android'" [attr.style]="canvasStyle()">
             <iframe class="stage-frame" [src]="frameSrc()"></iframe>
             @if (kbd()) {
-              <div class="kbd" aria-hidden="true">
+              <div class="wb-kbd" aria-hidden="true">
                 <div class="kbd-row">
                   @for (k of kbdR1; track k) { <span class="kbd-key">{{ k }}</span> }
                 </div>
@@ -155,7 +155,7 @@
         }
       </div>
 
-      <section class="dock" [class.collapsed]="!dockOpen()" [attr.style]="dockStyle()">
+      <section class="wb-dock" [class.collapsed]="!dockOpen()" [attr.style]="dockStyle()">
         @if (dockOpen()) {
           <div class="dock-resize" (pointerdown)="startDockResize($event)"></div>
         }
@@ -163,11 +163,11 @@
           <button type="button" class="dock-tab" [class.on]="dockTab() === 'controls'" (click)="setDock('controls')">controls</button>
           <button type="button" class="dock-tab" [class.on]="dockTab() === 'console'" (click)="setDock('console')">
             console
-            @if (events().length > 0) { <span class="badge accent">{{ events().length }}</span> }
+            @if (events().length > 0) { <span class="wb-badge accent">{{ events().length }}</span> }
           </button>
           <button type="button" class="dock-tab" [class.on]="dockTab() === 'tests'" (click)="setDock('tests')">
             tests
-            @if (activeCase() && activeCase().tests.length > 0) { <span class="badge">{{ activeCase().tests.length }}</span> }
+            @if (activeCase() && activeCase().tests.length > 0) { <span class="wb-badge">{{ activeCase().tests.length }}</span> }
           </button>
           <button type="button" class="dock-collapse" [attr.title]="dockOpen() ? 'collapse' : 'expand'" (click)="toggleDock()">{{ dockOpen() ? '▾' : '▴' }}</button>
         </div>
@@ -350,7 +350,7 @@
 
   <div class="toasts">
     @for (t of toasts(); track t.id) {
-      <div class="toast" [class.ok]="t.tone === 'ok'" [class.fail]="t.tone === 'fail'" [class.info]="t.tone === 'info'">
+      <div class="wb-toast" [class.ok]="t.tone === 'ok'" [class.fail]="t.tone === 'fail'" [class.info]="t.tone === 'info'">
         <div>
           <div class="tt">{{ t.title }}</div>
           <div class="tx">{{ t.text }}</div>

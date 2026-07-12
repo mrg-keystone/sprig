@@ -56,8 +56,35 @@ Two ways, both auto-discovered by the route's `load` — you don't register eith
    import type { Resolve } from "@mrg-keystone/sprig";
    export const resolve: Resolve = ({ params, url }) => ({ name: "sprig" });
    ```
-   `resolve` receives `{ params, url }` and runs inside the DI injector (so `inject(Backend)`
-   works). Its returned object becomes the template's inputs.
+
+   **The full `ResolveCtx` contract** (this is everything — never excavate the framework
+   source or the Deno cache for more; a measured fleet burned 112 tool calls doing that):
+   - `ctx.params: Record<string, string>` — the matched route params (`:id` → `params.id`).
+   - `ctx.url: URL` — the request URL; query via `url.searchParams`.
+   - **Deliberately NO `headers` and NO `session`.** Cookies/session are unreadable inside
+     `resolve` — that's the documented SSR-data-leak guard. Auth checks belong in guards /
+     per-route `grants`; a page whose DATA needs the session profile uses
+     `logic.ts onServerLoad(ctx: RouteCtx)` instead, where
+     `RouteCtx = { url, params, session: SessionProfile | null }` — the resolve twin
+     widened with the session.
+   - **Return** `Record<string, unknown>` (sync or a Promise). The returned object becomes
+     the template's inputs, exactly like `logic.ts` fields; values crossing into an island
+     must be serializable.
+   - **DI:** `resolve` runs inside the request's route injector (shared with the guard
+     chain) — `inject(Backend)` etc. work, but only SYNCHRONOUSLY (before any `await`),
+     the same rule as components.
+   - **Errors:** a throwing `resolve` → controlled **500** (fails closed). A matched route
+     whose RESOURCE is missing is not a throw: capture the injector synchronously and set
+     the status —
+     ```ts
+     import { currentInjector, setResponseStatus } from "@mrg-keystone/sprig";
+     export const resolve: Resolve = async ({ params }) => {
+       const inj = currentInjector();            // capture BEFORE any await
+       const org = await inject(Backend).fetch(`/orgs/${params.id}`).then(r => r.ok ? r.json() : null);
+       if (!org) setResponseStatus(inj, 404);    // SSR response line carries the 404
+       return { org };
+     };
+     ```
 
 A page folder with neither just renders its `template.html` statically.
 

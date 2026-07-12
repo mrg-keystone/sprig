@@ -15,7 +15,8 @@
     "jsr:@danet/zod@0.0.7": "0.0.7",
     "jsr:@dx/reflect@0.2.14": "0.2.14",
     "jsr:@hono/hono@4.6.3": "4.6.3",
-    "jsr:@mrg-keystone/rune@^4.1.0": "4.1.0",
+    "jsr:@mrg-keystone/rune@*": "4.2.0",
+    "jsr:@mrg-keystone/rune@^4.1.0": "4.2.0",
     "jsr:@mrg-keystone/sprig@0.15.1": "0.15.1",
     "jsr:@std/assert@*": "1.0.19",
     "jsr:@std/assert@1": "1.0.19",
@@ -125,8 +126,8 @@
     "@hono/hono@4.6.3": {
       "integrity": "a1f5a18cd12a0db54755b0461dd5a4e2d93a6f85403073eb710103eacc42daf3"
     },
-    "@mrg-keystone/rune@4.1.0": {
-      "integrity": "180a4baffcbfb8d5233254b65d9320ef41f6017e72117614ad8b1ed17f8b4d32",
+    "@mrg-keystone/rune@4.2.0": {
+      "integrity": "911e6f7e93c0a1395899f4a94393c478349229ba256fc91601f46ff07b5d16d0",
       "dependencies": [
         "jsr:@danet/core@2",
         "jsr:@danet/swagger",
@@ -225,8 +226,8 @@
       "os": ["darwin"],
       "scripts": true
     },
-    "libphonenumber-js@1.13.7": {
-      "integrity": "sha512-rvr3HIMdOgzhz1RFGjftji+wjoAFlzhqCNqJOU/MKTZQ8d9NZxAR/tI+0weDicyoucqVR0U1GCniqHJ0f8aM2A=="
+    "libphonenumber-js@1.13.8": {
+      "integrity": "sha512-80xal1m93rADejw2pMp2MSzFhHCPLEspjHxnH2UtqI+DgAmElsbmLMiqk9niwH9NWAfjsRtaJI+qBrOEmRx9nQ=="
     },
     "openapi3-ts@4.6.0": {
       "integrity": "sha512-a4sfn6L2sIShhtzJqmjGrARvxAW/3F2BJDdyRVvNF9VhAsZSh5hSyI3a9TNvmzBxXmq66nY5LNT5bQcBxYAZZg==",

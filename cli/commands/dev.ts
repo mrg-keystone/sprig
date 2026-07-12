@@ -94,7 +94,10 @@ export const devCmd = new Command()
       } catch { /* already dead */ }
     });
 
-    const url = `http://localhost:${port}/`;
+    // IPv4-explicit on purpose: `deno serve` binds 0.0.0.0 (IPv4 only), while browsers and
+    // fetch resolve `localhost` → ::1 first — in environments with a stale ::1 listener that
+    // 404s, every request silently misses this server. Print (and open) the exact address.
+    const url = `http://127.0.0.1:${port}/`;
     console.log(`\n  ◆ isolate ready → ${url}\n     project: ${root}\n`);
     if (o.open) {
       setTimeout(() => openBrowser(url), 1200);

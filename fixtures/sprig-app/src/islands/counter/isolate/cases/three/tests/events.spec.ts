@@ -1,48 +1,54 @@
 import { expect, test } from "@playwright/test";
-import { waitHydrated } from "isolate-events";
 
-// The event log captures every event the stage fires (scoped to the component).
-// Filters: per-type checkboxes + an addable/removable list of regexes (AND).
-test("regex filters are addable and removable", async ({ page }) => {
-  await page.goto("/components/counter/default/three");
-  await waitHydrated(page); // clicking the island before hydration is a silent no-op
-  const log = page.locator(".iso-log");
-  await expect(log.locator(".iso-log__empty")).toBeVisible(); // empty at first
+// The workbench SHELL's console: stage events stream up from the preview iframe via
+// postMessage; the console dock tab lists them with a substring filter (.con-filter,
+// over source+type+detail) and per-type toggle buttons (.con-type). These specs drive
+// the shell page itself (hash-selected case) and interact with the stage through its
+// iframe. (The v0.3 regex-chip filter UI was replaced by the single filter input.)
+const BASE = process.env.ISOLATE_BASE_URL ?? "http://127.0.0.1:8000";
+const SHELL = `${BASE}/#/components/counter/default/three`;
 
-  await page.locator("#increment").click();
-  await page.locator("#decrement").click();
+test("console filter narrows to matching rows and restores on clear", async ({ page }) => {
+  await page.goto(SHELL);
+  // the stage is live once the bridge published its surface (controls tab fills in)
+  await expect(page.locator(".ctrl-group").first()).toBeVisible({ timeout: 10000 });
+  const frame = page.frameLocator(".stage-frame");
 
-  // Add a regex filter (Enter) → narrows to matching rows only.
-  await log.locator(".iso-log__filter").fill("button#increment");
-  await log.locator(".iso-log__filter").press("Enter");
-  await expect(log.locator(".iso-log__chip")).toHaveCount(1);
-  await expect(log.locator(".iso-log__chip")).toContainText("button#increment");
-  await expect(log.locator(".iso-log__row", { hasText: "button#decrement" }))
-    .toHaveCount(0);
-  await expect(log.locator(".iso-log__row", { hasText: "button#increment" }))
-    .not.toHaveCount(0);
+  await frame.locator("#increment").click();
+  await frame.locator("#decrement").click();
 
-  // Remove it → the filtered-out rows return.
-  await log.locator(".iso-log__chip-x").click();
-  await expect(log.locator(".iso-log__chip")).toHaveCount(0);
-  await expect(log.locator(".iso-log__row", { hasText: "button#decrement" }))
-    .not.toHaveCount(0);
+  await page.locator(".dock-tab", { hasText: "console" }).click();
+  await expect(page.locator(".con-row", { hasText: "button#increment" }).first()).toBeVisible();
+  await expect(page.locator(".con-row", { hasText: "button#decrement" }).first()).toBeVisible();
+
+  // Filter narrows to matching rows only…
+  await page.locator(".con-filter").fill("button#increment");
+  await expect(page.locator(".con-row", { hasText: "button#decrement" })).toHaveCount(0);
+  await expect(page.locator(".con-row", { hasText: "button#increment" }).first()).toBeVisible();
+
+  // …and clearing it restores the filtered-out rows.
+  await page.locator(".con-filter").fill("");
+  await expect(page.locator(".con-row", { hasText: "button#decrement" }).first()).toBeVisible();
 });
 
-test("event-type checkboxes hide that type", async ({ page }) => {
-  await page.goto("/components/counter/default/three");
-  await waitHydrated(page); // clicking the island before hydration is a silent no-op
-  const log = page.locator(".iso-log");
+test("event-type toggles hide that type", async ({ page }) => {
+  await page.goto(SHELL);
+  await expect(page.locator(".ctrl-group").first()).toBeVisible({ timeout: 10000 });
+  const frame = page.frameLocator(".stage-frame");
 
-  await page.locator("#increment").click();
-  await expect(log.locator(".iso-log__row", { hasText: "pointerdown" }))
-    .toHaveCount(1);
+  await frame.locator("#increment").click();
 
-  // Untick "pointerdown" → its rows disappear. Use click() (one deliberate click)
-  // rather than uncheck(), which re-clicks a controlled checkbox mid-re-render.
-  await log.locator(".iso-log__type", { hasText: "pointerdown" }).locator(
-    "input[type=checkbox]",
-  ).click();
-  await expect(log.locator(".iso-log__row", { hasText: "pointerdown" }))
-    .toHaveCount(0);
+  await page.locator(".dock-tab", { hasText: "console" }).click();
+  // settle: "click" is the LAST type the stage click emits — once its toggle chip exists,
+  // the event burst is fully in and the console has stopped re-rendering under us.
+  await expect(page.locator(".con-row", { hasText: "pointerdown" }).first()).toBeVisible();
+  await expect(page.locator(".con-type", { hasText: "click" }).first()).toBeVisible();
+
+  // Toggle "pointerdown" off (retry: a click that lands mid re-render is swallowed;
+  // the .off class is the proof the toggle took).
+  await expect(async () => {
+    await page.locator(".con-type", { hasText: "pointerdown" }).click();
+    await expect(page.locator(".con-type", { hasText: "pointerdown" })).toHaveClass(/off/, { timeout: 1000 });
+  }).toPass({ timeout: 10000 });
+  await expect(page.locator(".con-row", { hasText: "pointerdown" })).toHaveCount(0);
 });

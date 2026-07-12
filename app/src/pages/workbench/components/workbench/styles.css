@@ -116,9 +116,9 @@
 .stage-canvas.with-kbd { position: relative; }
 .stage-canvas.kbd-resize { display: flex; flex-direction: column; border-radius: var(--r-lg); box-shadow: var(--shadow); }
 .stage-canvas.kbd-resize .stage-frame { flex: 1; min-height: 0; border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: none; }
-.stage-canvas.kbd-overlay .kbd { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+.stage-canvas.kbd-overlay .wb-kbd { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
   box-shadow: 0 -8px 24px -10px rgba(0,0,0,.3); }
-.kbd { background: #bdb5a3; padding: 9px 6px 16px; display: flex; flex-direction: column; gap: 7px;
+.wb-kbd { background: #bdb5a3; padding: 9px 6px 16px; display: flex; flex-direction: column; gap: 7px;
   user-select: none; border-radius: 0 0 var(--r-lg) var(--r-lg); border-top: 1px solid rgba(0,0,0,.08); }
 .kbd-row { display: flex; justify-content: center; gap: 5px; width: 100%; max-width: 460px; margin: 0 auto; }
 .kbd-key { flex: 1; max-width: 36px; height: 38px; background: #fff; border-radius: 5px; display: grid;
@@ -128,8 +128,8 @@
 .kbd-key.space { max-width: none; flex: 5; color: var(--ink-3); font-size: 11px; letter-spacing: .1em; }
 .kbd-key.return { max-width: none; flex: 2; background: var(--accent); color: #fff; font-size: 11px; }
 
-.dock { position: relative; display: flex; flex-direction: column; height: 280px; min-height: 0; background: var(--surface); border-top: 1px solid var(--line); }
-.dock.collapsed { height: auto; }
+.wb-dock { position: relative; display: flex; flex-direction: column; height: 280px; min-height: 0; background: var(--surface); border-top: 1px solid var(--line); }
+.wb-dock.collapsed { height: auto; }
 .dock-resize { position: absolute; top: -3px; left: 0; width: 100%; height: 6px; cursor: row-resize; z-index: 6; }
 .dock-resize::after { content: ""; position: absolute; top: 2px; left: 50%; transform: translateX(-50%); width: 34px; height: 3px; border-radius: 99px; background: var(--line-2); }
 .dock-tabs { display: flex; align-items: center; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
@@ -137,8 +137,8 @@
 .dock-tab:hover { color: var(--ink); }
 .dock-tab.on { color: var(--accent-2); }
 .dock-tab.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--accent); border-radius: 99px; }
-.dock-tab .badge { font-size: 10px; font-weight: 700; border-radius: 99px; padding: 1px 6px; background: var(--line); color: var(--ink-2); }
-.dock-tab .badge.accent { background: var(--accent-soft); color: var(--accent-2); }
+.dock-tab .wb-badge { font-size: 10px; font-weight: 700; border-radius: 99px; padding: 1px 6px; background: var(--line); color: var(--ink-2); }
+.dock-tab .wb-badge.accent { background: var(--accent-soft); color: var(--accent-2); }
 .dock-collapse { margin-left: auto; border: 0; background: none; color: var(--ink-3); padding: 8px 6px; font-size: 13px; }
 .dock-collapse:hover { color: var(--ink); }
 .dock-body { flex: 1; overflow: auto; min-height: 0; }
@@ -217,14 +217,14 @@
 
 .toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 9px;
   z-index: 70; width: 340px; }
-.toast { display: flex; gap: 11px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line-2);
+.wb-toast { display: flex; gap: 11px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line-2);
   border-left: 3px solid var(--accent); border-radius: var(--r); box-shadow: var(--shadow-lg); padding: 11px 13px; font-size: 12px; }
-.toast.ok { border-left-color: var(--ok); }
-.toast.fail { border-left-color: var(--fail); }
-.toast.info { border-left-color: var(--accent); }
-.toast .tt { font-weight: 700; margin-bottom: 2px; }
-.toast .tx { color: var(--ink-2); line-height: 1.5; }
-.toast .x { margin-left: auto; border: 0; background: none; color: var(--ink-3); font-size: 15px; line-height: 1; }
+.wb-toast.ok { border-left-color: var(--ok); }
+.wb-toast.fail { border-left-color: var(--fail); }
+.wb-toast.info { border-left-color: var(--accent); }
+.wb-toast .tt { font-weight: 700; margin-bottom: 2px; }
+.wb-toast .tx { color: var(--ink-2); line-height: 1.5; }
+.wb-toast .x { margin-left: auto; border: 0; background: none; color: var(--ink-3); font-size: 15px; line-height: 1; }
 
 @media (max-width: 760px) {
   .body { grid-template-columns: 1fr; }

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 // The isolate runner exposes the preview server as ISOLATE_BASE_URL; no playwright
 // config sets a baseURL, so resolve routes against it explicitly.
-const BASE = process.env.ISOLATE_BASE_URL ?? "http://localhost:8000";
+const BASE = process.env.ISOLATE_BASE_URL ?? "http://127.0.0.1:8000";
 
 // `new` case (isNew = true): the <article> carries `animate-rise`, so the CSS-only
 // entrance plays. The isolate bridge does NOT surface CSS animation events

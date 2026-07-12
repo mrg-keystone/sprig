@@ -34,7 +34,9 @@ export interface EventBridge {
 
 /**
  * Bridge the page's event stream into the test. Call BEFORE `page.goto` so the
- * binding is installed first.
+ * binding is installed first. The preview page's stage-bridge produces the
+ * events (directly under headless `playwright test` navigation; forwarded by
+ * the workbench shell when the case runs inside it), so no shell is required.
  */
 export function capture(page: Page): Promise<EventBridge>;
 
@@ -45,7 +47,10 @@ export interface WaitOptions {
 
 /**
  * Wait until the isolate preview has hydrated and its stage is interactive, so a
- * click is not a silent no-op against SSR markup. Call after `page.goto`, before
- * interacting with an island.
+ * click is not a silent no-op against SSR markup: for an island target, its scope
+ * is captured and the case's `_signals` are applied; a static target is ready as
+ * soon as its (final) SSR markup is served. Works under plain headless
+ * `playwright test` navigation — no workbench shell required. Call after
+ * `page.goto`, before interacting with an island.
  */
 export function waitHydrated(page: Page, opts?: WaitOptions): Promise<void>;
