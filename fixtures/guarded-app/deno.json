@@ -1,11 +1,12 @@
 {
-  "name": "@fixtures/guarded-app",
-  "version": "0.0.0",
-  "exports": "./src/mod.ts",
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "lib": ["dom", "deno.ns", "esnext"]
+    "lib": [
+      "dom",
+      "deno.ns",
+      "esnext"
+    ]
   },
   "imports": {
     "@mrg-keystone/sprig": "../../framework/.sprig/core.ts",

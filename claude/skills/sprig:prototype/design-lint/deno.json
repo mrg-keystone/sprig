@@ -1,7 +1,4 @@
 {
-  "name": "@toolchain/design-lint",
-  "version": "0.1.0",
-  "exports": "./src/engine/detect-antipatterns.mjs",
   "tasks": {
     "lint": "deno run --allow-read --allow-env bin/detect.mjs",
     "lint:url": "deno run --allow-read --allow-env --allow-net --allow-write --allow-run bin/detect.mjs"
