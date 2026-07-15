@@ -15,8 +15,7 @@
     "jsr:@danet/zod@0.0.7": "0.0.7",
     "jsr:@dx/reflect@0.2.14": "0.2.14",
     "jsr:@hono/hono@4.6.3": "4.6.3",
-    "jsr:@mrg-keystone/rune@*": "4.2.0",
-    "jsr:@mrg-keystone/rune@^4.1.0": "4.2.0",
+    "jsr:@mrg-keystone/rune@^4.2.0": "4.2.0",
     "jsr:@mrg-keystone/sprig@0.15.1": "0.15.1",
     "jsr:@std/assert@*": "1.0.19",
     "jsr:@std/assert@1": "1.0.19",
@@ -305,7 +304,7 @@
       "server": {
         "dependencies": [
           "jsr:@danet/swagger@^2.1.1",
-          "jsr:@mrg-keystone/rune@^4.1.0",
+          "jsr:@mrg-keystone/rune@^4.2.0",
           "jsr:@std/assert@*",
           "jsr:@std/path@*",
           "npm:class-transformer@0.5",
