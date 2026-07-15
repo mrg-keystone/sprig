@@ -1,11 +1,14 @@
 {
-  "name": "@app/web",
-  "version": "0.0.0",
-  "exports": "./src/main.ts",
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "lib": ["dom", "dom.asynciterable", "dom.iterable", "deno.ns", "esnext"]
+    "lib": [
+      "dom",
+      "dom.asynciterable",
+      "dom.iterable",
+      "deno.ns",
+      "esnext"
+    ]
   },
   "imports": {
     "@mrg-keystone/sprig": "../framework/.sprig/core.ts",
