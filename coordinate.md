@@ -19,8 +19,8 @@ are siblings under the git root**, and they must read/write **one** `spec/`, not
 
 Today, **both toolchains anchor `spec/` on the wrong thing** — sprig on the CLI invocation
 dir (`appDir`/cwd), rune partly on the spec file's parent dirs and partly on cwd. So a
-frontend invoked from `<git>/frontend/` writes `spec/ui` into `<git>/frontend/spec/ui`, while
-the backend's cake reads `<git>/backend/spec/misc` — the contract fragments.
+frontend invoked from `<git>/ui/` writes `spec/ui` into `<git>/ui/spec/ui`, while
+the backend's cake reads `<git>/server/spec/misc` — the contract fragments.
 
 **The fix is one shared rule, implemented identically on both sides:** resolve `spec/` by
 **walking up to the nearest ancestor that contains `.git`**, and treat that ancestor as the
@@ -72,19 +72,19 @@ specRoot(startDir):
 ```
 <git-root>/                 # has .git  ← spec/ is a SIBLING of this
   .git/
+  deno.json                 # Deno workspace root: workspace ["./ui","./server"] + tasks
+  serve.ts                  # GENERATED composition root: serveSprig({ keep: api })
   spec/                     # ONE shared contract, read+written by BOTH halves
     product/                #   spec.md + user-stories.md   (rune:scope)
     runes/                  #   .rune backend specs          (rune:spec)
     ui/                     #   prototype + design system    (sprig:prototype / :design)
     misc/                   #   data.json, cake.json         (rune:data / rune:cake)
-  frontend/                 # a sprig app   (its own deno.json, src/, app/, serve.ts)
-  backend/                  # a rune/keep app (its own deno.json, src/<module>/, bootstrap/)
+  ui/                       # the sprig UI package (its own deno.json, src/, static/)
+  server/                   # a rune/keep package (its own deno.json, src/<module>/, bootstrap/)
 ```
 
-(The single-package flat app from [`coms.md`](./coms.md) Q3 — where `spec/`, `src/`, `app/`,
-and `deno.json` all sit at one `<root>` — is just the degenerate case where that `<root>` **is**
-the git root. The walk returns it unchanged, so flat apps keep working; this doc only adds the
-**split-package** monorepo case, where `spec/` must lift above the per-package roots.)
+The two packages are Deno workspace members under the git root; `spec/` lifts above both
+per-package roots so a single shared contract serves them both.
 
 ---
 
@@ -174,10 +174,9 @@ Implementing this revealed the rune **engine** needs **no change** — it's alre
    (`deno.json` / `--root`).*
 
 **Split-package output targeting:** with specs shared at `<git>/spec/runes/`, `rune sync` writes
-codegen to `<resolveRoot>/src/<m>` — for a flat app that's the backend at the git root (correct);
-for a backend in its own subdir, pass `--root <git>/backend` (the existing override, `sync/mod.ts:140`)
-so code lands in the package. An automatic spec-root-vs-output-root split is a possible future
-enhancement, **not** needed for the shipped flat layout.
+codegen to `<resolveRoot>/src/<m>`; for the server package in its own subdir, pass
+`--root <git>/server` (the existing override, `sync/mod.ts:140`) so code lands in the package. An
+automatic spec-root-vs-output-root split is a possible future enhancement.
 
 ---
 
@@ -199,9 +198,9 @@ enhancement, **not** needed for the shipped flat layout.
 
 ## Verification (sprig side)
 
-- **Monorepo:** in `<git>/` (with `.git/`) put a sprig app at `<git>/frontend/`. Run `sprig
-  dev frontend`, ⌘/Ctrl-click a component to save a note. **Assert** `build-notes.json` lands
-  at `<git>/spec/ui/build-notes.json` — **not** `<git>/frontend/spec/ui/build-notes.json`.
+- **Monorepo:** in `<git>/` (with `.git/`) put a sprig app at `<git>/ui/`. Run `sprig
+  dev ui`, ⌘/Ctrl-click a component to save a note. **Assert** `build-notes.json` lands
+  at `<git>/spec/ui/build-notes.json` — **not** `<git>/ui/spec/ui/build-notes.json`.
   Screenshot PNGs land beside it in `<git>/spec/ui/`.
 - **Standalone (regression):** a single-package sprig app whose project root **is** the git
   root → `spec/ui` resolves exactly as today (the walk returns the project root immediately).

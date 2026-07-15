@@ -12,12 +12,11 @@ base })` returns one `{ fetch }` default export that **`deno serve` drives** —
 `Deno.serve()` and no `app.listen()` of your own:
 
 ```ts
-// serve.ts —  run it with:  deno serve -A --unstable-kv serve.ts
+// serve.ts — the generated git-root composition root; run from the git root:  deno serve -A serve.ts
 import { serveSprig } from "@mrg-keystone/sprig/keep";
-import { api } from "./bootstrap/mod.ts"; // the keep backend: await bootstrapServer(...)
-import { sprigApp } from "$";             // the sprig app: bootstrap({ routes, renderer })
+import { api } from "./server/bootstrap/mod.ts"; // the keep backend: await bootstrapServer(...)
 
-export default serveSprig({ keep: api, app: sprigApp, base: "" });
+export default serveSprig({ keep: api }); // the sprig UI is the ./ui workspace package
 ```
 
 Dispatch (you write none of it):

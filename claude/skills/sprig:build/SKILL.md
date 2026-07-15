@@ -9,7 +9,7 @@ description: >-
   dependency injection, or
   previewing/testing a component in isolation with `sprig isolate`; or when working in a
   repo with sprig markers (a deno.json importing "jsr:@mrg-keystone/sprig", folder-components made
-  of template.html + optional logic.ts, a src/ tree with pages/ + a shell, or main.ts
+  of template.html + optional logic.ts, a ui/src/ tree with pages/ + a shell, or main.ts
   calling bootstrap()/createRenderer()). sprig is NOT Fresh/Preact, Next.js, or Angular —
   it borrows Angular's template syntax but is its own runtime, so prefer this skill over
   memory of those frameworks. Do NOT use for Fresh, React/Next, Vue, Svelte, plain Deno
@@ -43,7 +43,7 @@ that creates or edits code is delegated.)
 
 | Agent | Owns | Reads |
 |---|---|---|
-| **`sprig-build-scaffolder`** | app skeleton: `sprig init`, `main.ts` routes/renderer/bootstrap, `serve.ts` host, the shell, `src/css-variables.json` tokens, the prod-build smoke | `references/routing.md`, `references/serving.md` |
+| **`sprig-build-scaffolder`** | app skeleton: `sprig init`, `main.ts` routes/renderer/bootstrap, `serve.ts` host, the shell, `ui/src/css-variables.json` tokens, the prod-build smoke | `references/routing.md`, `references/serving.md` |
 | **`sprig-build-component`** | building ONE component/page/island to green in isolation (template + `logic.ts` + scoped styles + `isolate/` cases + the diff/test loop) | `references/component-model.md`, `references/templates.md`, `references/isolate.md`, and (cross-skill) `sprig:breakdown/references/isolate-format.md` |
 
 Each specialist owns its own procedure — **do not restate their steps here.** Pass each
@@ -51,7 +51,7 @@ one its input contract and summarize what it returns.
 
 ## Where to start (the three entry modes)
 
-- **No args, app already built** (runnable `src/`, nothing pending in `spec/ui/breakdown/`
+- **No args, app already built** (runnable `ui/src/`, nothing pending in `spec/ui/breakdown/`
   or `spec/ui/build-notes.json`) → enter the **annotate review loop** (below).
 - **No args, pending work** — a `spec/ui/breakdown/` to implement, or a
   `spec/ui/build-notes.json` with open entries → do that work (implement the spec
@@ -241,7 +241,7 @@ component specialist applies them as behavior/scoped-styles and strips them from
 - **A component is a folder, not a `.tsx`**; **`logic.ts` = island** (static folders ship
   no JS and their `(event)` bindings never fire).
 - **`inject()` synchronously**, serializable island props/state only, **`static key`** on a
-  `StateService`, **design tokens variables-only** in `src/css-variables.json`.
+  `StateService`, **design tokens variables-only** in `ui/src/css-variables.json`.
 - **Run it in a browser and run the production build** before declaring done — `sprig dev`
   passing ≠ production working.
 - **`sprig` feels stale after an update?** `sprig update` re-resolves to latest.

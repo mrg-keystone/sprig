@@ -24,8 +24,8 @@ The orchestrator passes:
 - **APP** — the running base URL (e.g. `http://localhost:8000/ui`). The server is PARENT-OWNED and
   live: if it doesn't respond, return `blocked: app unreachable at <url>` — never `lsof`/port-scan
   for it, never start/restart it yourself.
-- **PROJECT ROOT** (abs path) + **PROJECT MAP** — `src/` (`shell/ pages/ components/ islands/ services/`), `main.ts`, `serve.ts`.
-- **DATA OWNERSHIP** — `owns-data` | `fronts keep backend (Backend token / /api) at <dir>`.
+- **PROJECT ROOT** (abs path) + **PROJECT MAP** — `ui/src/` (`shell/ pages/ components/ islands/ services/`), `main.ts`, `serve.ts`.
+- **DATA OWNERSHIP** — `owns-data` | `fronts keep backend (Backend token / /api) at server/`.
 - **USER STORIES** — the contents of `user-stories.md`, or `"none — derive from the route table + islands"`.
 - **EVIDENCE DIR** — `<project>/fixes-evidence/` (write screenshots/JSON here).
 
@@ -83,7 +83,7 @@ Return your final message as **exactly** this JSON, nothing else:
       "where_seen": "/ui/product/nope",
       "symptom": "Not-found view renders but the response is 200.",
       "evidence": ["fixes-evidence/soft-404.png", "nav response status = 200"],
-      "lead": "src/services/product/mod.ts returns null without setResponseStatus(404)"
+      "lead": "ui/src/services/product/mod.ts returns null without setResponseStatus(404)"
     }
   ],
   "needs_investigation": [

@@ -29,7 +29,7 @@ It creates:
 my-app/
   deno.json                 # imports (@mrg-keystone/sprig, @mrg-keystone/sprig/keep, …) + tasks (dev/build/start)
   build.ts                  # calls buildClient(src, static)
-  serve.ts                  # serveSprig({ keep, app, base: "/ui" }) — starter uses a no-op keep
+  serve.ts                  # serveSprig({ keep }) — starter uses a no-op keep
   src/
     main.ts                 # routes + createRenderer + bootstrap (the app entry)
     shell/

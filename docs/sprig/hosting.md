@@ -10,14 +10,16 @@ not a hand-rolled path dispatcher.
 ## Composition
 
 ```ts
-// serve.ts
+// serve.ts  (generated, at the git root)
 import { serveSprig } from "@mrg-keystone/sprig/keep";
 import { api } from "./server/bootstrap/mod.ts";   // a keep backend: { backend, handler }
-import { app } from "./app/src/main.ts";           // the sprig app from bootstrap()
 
-export default serveSprig({ keep: api, app, base: "/ui" });
-//   deno serve -A --unstable-kv serve.ts   →   http://localhost:8000/ui
+export default serveSprig({ keep: api });
+//   deno serve -A serve.ts   →   http://localhost:8000/ui
 ```
+
+The `ui` workspace member is the SSR app; `serveSprig` resolves and mounts it (at `base`,
+default `/ui`). The keep backend comes from `server/bootstrap/mod.ts`.
 
 `keep` is a `KeepApi`:
 
@@ -65,10 +67,10 @@ const keep = {
   backend: { fetch: () => Promise.resolve(new Response("null", { headers: { "content-type": "application/json" } })) },
   handler: () => new Response("Not Found", { status: 404 }),
 };
-export default serveSprig({ keep, app, base: "/ui" });
+export default serveSprig({ keep });
 ```
 
-Swap in a real keep `api` (`serveSprig({ keep: api, app, base })`) to get an in-process
+Swap in a real keep `api` (`serveSprig({ keep: api })`) to get an in-process
 `Backend` for `resolve.ts` plus the live `/api/*` network channel.
 
 The `?v=` cache-buster is the content hash of `assetsDir` (the `.js` files + `app.css`).
