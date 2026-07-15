@@ -21,7 +21,7 @@ The `sprig:audit` playbook reaches **Stage 2 (ROOT-CAUSE)**. The playbook spawns
 ## Input contract
 
 The orchestrator passes:
-- **PROJECT ROOT** (abs path) + **PROJECT MAP** (the `src/` tree, `main.ts`, `serve.ts`, co-located component `styles.css`; backend: `owns-data | fronts keep at <dir>`).
+- **PROJECT ROOT** (abs path) + **PROJECT MAP** (the `ui/src/` tree, `main.ts`, `serve.ts`, co-located component `styles.css`; backend: `owns-data | fronts keep at server/`).
 - **THE BUG** (from the hunter): `id/title`, `category/severity`, `where seen`, `layer lead`, `evidence` (files + status/console/number), the hunter's one-line `lead`, and the matching catalog row if any.
 - **REFERENCES DIR** — absolute path to the audit skill's `references/` dir (the catalog row may be pasted; `fixes-format.md` defines the fix-anchor style).
 - **SPRIG RUNTIME SRC** — the absolute cached-source path of the sprig runtime, resolved ONCE by
@@ -64,7 +64,7 @@ Return your final message as **exactly** this JSON, nothing else:
   "severity": "blocker",
   "whats_wrong": "A missing product renders the not-found view with a 200 status, so a missing page reads as real to crawlers and the browser.",
   "root_cause": {
-    "file": "src/services/product/mod.ts", "line": 24,
+    "file": "ui/src/services/product/mod.ts", "line": 24,
     "mechanism": "On a missing product the service returns null but never calls setResponseStatus(req, 404), so the matched route renders at the default 200.",
     "quote": "if (!ok || data == null) return null;  // no setResponseStatus(this.#req, 404)"
   },

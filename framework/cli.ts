@@ -906,7 +906,9 @@ async function emitRuneComposition(appDir: string, outDir: string): Promise<void
   }
   const uiRel = relative(gitRoot, uiAbs).replace(/\\/g, "/");
   const assetsRel = relative(gitRoot, outDir).replace(/\\/g, "/") || "static";
-  const serverRel = await detectBackendDir(gitRoot, uiRel);
+  // The backend is the canonical `server/` package — no scan, no fallback.
+  await assertServerBackend(gitRoot);
+  const serverRel = "server";
   await writeRuneServe(gitRoot, uiRel, serverRel, assetsRel);
   await ensureRuneWorkspace(gitRoot, uiRel, serverRel);
   const envHint = (await pathExists(join(gitRoot, ".env"))) ? " --env-file=.env" : "";
@@ -927,28 +929,22 @@ async function isSprigUiDir(dir: string): Promise<boolean> {
     (await pathExists(join(dir, "src", "mod.ts")));
 }
 
-/** Resolve the sprig UI package a plain `sprig build` (no --rune) targets. An EXPLICIT appDir
- *  arg is honored as-is. With none, search in order and use the FIRST that is a sprig UI package:
- *    1. <git root>/ui   — so `sprig build` works run from the git root (the common case)
- *    2. <cwd>/ui        — no git repo, but a ./ui package is right here
- *    3. <cwd>           — already inside the UI package itself
- *  If none is a sprig project, exit with "not in a sprig project". This is why `sprig build`
- *  worked from <root>/ui but not from the root: the root has no src/, the ./ui package does. */
+/** Resolve the sprig UI package `sprig build` targets. An EXPLICIT appDir arg is honored as-is.
+ *  With none, the composed layout pins the UI at `<git root>/ui` — the ONLY candidate (the flat
+ *  UI-at-root and <cwd>/ui fallbacks were removed). Works run from the git root OR from inside
+ *  `ui/` (the git-root walk finds the same `<git root>/ui` either way). Exits with a clear
+ *  "not a ui/+server/ project" error when there is no `<git root>/ui` sprig package. */
 async function resolveBuildAppDir(appArg?: string): Promise<string> {
   if (appArg) return resolve(appArg); // explicit path wins, as-is
   const cwd = Deno.cwd();
   const gitRoot = gitRepoRoot(cwd);
-  const candidates = [...new Set([
-    ...(gitRoot ? [join(gitRoot, "ui")] : []),
-    join(cwd, "ui"),
-    cwd,
-  ])];
-  for (const c of candidates) if (await isSprigUiDir(c)) return c;
+  const uiDir = gitRoot ? join(gitRoot, "ui") : join(cwd, "ui");
+  if (await isSprigUiDir(uiDir)) return uiDir;
   console.error(
-    `sprig build: not in a sprig project.\n` +
-      `  Looked for a sprig UI package (a dir with src/mod.ts or bootstrap/template.html) at:\n` +
-      candidates.map((c) => `    ${c}`).join("\n") + `\n` +
-      `  Run it from your project's git root or its ui/ package, or pass the path: sprig build <dir>`,
+    `sprig build: not a ui/+server/ project.\n` +
+      `  Expected the sprig UI package at ${uiDir} (a dir with src/mod.ts or bootstrap/template.html).\n` +
+      `  The composed layout is ui/ + server/ under the git root — run \`sprig init\` / \`rune init\`\n` +
+      `  to scaffold it, or pass the UI package path: sprig build <dir>`,
   );
   Deno.exit(1);
 }
@@ -986,27 +982,21 @@ async function resolveSprigUiDir(appArg: string, cmd: string): Promise<string> {
   Deno.exit(1);
 }
 
-/** Find the rune/keep backend package under the git root: a sibling dir (not the UI) whose
- *  bootstrap/mod.ts exports an `api` from bootstrapServer. Falls back to "server" (the
- *  rune convention) with a warning when none is found. */
-async function detectBackendDir(gitRoot: string, uiRel: string): Promise<string> {
-  const uiTop = uiRel.split("/")[0];
-  const withBootstrap: string[] = [];
-  for await (const e of Deno.readDir(gitRoot)) {
-    if (!e.isDirectory || e.name.startsWith(".") || e.name === uiTop) continue;
-    if (await pathExists(join(gitRoot, e.name, "bootstrap", "mod.ts"))) withBootstrap.push(e.name);
-  }
-  for (const c of withBootstrap) {
-    const src = await Deno.readTextFile(join(gitRoot, c, "bootstrap", "mod.ts")).catch(() => "");
-    if (/bootstrapServer\s*\(/.test(src)) return c; // a real keep backend
-  }
-  if (withBootstrap.length) return withBootstrap[0];
+/** Require the rune/keep backend at the canonical `<gitRoot>/server/bootstrap/mod.ts` — a keep
+ *  `bootstrapServer` exporting `api`. The composed layout is exactly `ui/` + `server/`; there is
+ *  no scan and no fallback (the flat / arbitrarily-named backend was removed). Errors + exits when
+ *  it's missing, so a build can never silently compose against a backend that isn't there. */
+async function assertServerBackend(gitRoot: string): Promise<void> {
+  const boot = join(gitRoot, "server", "bootstrap", "mod.ts");
+  const src = await Deno.readTextFile(boot).catch(() => null);
+  if (src !== null && /bootstrapServer\s*\(/.test(src)) return; // a real keep backend
   console.error(
-    `sprig build --rune: no backend package found under ${gitRoot} (no <dir>/bootstrap/mod.ts).\n` +
-      `  The generated serve.ts will import "./server/bootstrap/mod.ts" — create that keep\n` +
-      `  bootstrapServer (exporting \`api\`), or name your backend package "server".`,
+    `sprig build: no keep backend at ${boot}.\n` +
+      `  The composed layout is ui/ + server/ — the generated serve.ts imports\n` +
+      `  "./server/bootstrap/mod.ts". Create that keep bootstrapServer (exporting \`api\`):\n` +
+      `  \`rune init\` scaffolds it, or \`rune sync\` a spec to generate it.`,
   );
-  return "server";
+  Deno.exit(1);
 }
 
 /** Soft probe for `sprig dev`: is this UI half of a rune monorepo (a real keep
@@ -1030,14 +1020,12 @@ async function detectRuneComposition(
     d = parent;
   }
   if (!gitRoot || gitRoot === uiAbs) return null;
-  const uiTop = relative(gitRoot, uiAbs).replace(/\\/g, "/").split("/")[0];
-  for await (const e of Deno.readDir(gitRoot)) {
-    if (!e.isDirectory || e.name.startsWith(".") || e.name === uiTop) continue;
-    const boot = join(gitRoot, e.name, "bootstrap", "mod.ts");
-    if (!(await pathExists(boot))) continue;
-    const src = await Deno.readTextFile(boot).catch(() => "");
-    if (/bootstrapServer\s*\(/.test(src)) return { gitRoot, serverRel: e.name };
-  }
+  // The backend is the canonical `server/` package: probe <gitRoot>/server/bootstrap/mod.ts
+  // for a real keep bootstrapServer. No sibling scan, no arbitrary name — a UI-only app (no
+  // server/) returns null and dev runs UI-only.
+  const boot = join(gitRoot, "server", "bootstrap", "mod.ts");
+  const src = await Deno.readTextFile(boot).catch(() => "");
+  if (/bootstrapServer\s*\(/.test(src)) return { gitRoot, serverRel: "server" };
   return null;
 }
 
@@ -1136,58 +1124,33 @@ async function writeRuneServe(gitRoot: string, uiRel: string, serverRel: string,
       Deno.exit(1);
     }
   }
-  // ZERO composition: serve.ts is ONE line — `serveSprig({ keep: api })`. srcDir, assetsDir, base,
-  // and the bare-/ + favicon redirects are all DERIVED by serveSprig from this file's location + the
-  // `ui/` convention, so no app authors (and can't misauthor) a composition — the assetsDir a
-  // hand-written file used to forget is derived and pinned. The only named value is the imported keep
-  // backend. A non-standard layout (uiRel != "ui") can't be derived by convention → fall back to the
-  // explicit composition (imports the app's `sprigApp` export and pins assetsDir via import.meta).
-  const standard = uiRel === "ui" && assetsRel === "ui/static";
-  const src = standard
-    ? [
-      `// ${MARKER} — the single-origin composition root at the git root.`,
-      `//`,
-      `// ONE line: serveSprig folds the rune/keep backend (${serverRel}/) and the sprig UI (${uiRel}/)`,
-      `// into a { fetch } default export. srcDir (${uiRel}/src), assetsDir (${assetsRel}/), base (/ui),`,
-      `// and the bare-/ + favicon redirects are DERIVED from this file's location + the ui/ convention,`,
-      `// so the app authors no composition and can't forget assetsDir (the cwd-relative default that`,
-      `// shipped ?v=dev to prod). The Deno workspace in ./deno.json lets each half keep its own import`,
-      `// map; serveSprig binds keep's IN-PROCESS Backend so the UI's resolve.ts reads data with no TCP.`,
-      `//`,
-      `//   deno serve -A serve.ts            (add --env-file=.env if your backend reads one)`,
-      `//`,
-      `//   /ui    → the SSR app        /api/* → the keep backend (token-gated)        /docs → Swagger`,
-      `//`,
-      `// Re-run \`sprig build --rune\` after changing pages/islands to refresh ${assetsRel}/.`,
-      `import { serveSprig } from "@mrg-keystone/sprig/keep";`,
-      `import { api } from "./${serverRel}/bootstrap/mod.ts";`,
-      ``,
-      `export default serveSprig({ keep: api });`,
-      ``,
-    ].join("\n")
-    : [
-      `// ${MARKER} — the single-origin composition root (non-standard layout: ui at "${uiRel}").`,
-      `//`,
-      `// serveSprig folds the rune/keep backend (${serverRel}/) and the sprig UI (${uiRel}/) into ONE`,
-      `// { fetch } default export that \`deno serve\` drives, reading the prebuilt ${assetsRel}/. Because`,
-      `// the UI isn't at the conventional ./ui, srcDir + assetsDir can't be derived — they're pinned`,
-      `// here via import.meta so the handler is correct no matter where it is launched (e.g. Deno Deploy).`,
-      `//`,
-      `//   deno serve -A serve.ts            (add --env-file=.env if your backend reads one)`,
-      `//`,
-      `//   /ui    → the SSR app        /api/* → the keep backend (token-gated)        /docs → Swagger`,
-      `//`,
-      `// Re-run \`sprig build --rune\` after changing pages/islands to refresh ${assetsRel}/.`,
-      `import { serveSprig } from "@mrg-keystone/sprig/keep";`,
-      `import { fromFileUrl } from "@std/path";`,
-      `import { api } from "./${serverRel}/bootstrap/mod.ts";`,
-      `import { sprigApp } from "./${uiRel}/src/mod.ts";`,
-      ``,
-      `const assetsDir = fromFileUrl(new URL("./${assetsRel}", import.meta.url));`,
-      ``,
-      `export default serveSprig({ keep: api, app: sprigApp, base: "/ui", assetsDir });`,
-      ``,
-    ].join("\n");
+  // ZERO composition: serve.ts is ONE line — `serveSprig({ keep: api })`. srcDir (ui/src), assetsDir
+  // (ui/static), base (/ui), and the bare-/ + favicon redirects are all DERIVED by serveSprig from
+  // this file's location + the `ui/` convention (the ONLY layout now), so no app authors (and can't
+  // misauthor) a composition — the assetsDir a hand-written file used to forget is derived and pinned.
+  // The only named value is the imported keep backend. The Deno workspace in ./deno.json lets each half
+  // keep its own import map; serveSprig binds keep's IN-PROCESS Backend so resolve.ts reads with no TCP.
+  const src = [
+    `// ${MARKER} — the single-origin composition root at the git root.`,
+    `//`,
+    `// ONE line: serveSprig folds the rune/keep backend (${serverRel}/) and the sprig UI (${uiRel}/)`,
+    `// into a { fetch } default export. srcDir (${uiRel}/src), assetsDir (${assetsRel}/), base (/ui),`,
+    `// and the bare-/ + favicon redirects are DERIVED from this file's location + the ui/ convention,`,
+    `// so the app authors no composition and can't forget assetsDir (the cwd-relative default that`,
+    `// shipped ?v=dev to prod). The Deno workspace in ./deno.json lets each half keep its own import`,
+    `// map; serveSprig binds keep's IN-PROCESS Backend so the UI's resolve.ts reads data with no TCP.`,
+    `//`,
+    `//   deno serve -A serve.ts            (add --env-file=.env if your backend reads one)`,
+    `//`,
+    `//   /ui    → the SSR app        /api/* → the keep backend (token-gated)        /docs → Swagger`,
+    `//`,
+    `// Re-run \`sprig build\` after changing pages/islands to refresh ${assetsRel}/.`,
+    `import { serveSprig } from "@mrg-keystone/sprig/keep";`,
+    `import { api } from "./${serverRel}/bootstrap/mod.ts";`,
+    ``,
+    `export default serveSprig({ keep: api });`,
+    ``,
+  ].join("\n");
   await Deno.writeTextFile(servePath, src);
   // the composition root is never committed — the deploy build regenerates it and
   // dev composes it in-process, so keep it out of the repo's history entirely.
@@ -1772,10 +1735,24 @@ async function init(dir = "."): Promise<void> {
   // the app's OTHER deps (rune, std) keep their ranges. Falls back to the range if version is unknown.
   const sprigPin = cliVersion() ?? range;
   const files: Record<string, string> = {
-    // `$` IS the app (src/mod.ts); `$.pages/`, `$.services/`, `$.shared-components/` alias
-    // the src subtrees so deep files import siblings without ../../ chains. Plus the two
-    // sprig entry points (core + its /keep sub-export); the compiler is CLI-internal.
+    // The git-root Deno WORKSPACE over the two members — sprig owns `ui/`, rune owns
+    // `server/`. The dev/build tasks run the sprig CLI from the git root; the `start`
+    // task + the `workspace`/`imports` fields are added by ensureRuneWorkspace after
+    // this map, and the git-root serve.ts is written by writeRuneServe.
     "deno.json": `{
+  "tasks": {
+    "dev": "sprig dev",
+    "build": "sprig build"
+  }
+}
+`,
+
+    // ui/ — the sprig UI package. `$` IS the UI (ui/src/mod.ts); `$.pages/`, `$.services/`,
+    // `$.shared-components/` alias the src subtrees so deep files import siblings without
+    // ../../ chains. Plus the two sprig entry points (core + its /keep sub-export); the
+    // compiler is CLI-internal. @mrg-keystone/sprig is hoisted to the workspace root by
+    // ensureRuneWorkspace so both members share ONE runtime instance.
+    "ui/deno.json": `{
   "name": "@app/${name}",
   "version": "0.0.0",
   "exports": "./src/mod.ts",
@@ -1791,40 +1768,37 @@ async function init(dir = "."): Promise<void> {
     "$.services/": "./src/services/",
     "@mrg-keystone/sprig": "jsr:@mrg-keystone/sprig@${sprigPin}",
     "@mrg-keystone/sprig/keep": "jsr:@mrg-keystone/sprig@${sprigPin}/keep",
-    "@mrg-keystone/rune": "jsr:@mrg-keystone/rune@${runeSpec}",
-    "reflect-metadata": "npm:reflect-metadata@0.1.13",
     "@std/path": "jsr:@std/path@^1",
     "@std/assert": "jsr:@std/assert@^1"
-  },
-  "tasks": {
-    "dev": "sprig dev .",
-    "build": "sprig build .",
-    "start": "deno serve -A --unstable-kv serve.ts"
   }
 }
 `,
 
-    "serve.ts": [
-      `// Single-origin composition root: serveSprig folds the keep backend + the sprig UI`,
-      `// into ONE { fetch } that \`deno serve\` drives — no Deno.serve()/app.listen() of your`,
-      `// own:  deno serve -A --unstable-kv serve.ts`,
-      `//   /api/* + /docs*  → the keep backend (token-gated; the channel browser islands use).`,
-      `//   everything else  → the SSR app, with keep's in-process client bound to the Backend`,
-      `//                      DI token — pages read data via inject(Backend), no TCP, no token.`,
-      `import { serveSprig } from "@mrg-keystone/sprig/keep";`,
-      `import { api } from "./bootstrap/mod.ts";`,
-      `import { sprigApp } from "$";`,
-      ``,
-      `export default serveSprig({ keep: api, app: sprigApp, base: "/ui" });`,
-      ``,
-    ].join("\n"),
+    // server/ — the keep backend package. Pins @mrg-keystone/rune (bootstrapServer) +
+    // reflect-metadata. `rune init` overlays its spec-driven backend here and merges the
+    // engine import map (@/, #std, class-validator, …); `rune sync` lands modules in server/src/.
+    "server/deno.json": `{
+  "name": "@app/${name}-server",
+  "version": "0.0.0",
+  "exports": "./bootstrap/mod.ts",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "imports": {
+    "@mrg-keystone/rune": "jsr:@mrg-keystone/rune@${runeSpec}",
+    "reflect-metadata": "npm:reflect-metadata@0.1.13",
+    "@std/assert": "jsr:@std/assert@^1"
+  }
+}
+`,
 
-    "bootstrap/mod.ts": [
-      `// Your keep backend (jsr:@mrg-keystone/rune). serve.ts mounts it through serveSprig:`,
-      `// the in-process client is bound to the Backend DI token for SSR, and the network`,
-      `// handler serves /api/* (token-gated) + /docs. It is imported, never listened on —`,
-      `// \`deno serve serve.ts\` owns the socket. Add endpoints by generating rune modules`,
-      `// (or hand-writing Danet controllers) and listing them in the array below.`,
+    "server/bootstrap/mod.ts": [
+      `// Your keep backend (jsr:@mrg-keystone/rune). The git-root serve.ts mounts it through`,
+      `// serveSprig: the in-process client is bound to the Backend DI token for SSR, and the`,
+      `// network handler serves /api/* (token-gated) + /docs. It is imported, never listened`,
+      `// on — \`deno serve serve.ts\` owns the socket. Add endpoints by generating rune modules`,
+      `// (\`rune sync\` fills the array via server/bootstrap/modules.ts) or hand-writing controllers.`,
       `import "reflect-metadata";`,
       `import { bootstrapServer } from "@mrg-keystone/rune";`,
       ``,
@@ -1832,7 +1806,7 @@ async function init(dir = "."): Promise<void> {
       ``,
     ].join("\n"),
 
-    "src/mod.ts": [
+    "ui/src/mod.ts": [
       `// The whole app, three declarations. \`routes\` drive everything: a route's \`load\``,
       `// names a page folder (template.html + optional logic.ts class for its data/behavior)`,
       `// — no per-page imports, no module map. Add a page = add a route.`,
@@ -1850,7 +1824,7 @@ async function init(dir = "."): Promise<void> {
       `]);`,
       ``,
       `export const renderer = await createRenderer(`,
-      `  dirname(fromFileUrl(import.meta.url)), // src/ root`,
+      `  dirname(fromFileUrl(import.meta.url)), // ui/src/ root`,
       `  "/ui",`,
       `  { dev: !!Deno.env.get("SPRIG_DEV") },`,
       `);`,
@@ -1859,7 +1833,7 @@ async function init(dir = "."): Promise<void> {
       ``,
     ].join("\n"),
 
-    "src/shell/template.html": [
+    "ui/src/shell/template.html": [
       `<!-- App shell — the folder MUST be named \`shell\`; the renderer discovers it by name`,
       `     under src/ and renders the matched page into the outlet. -->`,
       `<div class="app-root">`,
@@ -1868,7 +1842,7 @@ async function init(dir = "."): Promise<void> {
       ``,
     ].join("\n"),
 
-    "src/shell/styles.css": [
+    "ui/src/shell/styles.css": [
       `:global(body) {`,
       `  margin: 0;`,
       `  font-family: ui-sans-serif, system-ui, sans-serif;`,
@@ -1879,7 +1853,7 @@ async function init(dir = "."): Promise<void> {
       ``,
     ].join("\n"),
 
-    "src/pages/home/logic.ts": [
+    "ui/src/pages/home/logic.ts": [
       `// A page is its template + this class. onServerInit runs on the server before the`,
       `// page renders — set fields here (fetch data via inject(Backend)) and the template`,
       `// binds to them. The instance is snapshotted to the browser; onBrowserInit runs there.`,
@@ -1897,7 +1871,7 @@ async function init(dir = "."): Promise<void> {
       ``,
     ].join("\n"),
 
-    "src/services/state/mod.ts": [
+    "ui/src/services/state/mod.ts": [
       `// Your app's persisted state. Add serializable fields and inject(State) anywhere`,
       `// (pages, islands). The framework serializes it to localStorage on every navigation`,
       `// and on reload, and restores it on load — so state survives both. state.reset()`,
@@ -1912,16 +1886,16 @@ async function init(dir = "."): Promise<void> {
       ``,
     ].join("\n"),
 
-    "src/pages/home/template.html": [
+    "ui/src/pages/home/template.html": [
       `<!-- \`name\` comes from logic.ts (set in onServerInit) -->`,
       `<main class="home">`,
       `  <h1>Hello, {{ name }} 👋</h1>`,
-      `  <p>Edit <code>src/pages/home/template.html</code> — \`sprig dev\` hot-swaps it.</p>`,
+      `  <p>Edit <code>ui/src/pages/home/template.html</code> — \`sprig dev\` hot-swaps it.</p>`,
       `</main>`,
       ``,
     ].join("\n"),
 
-    "src/pages/home/styles.css": [
+    "ui/src/pages/home/styles.css": [
       `.home { text-align: center; }`,
       `.home h1 { font-size: 2.4rem; letter-spacing: -0.03em; margin: 0 0 0.5rem; }`,
       `.home p { opacity: 0.7; }`,
@@ -1937,12 +1911,20 @@ async function init(dir = "."): Promise<void> {
     await Deno.writeTextFile(abs, content);
   }
   // the `$.shared-components/` alias points here — create it (empty) so the dir exists.
-  await Deno.mkdir(join(appAbs, "src", "shared-components"), { recursive: true });
+  await Deno.mkdir(join(appAbs, "ui", "src", "shared-components"), { recursive: true });
+  // Compose the git root: the generated serve.ts (serveSprig, importing api from
+  // ./server/bootstrap/mod.ts) + the Deno workspace over [./ui, ./server]. writeRuneServe
+  // derives srcDir/assetsDir from the ui/ convention; ensureRuneWorkspace hoists
+  // @mrg-keystone/sprig to the root so both members share ONE runtime, adds the `start`
+  // task, and merges the imports serve.ts needs. Same code `sprig build` runs, so the
+  // scaffold and every later build agree on the composition.
+  await writeRuneServe(appAbs, "ui", "server", "ui/static");
+  await ensureRuneWorkspace(appAbs, "ui", "server");
   // Enforce the exact sprig pin (the template already writes it; this is the same stamp build/dev
   // apply, so init and every later build agree on the key + format). No-op when already current.
   await stamp(appAbs);
   console.log(
-    `Scaffolded a sprig app at ${appAbs}\n\n` +
+    `Scaffolded a sprig app (ui/ + server/) at ${appAbs}\n\n` +
       `  cd ${dir}\n` +
       `  deno task dev                       # sprig HMR dev → http://localhost:8000/ui\n` +
       `  deno task build && deno task start  # production: serveSprig on the keep backend (UI /ui, API /api, docs /docs)\n`,
@@ -2151,21 +2133,14 @@ switch (cmd) {
       await clean(rest.find((a) => !a.startsWith("-")));
       break;
     }
-    const rune = rest.includes("--rune");
+    // Composing the ui/ + server/ monorepo is the NORMAL build now — no `--rune` flag
+    // needed (it's still accepted, harmlessly). Resolve the sprig UI package at
+    // <git root>/ui (works run from the root or from inside ui/), build IT to
+    // <ui>/static (cwd-independent), then fold in the server/ keep backend + write the
+    // git-root serve.ts + workspace deno.json.
     const appArg = rest.find((a) => !a.startsWith("-"));
-    if (rune) {
-      // --rune composes the whole monorepo, so it's natural to run from the git ROOT (not
-      // just the UI package). Locate the sprig UI package at/under appArg, build IT to
-      // <ui>/static (cwd-independent), then compose. Works from the root or from ui/.
-      const ui = await resolveSprigUiDir(appArg ?? ".", "build --rune");
-      await build(ui, join(ui, "static"), true);
-    } else {
-      // Plain build: resolve the UI package (git root/ui, then <cwd>/ui, then <cwd>) so
-      // `sprig build` works from the git root too, not only from inside ui/. Write to
-      // <ui>/static — the deploy artifact serveSprig reads — independent of the cwd.
-      const ui = await resolveBuildAppDir(appArg);
-      await build(ui, join(ui, "static"), false);
-    }
+    const ui = await resolveBuildAppDir(appArg);
+    await build(ui, join(ui, "static"), true);
     break;
   }
   case "check": {

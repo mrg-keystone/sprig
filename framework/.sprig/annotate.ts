@@ -96,7 +96,7 @@ async function isolateInfo(
   const caseHint = cases.length ? `/{${cases.join("|")}}` : "/<case>";
   const base = isolateBase.replace(/\/+$/, "");
   return {
-    isolate: `Verify in isolation: ${base ? base + "/" : "`sprig isolate` → /"}${seg}${caseHint} — edit src/${relDir}/.`,
+    isolate: `Verify in isolation: ${base ? base + "/" : "`sprig isolate` → /"}${seg}${caseHint} — edit ui/src/${relDir}/.`,
     isolateUrl: base ? `${base}/${seg}${firstCase ? "/" + firstCase : ""}` : "",
   };
 }
@@ -140,7 +140,7 @@ type Store = Record<string, Note | string>;
 
 const HOWTO =
   "Each entry is a COMPONENT to edit IN ISOLATION. For each: open it in `sprig isolate` at its route " +
-  "(isolateUrl), edit src/<component>/ (template.html / logic.ts / styles.css) to address its notes, " +
+  "(isolateUrl), edit ui/src/<component>/ (template.html / logic.ts / styles.css) to address its notes, " +
   "verify there (not the prod app), then delete the entry. Keyed by component path, not selector.";
 
 export interface Annotate {
