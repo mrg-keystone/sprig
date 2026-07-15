@@ -690,23 +690,16 @@ function entryRoot(): string | null {
   }
 }
 
-function isDirSync(p: string): boolean {
-  try {
-    return Deno.statSync(p).isDirectory;
-  } catch {
-    return false;
-  }
-}
-
 /** Derive a UI subtree dir (`src` or `static`) from the entry anchor + the `ui/` convention:
- *  `<root>/ui/<sub>` for a monorepo, else `<root>/<sub>` for a UI-at-root layout. Returns the
- *  cwd-relative `sub` as a last resort (no file anchor — matches the historical default). */
+ *  ALWAYS `<root>/ui/<sub>`. The composed monorepo is the only shape now — the sprig UI is a
+ *  `./ui` package under the git root, beside `./server` (the keep backend), and serve.ts sits at
+ *  the root, so `Deno.mainModule`'s dir IS the root and `ui/<sub>` resolves off it whether or not
+ *  `ui/` exists on disk yet (a fresh scaffold before its first build). The flat UI-at-root layout
+ *  was removed. Returns the cwd-relative `sub` as a last resort only when there is NO file anchor. */
 function deriveUiDir(sub: string): string {
   const root = entryRoot();
   if (!root) return sub;
-  const monorepo = join(root, "ui", sub);
-  if (isDirSync(join(root, "ui", "src")) || isDirSync(join(root, "ui", "static"))) return monorepo;
-  return join(root, sub);
+  return join(root, "ui", sub);
 }
 
 /** Resolve an app's route table from `srcDir` — folder tables (`routers/root/routes.json` / legacy

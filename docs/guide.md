@@ -61,7 +61,7 @@ src/
       styles.css
   services/
     <domain>/mod.ts           # @Injectable data layer
-serve.ts                      # serveSprig({ keep, app, base }) — the one-origin handler
+serve.ts                      # serveSprig({ keep: api }) — the one-origin handler (git-root)
 ```
 
 A component's **identity is its folder path** (not just the basename), so two
@@ -335,14 +335,16 @@ rebuilds and reloads.
 `serveSprig` is the one-origin composition root:
 
 ```ts
-// serve.ts
+// serve.ts  (generated, at the git root)
 import { serveSprig } from "@mrg-keystone/sprig/keep";
 import { api } from "./server/bootstrap/mod.ts"; // a keep backend ({ backend, handler })
-import { app } from "./app/src/main.ts";
 
-export default serveSprig({ keep: api, app, base: "/ui" });
-//   deno serve -A --unstable-kv serve.ts   →   http://localhost:8000/ui
+export default serveSprig({ keep: api });
+//   deno serve -A serve.ts   →   http://localhost:8000/ui
 ```
+
+The `ui` workspace member is the SSR app — `serveSprig` resolves and mounts it (at `/ui` by
+default); the keep backend is `server/bootstrap/mod.ts`.
 
 Dispatch:
 

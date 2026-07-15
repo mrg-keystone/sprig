@@ -75,8 +75,9 @@ only when FIX applied the change **and** VALIDATE's check passed.
 
 - **Confirm it's a sprig app** and read its shape: `deno.json`, `main.ts`
   (`defineRoutes`/route `guards`/`createRenderer`/`bootstrap`), `serve.ts`
-  (`serveSprig`), the `src/` tree (`shell/`, `pages/`, `components/`, `islands/`,
-  `services/`).
+  (`serveSprig`), the `ui/src/` tree (`shell/`, `pages/`, `components/`, `islands/`,
+  `services/`), and — if it fronts a keep backend — the `server/` package
+  (`server/bootstrap/mod.ts`).
 - **Read `user-stories.md` end to end** if present — each bullet is a contract the
   hunter verifies. No file? Tell the hunter to derive the story list from the route
   table + islands and note its absence.

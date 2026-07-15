@@ -14,7 +14,7 @@ Third sibling to [`coms.md`](./coms.md) (the runtime seam) and [`coordinate.md`]
 
 The two pipelines are a **diamond**: one product intent at the top, two tracks down the
 sides, **one contract at the waist**, one running app at the bottom (the bottom is already
-solved — `serveSprig({keep, app})`, see [`coms.md`](./coms.md)). This doc owns the waist:
+solved — `serveSprig({ keep })`, see [`coms.md`](./coms.md)). This doc owns the waist:
 
 - **The waist rule** — the contract is **queries + commands, never an editable record.**
 - **The two seam formats** — `objects/<type>.json` (reads) + `commands.json` (writes),
