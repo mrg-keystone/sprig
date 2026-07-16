@@ -177,7 +177,7 @@
       "server": {
         "dependencies": [
           "jsr:@danet/swagger@^2.1.1",
-          "jsr:@mrg-keystone/rune@^4.2.0",
+          "jsr:@mrg-keystone/rune@^4.3.0",
           "jsr:@std/assert@*",
           "jsr:@std/path@*",
           "npm:class-transformer@0.5",
