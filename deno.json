@@ -37,13 +37,7 @@
     "check:agent-guardrail": "deno run -A scripts/sync-agent-guardrail.ts --check"
   },
   "name": "@mrg-keystone/sprig",
-<<<<<<< HEAD
-  "version": "0.20.33",
-||||||| parent of 0022c5d (ship: develop)
-  "version": "0.20.31",
-=======
-  "version": "0.20.36-beta.1",
->>>>>>> 0022c5d (ship: develop)
+  "version": "0.20.35",
   "license": "MIT",
   "exports": {
     ".": "./framework/.sprig/core.ts",
