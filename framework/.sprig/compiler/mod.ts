@@ -339,6 +339,29 @@ export async function createRenderer(
     return await renderLevel(shellSelector, chromeInputs, registry, html, innerLoad, reqCtx);
   };
 
+  // Base-prefix pass on the rendered body. An app authors root-relative nav hrefs
+  // (e.g. href="/runs"); when the app is mounted under a non-root base (sprig dev's
+  // "/ui", or serveSprig with a base), a bare "/runs" click lands OFF-base and 404s.
+  // Here we rewrite root-relative href/action to sit on the base — the same prefixing
+  // buildNav() already does for the generated nav — so hand-written links "just work"
+  // under any mount. Skipped: protocol-relative "//x", values already on the base, and
+  // the off-base surfaces served at the ORIGIN root, not under the base — the keep API
+  // (/api, /docs) and the asset route (/_assets). No-op at base "" (root-mounted), so
+  // the composed serve.ts path is byte-identical to before.
+  const applyBasePrefix = (html: string): string => {
+    if (!base) return html;
+    return html.replace(
+      /(?<=\s)(href|action)=(["'])(\/(?!\/)[^"']*)\2/g,
+      (m: string, name: string, q: string, path: string) => {
+        if (path === base || path.startsWith(base + "/")) return m; // already based
+        for (const p of ["/api", "/docs", "/_assets"]) {
+          if (path === p || path.startsWith(p + "/")) return m; // off-base / asset route
+        }
+        return `${name}=${q}${base}${path}${q}`;
+      },
+    );
+  };
+
   // resolve.ts loaders, imported on first match by route `load` path and cached.
   const resolveCache = new Map<string, Resolve | undefined>();
   return {
@@ -376,7 +399,7 @@ export async function createRenderer(
       // a bare load string (the pre-nesting caller, incl. tests) normalizes to a length-1 chain.
       const levels = typeof chain === "string" ? [{ load: chain }] : chain;
       const leaf = levels.length ? levels[levels.length - 1].load : "";
-      const body = await renderBody(levels, inputs, chrome, ropts?.reqCtx);
+      const body = applyBasePrefix(await renderBody(levels, inputs, chrome, ropts?.reqCtx));
       return document(body, base, v, reserved, pageName(leaf), perf, !!opts.dev, titleOf(levels), opts.favicon, appHead);
     },
     renderStream(chain, inputs, ropts, chrome) {
@@ -394,7 +417,7 @@ export async function createRenderer(
             // body's onServerLoad fetches (and, when INFRA_PERF is on, the perf beacon fires while
             // the body is still streaming).
             ctrl.enqueue(enc.encode(documentHead(base, v, perf, titleOf(levels), opts.favicon, appHead)));
-            const body = await renderBody(levels, inputs, chrome, ropts?.reqCtx);
+            const body = applyBasePrefix(await renderBody(levels, inputs, chrome, ropts?.reqCtx));
             ctrl.enqueue(enc.encode(body + documentTail(base, v, reserved, pageName(leaf), perf, !!opts.dev)));
           } catch {
             // headers + head are already on the wire, so a render failure can't become a
