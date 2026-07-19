@@ -876,14 +876,14 @@ function findProjectRoot(uiAbs: string): string {
     if (parent === d) break; // reached the filesystem root with no `.git`
     d = parent;
   }
-  // 2. no `.git` at all (deploy env): the parent of a `./ui` package is the project root.
-  if (basename(uiAbs) === "ui") return dirname(uiAbs);
+  // 2. no `.git` at all (deploy env): the parent of a `./ui` (or `./app`) package is the project root.
+  if (basename(uiAbs) === "ui" || basename(uiAbs) === "app") return dirname(uiAbs);
   // 3. nothing to anchor on — this is the only case that errors.
   console.error(
     `sprig build --rune: cannot locate the project root for\n  ${uiAbs}\n` +
-      `  No .git ancestor, and the sprig UI package is not a ./ui. In an environment without\n` +
-      `  git, place the sprig UI in a ./ui directly under the project root so --rune can put\n` +
-      `  serve.ts + the workspace there.`,
+      `  No .git ancestor, and the sprig UI package is not a ./ui or ./app. In an environment\n` +
+      `  without git, place the sprig UI in a ./ui (or ./app) directly under the project root\n` +
+      `  so --rune can put serve.ts + the workspace there.`,
   );
   Deno.exit(1);
 }
@@ -899,8 +899,9 @@ async function emitRuneComposition(appDir: string, outDir: string): Promise<void
   if (gitRoot === uiAbs) {
     console.error(
       `sprig build --rune: ${uiAbs} has no project root ABOVE it (it is its own .git root and is\n` +
-        `not a ./ui under a parent). --rune composes a monorepo whose sprig UI + rune backend are\n` +
-        `siblings — run it from such a repo, or place the sprig UI in a ./ui under the project root.`,
+        `not a ./ui or ./app under a parent). --rune composes a monorepo whose sprig UI + rune backend\n` +
+        `are siblings — run it from such a repo, or place the sprig UI in a ./ui (or ./app) under the\n` +
+        `project root.`,
     );
     Deno.exit(1);
   }
@@ -930,21 +931,26 @@ async function isSprigUiDir(dir: string): Promise<boolean> {
 }
 
 /** Resolve the sprig UI package `sprig build` targets. An EXPLICIT appDir arg is honored as-is.
- *  With none, the composed layout pins the UI at `<git root>/ui` — the ONLY candidate (the flat
- *  UI-at-root and <cwd>/ui fallbacks were removed). Works run from the git root OR from inside
- *  `ui/` (the git-root walk finds the same `<git root>/ui` either way). Exits with a clear
- *  "not a ui/+server/ project" error when there is no `<git root>/ui` sprig package. */
+ *  With none, the composed layout pins the UI at `<git root>/ui` — or `<git root>/app`, the
+ *  alternate package name rune's structure spec sanctions (the flat UI-at-root and <cwd>/ui
+ *  fallbacks were removed). Works run from the git root OR from inside the UI package (the
+ *  git-root walk finds the same dir either way). Exits with a clear "not a ui/+server/ project"
+ *  error when neither candidate is a sprig package. */
 async function resolveBuildAppDir(appArg?: string): Promise<string> {
   if (appArg) return resolve(appArg); // explicit path wins, as-is
   const cwd = Deno.cwd();
   const gitRoot = gitRepoRoot(cwd);
-  const uiDir = gitRoot ? join(gitRoot, "ui") : join(cwd, "ui");
-  if (await isSprigUiDir(uiDir)) return uiDir;
+  const root = gitRoot ?? cwd;
+  for (const name of ["ui", "app"]) {
+    const d = join(root, name);
+    if (await isSprigUiDir(d)) return d;
+  }
   console.error(
     `sprig build: not a ui/+server/ project.\n` +
-      `  Expected the sprig UI package at ${uiDir} (a dir with src/mod.ts or bootstrap/template.html).\n` +
-      `  The composed layout is ui/ + server/ under the git root — run \`sprig init\` / \`rune init\`\n` +
-      `  to scaffold it, or pass the UI package path: sprig build <dir>`,
+      `  Expected the sprig UI package at ${join(root, "ui")} or ${join(root, "app")}\n` +
+      `  (a dir with src/mod.ts or bootstrap/template.html).\n` +
+      `  The composed layout is ui/ (or app/) + server/ under the git root — run \`sprig init\` /\n` +
+      `  \`rune init\` to scaffold it, or pass the UI package path: sprig build <dir>`,
   );
   Deno.exit(1);
 }
@@ -992,7 +998,7 @@ async function assertServerBackend(gitRoot: string): Promise<void> {
   if (src !== null && /bootstrapServer\s*\(/.test(src)) return; // a real keep backend
   console.error(
     `sprig build: no keep backend at ${boot}.\n` +
-      `  The composed layout is ui/ + server/ — the generated serve.ts imports\n` +
+      `  The composed layout is ui/ (or app/) + server/ — the generated serve.ts imports\n` +
       `  "./server/bootstrap/mod.ts". Create that keep bootstrapServer (exporting \`api\`):\n` +
       `  \`rune init\` scaffolds it, or \`rune sync\` a spec to generate it.`,
   );
@@ -1124,10 +1130,11 @@ async function writeRuneServe(gitRoot: string, uiRel: string, serverRel: string,
       Deno.exit(1);
     }
   }
-  // ZERO composition: serve.ts is ONE line — `serveSprig({ keep: api })`. srcDir (ui/src), assetsDir
-  // (ui/static), base (/ui), and the bare-/ + favicon redirects are all DERIVED by serveSprig from
-  // this file's location + the `ui/` convention (the ONLY layout now), so no app authors (and can't
-  // misauthor) a composition — the assetsDir a hand-written file used to forget is derived and pinned.
+  // ZERO composition: serve.ts is ONE line — `serveSprig({ keep: api })`. srcDir (<ui|app>/src),
+  // assetsDir (<ui|app>/static), base (/ui), and the bare-/ + favicon redirects are all DERIVED by
+  // serveSprig from this file's location + the ui/-or-app/ convention (probed on disk), so no app
+  // authors (and can't misauthor) a composition — the assetsDir a hand-written file used to forget
+  // is derived and pinned.
   // The only named value is the imported keep backend. The Deno workspace in ./deno.json lets each half
   // keep its own import map; serveSprig binds keep's IN-PROCESS Backend so resolve.ts reads with no TCP.
   const src = [
@@ -1135,7 +1142,7 @@ async function writeRuneServe(gitRoot: string, uiRel: string, serverRel: string,
     `//`,
     `// ONE line: serveSprig folds the rune/keep backend (${serverRel}/) and the sprig UI (${uiRel}/)`,
     `// into a { fetch } default export. srcDir (${uiRel}/src), assetsDir (${assetsRel}/), base (/ui),`,
-    `// and the bare-/ + favicon redirects are DERIVED from this file's location + the ui/ convention,`,
+    `// and the bare-/ + favicon redirects are DERIVED from this file's location + the ${uiRel}/ layout,`,
     `// so the app authors no composition and can't forget assetsDir (the cwd-relative default that`,
     `// shipped ?v=dev to prod). The Deno workspace in ./deno.json lets each half keep its own import`,
     `// map; serveSprig binds keep's IN-PROCESS Backend so the UI's resolve.ts reads data with no TCP.`,
