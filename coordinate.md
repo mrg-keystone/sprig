@@ -78,6 +78,7 @@ specRoot(startDir):
     product/                #   spec.md + user-stories.md   (rune:scope)
     runes/                  #   .rune backend specs          (rune:spec)
     ui/                     #   prototype + design system    (sprig:prototype / :design)
+    contract/               #   ratified contract: draft/ + openapi.json + client/ + binding.md (mostly generated) — see contract.md
     misc/                   #   data.json, cake.json         (rune:data / rune:cake)
   ui/                       # the sprig UI package (its own deno.json, src/, static/)
   server/                   # a rune/keep package (its own deno.json, src/<module>/, bootstrap/)
@@ -95,8 +96,8 @@ per-package roots so a single shared contract serves them both.
 | 1 | A shared `specRoot` walk-up rule (to `.git`, with project-dir fallback) | ✅ SPEC'D | this doc |
 | 2 | rune ENGINE resolves `spec/` at the git root | ✅ ALREADY (no change) | `resolveRoot` `spec-root.ts:22-33` returns the git root for a `spec/runes/` spec; LSP `main.rs:52-62` mirrors it |
 | 3 | rune RUNTIME (cake) reads the shared `spec/misc` from any cwd | ✅ DONE (rune repo) | keep `fixturesDir()` now walks to `.git` — `fixtures-store/mod.ts` + unit tests |
-| 4 | sprig resolves `spec/ui` at the git root | 🔲 **SPRIG TODO** | `framework/.sprig/annotate.ts:151` via `framework/cli.ts:399` |
-| 5 | sprig skill docs say "git root", not "project root" | 🔲 **SPRIG TODO** | 5 SKILL.md/README.md files (below) |
+| 4 | sprig resolves `spec/ui` at the git root | ✅ DONE (sprig) | `specRootOf()` in `framework/.sprig/spec-root.ts`, wired at `framework/cli.ts` (feeds the `annotate.ts` note/PNG paths) |
+| 5 | sprig skill docs say "git root", not "project root" | ✅ DONE (sprig) | the 5 SKILL.md/README.md files (below) now say "git root" |
 | 6 | Only `spec/` relocates; generated `src/` stays per-package | ✅ BY DESIGN | rune sync output stays `<pkgRoot>/src/<m>`; split-package via `--root` |
 
 ---
@@ -193,6 +194,13 @@ automatic spec-root-vs-output-root split is a possible future enhancement.
   "where does my compiler write?" (Matches the user's words: *the **spec** folder*.)
 - **D-fallback: no `.git` ⇒ today's behavior.** Standalone project → its own root (unchanged);
   un-init'd scaffold → the project/app dir. No regression for non-monorepo users.
+- **D-durable: `spec/runes/` is the durable canonical home.** `rune sync` reads the spec from the
+  shared `spec/runes/` and generates code into `<pkg>/src/`, and **no longer relocates the spec into
+  `src/<module>/`**. The shared `spec/` therefore stays durable and complete *after* a build — this
+  supersedes any earlier implication that `spec/runes/` is a transient staging dir emptied once codegen
+  runs. The durability + artifact contract (what stays in `spec/`, what is generated where, cohesion
+  between the two) is coordinated in the neutral [`tooling/coms.md`](../../coms.md) — distinct from the
+  local [`coms.md`](./coms.md) companion.
 
 ---
 
@@ -229,3 +237,12 @@ automatic spec-root-vs-output-root split is a possible future enhancement.
   tests, 16/16 green; `KEEP_FIXTURES_DIR` still overrides). lint's per-`deno.json` root stays;
   split-package output uses `--root`. **Net: the sprig-side TODO (annotate + 5 skill docs) is the
   remaining work.**
+- 2026-07-18 — **doc refresh + durability decision.** Refreshed the **layout box** (added
+  `spec/contract/` — the ratified contract: `draft/` + `openapi.json` + `client/` + `binding.md`,
+  mostly generated) and the **status matrix**: rows 4–5 are now **✅ DONE on the sprig side** —
+  sprig shipped `specRootOf()` in `framework/.sprig/spec-root.ts`, wired at `framework/cli.ts` (it
+  feeds the `annotate.ts` note/PNG paths), and the 5 skill docs now say "git root". Recorded
+  **D-durable**: `spec/runes/` is now the **durable canonical home** — `rune sync` generates into
+  `<pkg>/src/` and **no longer relocates the spec into `src/<module>/`**, so the shared `spec/` stays
+  durable and complete after a build. The durability/cohesion + artifact contract is now coordinated
+  in the neutral [`tooling/coms.md`](../../coms.md) (not the local `./coms.md`).
