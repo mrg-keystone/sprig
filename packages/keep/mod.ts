@@ -150,7 +150,7 @@ export interface KeepApi {
 export interface ServeSprigConfig {
   keep: KeepApi;
   /** The SSR app. OPTIONAL: when omitted, serveSprig composes it from the derived srcDir
-   *  (`<entry root>/ui/src`) exactly as `sprig dev` does — so a generated `serve.ts` is one line
+   *  (`<entry root>/<ui|app>/src`, probed on disk) exactly as `sprig dev` does — so a generated `serve.ts` is one line
    *  and the app authors no composition. Pass it to override (how `sprig dev` calls serveSprig). */
   app?: SprigApp;
   /** where the UI mounts (default "/ui"). keep owns apiPrefix + docsPrefix. */
@@ -158,8 +158,8 @@ export interface ServeSprigConfig {
   apiPrefix?: string; // default "/api"
   docsPrefix?: string; // default "/docs"
   /** directory served at <base>/_assets/* (the build's client.js etc.). OPTIONAL: derived from the
-   *  entry anchor (`<root>/ui/static`) when omitted — NOT the cwd-relative "static", the default that
-   *  silently shipped ?v=dev to prod. Pass to override. */
+   *  entry anchor (`<root>/<ui|app>/static`, probed on disk) when omitted — NOT the cwd-relative
+   *  "static", the default that silently shipped ?v=dev to prod. Pass to override. */
   assetsDir?: string;
   /** Firebase/Google sign-in. When an infra URL is resolvable here (or via the INFRA_URL env),
    *  serveSprig auto-mounts the same-origin /auth gateway that sprig's `loginWithGoogle()` and
@@ -673,7 +673,7 @@ function injectHeadMeta(res: Response, meta: string): Response {
 // ─────────────────────────── zero-composition derivation ───────────────────────────
 // A generated `serve.ts` is `export default serveSprig({ keep: api })` — nothing else passed.
 // Everything else is DERIVED from one runtime anchor (`Deno.mainModule`, the git-root serve.ts that
-// `--rune` hoists) plus the fixed `ui/` convention: srcDir = <root>/ui/src, assetsDir = <root>/ui/static
+// `--rune` hoists) plus the ui/-or-app/ convention (probed on disk): srcDir = <root>/<ui|app>/src, assetsDir = <root>/<ui|app>/static
 // (falling back to <root>/src|static for a UI-at-root layout). The app is then composed from srcDir the
 // SAME way `sprig dev` does — so an app authors no composition file and can't forget `assetsDir` (the
 // cwd-relative default that shipped ?v=dev to prod). Every derived value is an override-able default:
@@ -690,16 +690,33 @@ function entryRoot(): string | null {
   }
 }
 
-/** Derive a UI subtree dir (`src` or `static`) from the entry anchor + the `ui/` convention:
- *  ALWAYS `<root>/ui/<sub>`. The composed monorepo is the only shape now — the sprig UI is a
- *  `./ui` package under the git root, beside `./server` (the keep backend), and serve.ts sits at
- *  the root, so `Deno.mainModule`'s dir IS the root and `ui/<sub>` resolves off it whether or not
- *  `ui/` exists on disk yet (a fresh scaffold before its first build). The flat UI-at-root layout
- *  was removed. Returns the cwd-relative `sub` as a last resort only when there is NO file anchor. */
+/** The sanctioned UI package names under the project root, in preference order: `ui/` is the
+ *  canonical composed layout; `app/` is the alternate name rune's structure spec sanctions. */
+const UI_PACKAGE_NAMES = ["ui", "app"] as const;
+
+/** Resolve the UI package dir under `root` by probing the sanctioned names in order — so a
+ *  generated one-line serve.ts composes correctly for BOTH layouts without any passed config.
+ *  Falls back to `<root>/ui` when neither exists yet (a fresh scaffold before its first build).
+ *  Exported for tests. */
+export function deriveUiPackageDir(root: string): string {
+  for (const name of UI_PACKAGE_NAMES) {
+    try {
+      if (Deno.statSync(join(root, name)).isDirectory) return join(root, name);
+    } catch { /* not this name — probe the next */ }
+  }
+  return join(root, "ui");
+}
+
+/** Derive a UI subtree dir (`src` or `static`) from the entry anchor + the ui/-or-app/ convention:
+ *  `<root>/<ui-package>/<sub>` (see deriveUiPackageDir). The composed monorepo is the only shape
+ *  now — the sprig UI is a `./ui` (or `./app`) package under the git root, beside `./server` (the
+ *  keep backend), and serve.ts sits at the root, so `Deno.mainModule`'s dir IS the root. The flat
+ *  UI-at-root layout was removed. Returns the cwd-relative `sub` as a last resort only when there
+ *  is NO file anchor. */
 function deriveUiDir(sub: string): string {
   const root = entryRoot();
   if (!root) return sub;
-  return join(root, "ui", sub);
+  return join(deriveUiPackageDir(root), sub);
 }
 
 /** Resolve an app's route table from `srcDir` — folder tables (`routers/root/routes.json` / legacy
@@ -930,7 +947,7 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
 }
 
 export interface SprigUiConfig {
-  /** The SSR app. OPTIONAL: composed from the derived srcDir (`<entry root>/ui|.>/src`) when omitted. */
+  /** The SSR app. OPTIONAL: composed from the derived srcDir (`<entry root>/<ui|app>/src`) when omitted. */
   app?: SprigApp;
   /** where the UI mounts (default "/ui"); the build's assets live at <base>/_assets/*. */
   base?: string;
