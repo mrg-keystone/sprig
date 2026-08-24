@@ -1183,6 +1183,16 @@ async function ensureRuneWorkspace(gitRoot: string, uiRel: string, serverRel: st
   const ws = Array.isArray(cfg.workspace) ? cfg.workspace as string[] : [];
   for (const m of [`./${uiRel}`, `./${serverRel}`]) if (!ws.includes(m)) ws.push(m);
   cfg.workspace = ws;
+  // 1b. root compilerOptions: booting serve.ts from the git root resolves REMOTE modules
+  //     against THIS config, and keep's danet graph needs legacy decorators — without
+  //     experimentalDecorators at the root, danet's parameter decorators hit the TC39
+  //     parser and the composed boot dies ("Uncaught SyntaxError" in @danet/core throttler/guard.ts).
+  const rootCo = (cfg.compilerOptions && typeof cfg.compilerOptions === "object")
+    ? cfg.compilerOptions as Record<string, unknown>
+    : {};
+  rootCo.experimentalDecorators ??= true;
+  rootCo.emitDecoratorMetadata ??= true;
+  cfg.compilerOptions = rootCo;
   // 2. workspace-root imports, matched to the UI member's exact versions so keep's `Backend`
   //    token is the SAME module instance (a version skew → "Backend is not bound"):
   //      · @mrg-keystone/sprig/keep + @std/path — what serve.ts itself imports.
