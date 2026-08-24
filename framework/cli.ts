@@ -66,13 +66,13 @@ function runeRange(): string {
   // Direct import.meta.dirname, NOT installRoot(): its jsr guard Deno.exit(1)s
   // (uncatchable) — this read must degrade to the floor on a remote jsr: run.
   const fwDir = import.meta.dirname;
-  if (!fwDir) return "^3";
+  if (!fwDir) return "^5";
   try {
     const cfg = JSON.parse(Deno.readTextFileSync(join(fwDir, "..", "server", "deno.json"))) as { imports?: Record<string, string> };
     const range = cfg.imports?.["@mrg-keystone/rune"]?.match(/\/rune@([^"/]+)$/)?.[1];
     if (range) return range;
   } catch { /* fall through to a sane floor */ }
-  return "^3";
+  return "^5";
 }
 
 /** This CLI's on-disk install root — the dir holding `framework/` (a repo checkout or `~/.sprig`).
