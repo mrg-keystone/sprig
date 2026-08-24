@@ -1194,8 +1194,11 @@ async function ensureRuneWorkspace(gitRoot: string, uiRel: string, serverRel: st
   const uiCfg = await readJson(join(gitRoot, uiRel, "deno.json"));
   const uiImports = (uiCfg?.imports ?? {}) as Record<string, string>;
   const imports = (cfg.imports && typeof cfg.imports === "object") ? cfg.imports as Record<string, string> : {};
-  imports["@mrg-keystone/sprig"] ??= uiImports["@mrg-keystone/sprig"] ?? "jsr:@mrg-keystone/sprig@0.12";
-  imports["@mrg-keystone/sprig/keep"] ??= uiImports["@mrg-keystone/sprig/keep"] ?? "jsr:@mrg-keystone/sprig@0.12/keep";
+  const fallbackSprigV = cliVersion() ?? "0.20";
+  imports["@mrg-keystone/sprig"] ??= uiImports["@mrg-keystone/sprig"] ??
+    `jsr:@mrg-keystone/sprig@${fallbackSprigV}`;
+  imports["@mrg-keystone/sprig/keep"] ??= uiImports["@mrg-keystone/sprig/keep"] ??
+    `jsr:@mrg-keystone/sprig@${fallbackSprigV}/keep`;
   imports["@std/path"] ??= uiImports["@std/path"] ?? "jsr:@std/path@^1";
   imports["@preact/signals-core"] ??= uiImports["@preact/signals-core"] ?? "npm:@preact/signals-core@^1";
   cfg.imports = imports;
