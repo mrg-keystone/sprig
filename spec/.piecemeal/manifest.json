@@ -1,0 +1,3007 @@
+{
+  "sourceDir": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec",
+  "outDir": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec-pieces",
+  "files": [
+    {
+      "outPath": "00-overview/00-overview.md",
+      "source": "00-overview.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/00-overview.md",
+      "startByte": 0,
+      "endByte": 283,
+      "rewrites": []
+    },
+    {
+      "outPath": "00-overview/01-one-paragraph.md",
+      "source": "00-overview.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/00-overview.md",
+      "startByte": 283,
+      "endByte": 1065,
+      "rewrites": []
+    },
+    {
+      "outPath": "00-overview/02-the-three-products-in-this-repo.md",
+      "source": "00-overview.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/00-overview.md",
+      "startByte": 1065,
+      "endByte": 1854,
+      "rewrites": []
+    },
+    {
+      "outPath": "00-overview/03-the-mental-model-request-path.md",
+      "source": "00-overview.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/00-overview.md",
+      "startByte": 1854,
+      "endByte": 2608,
+      "rewrites": []
+    },
+    {
+      "outPath": "00-overview/04-repo-map.md",
+      "source": "00-overview.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/00-overview.md",
+      "startByte": 2608,
+      "endByte": 4871,
+      "rewrites": []
+    },
+    {
+      "outPath": "00-overview/05-core-concepts-glossary.md",
+      "source": "00-overview.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/00-overview.md",
+      "startByte": 4871,
+      "endByte": 8298,
+      "rewrites": [
+        {
+          "start": 514,
+          "end": 516,
+          "from": "§1",
+          "to": "[§1](01-one-paragraph.md)"
+        },
+        {
+          "start": 1745,
+          "end": 1747,
+          "from": "§3",
+          "to": "[§3](03-the-mental-model-request-path.md)"
+        },
+        {
+          "start": 2696,
+          "end": 2698,
+          "from": "§4",
+          "to": "[§4](04-repo-map.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "00-overview/06-the-invariants-that-define-the-system-full-versions-in-each-.md",
+      "source": "00-overview.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/00-overview.md",
+      "startByte": 8298,
+      "endByte": 9767,
+      "rewrites": [
+        {
+          "start": 295,
+          "end": 297,
+          "from": "§7",
+          "to": "[§7](07-how-to-verify-claims-in-these-specs.md)"
+        },
+        {
+          "start": 618,
+          "end": 620,
+          "from": "§4",
+          "to": "[§4](04-repo-map.md)"
+        },
+        {
+          "start": 916,
+          "end": 918,
+          "from": "§4",
+          "to": "[§4](04-repo-map.md)"
+        },
+        {
+          "start": 923,
+          "end": 925,
+          "from": "§5",
+          "to": "[§5](05-core-concepts-glossary.md)"
+        },
+        {
+          "start": 1444,
+          "end": 1446,
+          "from": "§2",
+          "to": "[§2](02-the-three-products-in-this-repo.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "00-overview/07-how-to-verify-claims-in-these-specs.md",
+      "source": "00-overview.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/00-overview.md",
+      "startByte": 9767,
+      "endByte": 10164,
+      "rewrites": []
+    },
+    {
+      "outPath": "01-core-runtime/00-overview.md",
+      "source": "01-core-runtime.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/01-core-runtime.md",
+      "startByte": 0,
+      "endByte": 568,
+      "rewrites": []
+    },
+    {
+      "outPath": "01-core-runtime/01-1-public-api-surface-all-of-mrg-keystone-sprig.md",
+      "source": "01-core-runtime.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/01-core-runtime.md",
+      "startByte": 568,
+      "endByte": 6936,
+      "rewrites": [
+        {
+          "start": 964,
+          "end": 966,
+          "from": "§5",
+          "to": "[§5](05-5-stateservice-persisted-client-state-core-ts-103-187.md)"
+        },
+        {
+          "start": 1417,
+          "end": 1419,
+          "from": "§2",
+          "to": "[§2](02-2-injector-semantics-core-ts-190-256.md)"
+        },
+        {
+          "start": 2156,
+          "end": 2158,
+          "from": "§7",
+          "to": "[§7](07-7-dual-runtime-detection-core-ts-273-292.md)"
+        },
+        {
+          "start": 3453,
+          "end": 3455,
+          "from": "§4",
+          "to": "[§4](04-4-bootstrap-request-pipeline-core-ts-709-850.md)"
+        },
+        {
+          "start": 4551,
+          "end": 4553,
+          "from": "§3",
+          "to": "[§3](03-3-routing-semantics-core-ts-486-644.md)"
+        },
+        {
+          "start": 4932,
+          "end": 4934,
+          "from": "§3",
+          "to": "[§3](03-3-routing-semantics-core-ts-486-644.md)"
+        },
+        {
+          "start": 5206,
+          "end": 5208,
+          "from": "§3",
+          "to": "[§3](03-3-routing-semantics-core-ts-486-644.md)"
+        },
+        {
+          "start": 5689,
+          "end": 5691,
+          "from": "§4",
+          "to": "[§4](04-4-bootstrap-request-pipeline-core-ts-709-850.md)"
+        },
+        {
+          "start": 5780,
+          "end": 5782,
+          "from": "§5",
+          "to": "[§5](05-5-stateservice-persisted-client-state-core-ts-103-187.md)"
+        },
+        {
+          "start": 5880,
+          "end": 5882,
+          "from": "§6",
+          "to": "[§6](06-6-auth-ts-httponly-cookie-auth-framework-sprig-auth-ts.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "01-core-runtime/02-2-injector-semantics-core-ts-190-256.md",
+      "source": "01-core-runtime.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/01-core-runtime.md",
+      "startByte": 6936,
+      "endByte": 8762,
+      "rewrites": []
+    },
+    {
+      "outPath": "01-core-runtime/03-3-routing-semantics-core-ts-486-644.md",
+      "source": "01-core-runtime.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/01-core-runtime.md",
+      "startByte": 8762,
+      "endByte": 12398,
+      "rewrites": [
+        {
+          "start": 2195,
+          "end": 2197,
+          "from": "§4",
+          "to": "[§4](04-4-bootstrap-request-pipeline-core-ts-709-850.md)"
+        },
+        {
+          "start": 2243,
+          "end": 2245,
+          "from": "§4",
+          "to": "[§4](04-4-bootstrap-request-pipeline-core-ts-709-850.md)"
+        },
+        {
+          "start": 2311,
+          "end": 2313,
+          "from": "§4",
+          "to": "[§4](04-4-bootstrap-request-pipeline-core-ts-709-850.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "01-core-runtime/04-4-bootstrap-request-pipeline-core-ts-709-850.md",
+      "source": "01-core-runtime.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/01-core-runtime.md",
+      "startByte": 12398,
+      "endByte": 20937,
+      "rewrites": [
+        {
+          "start": 221,
+          "end": 223,
+          "from": "§1",
+          "to": "[§1](01-1-public-api-surface-all-of-mrg-keystone-sprig.md)"
+        },
+        {
+          "start": 1036,
+          "end": 1039,
+          "from": "§10",
+          "to": "[§10](10-10-refactor-targets-tensions-observed.md)"
+        },
+        {
+          "start": 1219,
+          "end": 1221,
+          "from": "§3",
+          "to": "[§3](03-3-routing-semantics-core-ts-486-644.md)"
+        },
+        {
+          "start": 2072,
+          "end": 2075,
+          "from": "§10",
+          "to": "[§10](10-10-refactor-targets-tensions-observed.md)"
+        },
+        {
+          "start": 2688,
+          "end": 2690,
+          "from": "§3",
+          "to": "[§3](03-3-routing-semantics-core-ts-486-644.md)"
+        },
+        {
+          "start": 2708,
+          "end": 2710,
+          "from": "§3",
+          "to": "[§3](03-3-routing-semantics-core-ts-486-644.md)"
+        },
+        {
+          "start": 2814,
+          "end": 2817,
+          "from": "§10",
+          "to": "[§10](10-10-refactor-targets-tensions-observed.md)"
+        },
+        {
+          "start": 4435,
+          "end": 4437,
+          "from": "§5",
+          "to": "[§5](05-5-stateservice-persisted-client-state-core-ts-103-187.md)"
+        },
+        {
+          "start": 4617,
+          "end": 4619,
+          "from": "§3",
+          "to": "[§3](03-3-routing-semantics-core-ts-486-644.md)"
+        },
+        {
+          "start": 5808,
+          "end": 5810,
+          "from": "§2",
+          "to": "[§2](02-2-injector-semantics-core-ts-190-256.md)"
+        },
+        {
+          "start": 5816,
+          "end": 5819,
+          "from": "§10",
+          "to": "[§10](10-10-refactor-targets-tensions-observed.md)"
+        },
+        {
+          "start": 6028,
+          "end": 6030,
+          "from": "§3",
+          "to": "[§3](03-3-routing-semantics-core-ts-486-644.md)"
+        },
+        {
+          "start": 7206,
+          "end": 7208,
+          "from": "§1",
+          "to": "[§1](01-1-public-api-surface-all-of-mrg-keystone-sprig.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "01-core-runtime/05-5-stateservice-persisted-client-state-core-ts-103-187.md",
+      "source": "01-core-runtime.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/01-core-runtime.md",
+      "startByte": 20937,
+      "endByte": 22367,
+      "rewrites": []
+    },
+    {
+      "outPath": "01-core-runtime/06-6-auth-ts-httponly-cookie-auth-framework-sprig-auth-ts.md",
+      "source": "01-core-runtime.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/01-core-runtime.md",
+      "startByte": 22367,
+      "endByte": 23953,
+      "rewrites": [
+        {
+          "start": 397,
+          "end": 399,
+          "from": "§4",
+          "to": "[§4](04-4-bootstrap-request-pipeline-core-ts-709-850.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "01-core-runtime/07-7-dual-runtime-detection-core-ts-273-292.md",
+      "source": "01-core-runtime.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/01-core-runtime.md",
+      "startByte": 23953,
+      "endByte": 24474,
+      "rewrites": []
+    },
+    {
+      "outPath": "01-core-runtime/08-8-spec-root-ts.md",
+      "source": "01-core-runtime.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/01-core-runtime.md",
+      "startByte": 24474,
+      "endByte": 24811,
+      "rewrites": []
+    },
+    {
+      "outPath": "01-core-runtime/09-9-behavioral-contracts-pinned-by-tests-must-survive-a-refact.md",
+      "source": "01-core-runtime.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/01-core-runtime.md",
+      "startByte": 24811,
+      "endByte": 25461,
+      "rewrites": [
+        {
+          "start": 597,
+          "end": 599,
+          "from": "§5",
+          "to": "[§5](05-5-stateservice-persisted-client-state-core-ts-103-187.md)"
+        },
+        {
+          "start": 639,
+          "end": 641,
+          "from": "§7",
+          "to": "[§7](07-7-dual-runtime-detection-core-ts-273-292.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "01-core-runtime/10-10-refactor-targets-tensions-observed.md",
+      "source": "01-core-runtime.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/01-core-runtime.md",
+      "startByte": 25461,
+      "endByte": 26519,
+      "rewrites": [
+        {
+          "start": 493,
+          "end": 495,
+          "from": "§2",
+          "to": "[§2](02-2-injector-semantics-core-ts-190-256.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "02-template-compiler/00-overview.md",
+      "source": "02-template-compiler.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/02-template-compiler.md",
+      "startByte": 0,
+      "endByte": 410,
+      "rewrites": []
+    },
+    {
+      "outPath": "02-template-compiler/01-0-the-framing-design-fact.md",
+      "source": "02-template-compiler.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/02-template-compiler.md",
+      "startByte": 410,
+      "endByte": 1231,
+      "rewrites": [
+        {
+          "start": 812,
+          "end": 814,
+          "from": "§5",
+          "to": "[§5](06-5-mod-ts-registry-page-assembly-renderer.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "02-template-compiler/02-1-template-syntax-grammar-tree-sitter-angular-template-gramm.md",
+      "source": "02-template-compiler.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/02-template-compiler.md",
+      "startByte": 1231,
+      "endByte": 4603,
+      "rewrites": [
+        {
+          "start": 2339,
+          "end": 2341,
+          "from": "§4",
+          "to": "[§4](05-4-render-ts-ssr-semantics.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "02-template-compiler/03-2-ast-wire-format.md",
+      "source": "02-template-compiler.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/02-template-compiler.md",
+      "startByte": 4603,
+      "endByte": 5483,
+      "rewrites": []
+    },
+    {
+      "outPath": "02-template-compiler/04-3-expr-ts-the-expression-interpreter.md",
+      "source": "02-template-compiler.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/02-template-compiler.md",
+      "startByte": 5483,
+      "endByte": 7594,
+      "rewrites": []
+    },
+    {
+      "outPath": "02-template-compiler/05-4-render-ts-ssr-semantics.md",
+      "source": "02-template-compiler.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/02-template-compiler.md",
+      "startByte": 7594,
+      "endByte": 13094,
+      "rewrites": [
+        {
+          "start": 5187,
+          "end": 5189,
+          "from": "§6",
+          "to": "[§6](07-6-supporting-modules.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "02-template-compiler/06-5-mod-ts-registry-page-assembly-renderer.md",
+      "source": "02-template-compiler.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/02-template-compiler.md",
+      "startByte": 13094,
+      "endByte": 17059,
+      "rewrites": [
+        {
+          "start": 641,
+          "end": 643,
+          "from": "§6",
+          "to": "[§6](07-6-supporting-modules.md)"
+        },
+        {
+          "start": 750,
+          "end": 752,
+          "from": "§6",
+          "to": "[§6](07-6-supporting-modules.md)"
+        },
+        {
+          "start": 2126,
+          "end": 2128,
+          "from": "§3",
+          "to": "[§3](04-3-expr-ts-the-expression-interpreter.md)"
+        },
+        {
+          "start": 2831,
+          "end": 2833,
+          "from": "§4",
+          "to": "[§4](05-4-render-ts-ssr-semantics.md)"
+        },
+        {
+          "start": 3439,
+          "end": 3441,
+          "from": "§1",
+          "to": "[§1](02-1-template-syntax-grammar-tree-sitter-angular-template-gramm.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "02-template-compiler/07-6-supporting-modules.md",
+      "source": "02-template-compiler.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/02-template-compiler.md",
+      "startByte": 17059,
+      "endByte": 20731,
+      "rewrites": []
+    },
+    {
+      "outPath": "02-template-compiler/08-7-contract-checklist-for-a-refactor-each-pinned-by-a-named-t.md",
+      "source": "02-template-compiler.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/02-template-compiler.md",
+      "startByte": 20731,
+      "endByte": 21942,
+      "rewrites": []
+    },
+    {
+      "outPath": "03-islands-and-hydration/00-overview.md",
+      "source": "03-islands-and-hydration.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/03-islands-and-hydration.md",
+      "startByte": 0,
+      "endByte": 341,
+      "rewrites": []
+    },
+    {
+      "outPath": "03-islands-and-hydration/01-1-the-island-model.md",
+      "source": "03-islands-and-hydration.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/03-islands-and-hydration.md",
+      "startByte": 341,
+      "endByte": 2571,
+      "rewrites": [
+        {
+          "start": 1861,
+          "end": 1863,
+          "from": "§2",
+          "to": "[§2](02-2-the-ssr-client-props-contract.md)"
+        },
+        {
+          "start": 1864,
+          "end": 1866,
+          "from": "§4",
+          "to": "[§4](04-4-hydration-order-pinned-by-hydrate-restore-order-test-ts.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "03-islands-and-hydration/02-2-the-ssr-client-props-contract.md",
+      "source": "03-islands-and-hydration.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/03-islands-and-hydration.md",
+      "startByte": 2571,
+      "endByte": 4178,
+      "rewrites": [
+        {
+          "start": 977,
+          "end": 979,
+          "from": "§5",
+          "to": "[§5](05-5-reactive-update-model.md)"
+        },
+        {
+          "start": 980,
+          "end": 982,
+          "from": "§7",
+          "to": "[§7](07-7-soft-navigation-hydrate-ts-500-727.md)"
+        },
+        {
+          "start": 1102,
+          "end": 1104,
+          "from": "§4",
+          "to": "[§4](04-4-hydration-order-pinned-by-hydrate-restore-order-test-ts.md)"
+        },
+        {
+          "start": 1487,
+          "end": 1489,
+          "from": "§4",
+          "to": "[§4](04-4-hydration-order-pinned-by-hydrate-restore-order-test-ts.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "03-islands-and-hydration/03-3-client-boot-trigger-arming.md",
+      "source": "03-islands-and-hydration.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/03-islands-and-hydration.md",
+      "startByte": 4178,
+      "endByte": 6437,
+      "rewrites": [
+        {
+          "start": 137,
+          "end": 139,
+          "from": "§9",
+          "to": "[§9](09-9-hmr-hooks-in-the-client-runtime.md)"
+        },
+        {
+          "start": 455,
+          "end": 457,
+          "from": "§1",
+          "to": "[§1](01-1-the-island-model.md)"
+        },
+        {
+          "start": 517,
+          "end": 519,
+          "from": "§4",
+          "to": "[§4](04-4-hydration-order-pinned-by-hydrate-restore-order-test-ts.md)"
+        },
+        {
+          "start": 520,
+          "end": 522,
+          "from": "§9",
+          "to": "[§9](09-9-hmr-hooks-in-the-client-runtime.md)"
+        },
+        {
+          "start": 695,
+          "end": 697,
+          "from": "§6",
+          "to": "[§6](06-6-nested-islands-the-zz-contracts.md)"
+        },
+        {
+          "start": 2215,
+          "end": 2217,
+          "from": "§1",
+          "to": "[§1](01-1-the-island-model.md)"
+        },
+        {
+          "start": 2218,
+          "end": 2220,
+          "from": "§4",
+          "to": "[§4](04-4-hydration-order-pinned-by-hydrate-restore-order-test-ts.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "03-islands-and-hydration/04-4-hydration-order-pinned-by-hydrate-restore-order-test-ts.md",
+      "source": "03-islands-and-hydration.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/03-islands-and-hydration.md",
+      "startByte": 6437,
+      "endByte": 7139,
+      "rewrites": []
+    },
+    {
+      "outPath": "03-islands-and-hydration/05-5-reactive-update-model.md",
+      "source": "03-islands-and-hydration.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/03-islands-and-hydration.md",
+      "startByte": 7139,
+      "endByte": 8521,
+      "rewrites": [
+        {
+          "start": 493,
+          "end": 495,
+          "from": "§2",
+          "to": "[§2](02-2-the-ssr-client-props-contract.md)"
+        },
+        {
+          "start": 595,
+          "end": 597,
+          "from": "§3",
+          "to": "[§3](03-3-client-boot-trigger-arming.md)"
+        },
+        {
+          "start": 612,
+          "end": 614,
+          "from": "§7",
+          "to": "[§7](07-7-soft-navigation-hydrate-ts-500-727.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "03-islands-and-hydration/06-6-nested-islands-the-zz-contracts.md",
+      "source": "03-islands-and-hydration.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/03-islands-and-hydration.md",
+      "startByte": 8521,
+      "endByte": 9749,
+      "rewrites": [
+        {
+          "start": 319,
+          "end": 321,
+          "from": "§3",
+          "to": "[§3](03-3-client-boot-trigger-arming.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "03-islands-and-hydration/07-7-soft-navigation-hydrate-ts-500-727.md",
+      "source": "03-islands-and-hydration.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/03-islands-and-hydration.md",
+      "startByte": 9749,
+      "endByte": 12728,
+      "rewrites": [
+        {
+          "start": 482,
+          "end": 484,
+          "from": "§1",
+          "to": "[§1](01-1-the-island-model.md)"
+        },
+        {
+          "start": 485,
+          "end": 487,
+          "from": "§3",
+          "to": "[§3](03-3-client-boot-trigger-arming.md)"
+        },
+        {
+          "start": 1485,
+          "end": 1487,
+          "from": "§3",
+          "to": "[§3](03-3-client-boot-trigger-arming.md)"
+        },
+        {
+          "start": 1640,
+          "end": 1642,
+          "from": "§3",
+          "to": "[§3](03-3-client-boot-trigger-arming.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "03-islands-and-hydration/08-8-dual-runtime-recovery.md",
+      "source": "03-islands-and-hydration.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/03-islands-and-hydration.md",
+      "startByte": 12728,
+      "endByte": 13035,
+      "rewrites": []
+    },
+    {
+      "outPath": "03-islands-and-hydration/09-9-hmr-hooks-in-the-client-runtime.md",
+      "source": "03-islands-and-hydration.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/03-islands-and-hydration.md",
+      "startByte": 13035,
+      "endByte": 13864,
+      "rewrites": [
+        {
+          "start": 91,
+          "end": 93,
+          "from": "§3",
+          "to": "[§3](03-3-client-boot-trigger-arming.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "03-islands-and-hydration/10-10-contract-checklist-for-a-refactor.md",
+      "source": "03-islands-and-hydration.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/03-islands-and-hydration.md",
+      "startByte": 13864,
+      "endByte": 14874,
+      "rewrites": []
+    },
+    {
+      "outPath": "04-build-pipeline-and-artifacts/00-overview.md",
+      "source": "04-build-pipeline-and-artifacts.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/04-build-pipeline-and-artifacts.md",
+      "startByte": 0,
+      "endByte": 285,
+      "rewrites": []
+    },
+    {
+      "outPath": "04-build-pipeline-and-artifacts/01-1-pipeline-buildclient-srcdir-outdir-build-ts-63-298.md",
+      "source": "04-build-pipeline-and-artifacts.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/04-build-pipeline-and-artifacts.md",
+      "startByte": 285,
+      "endByte": 11082,
+      "rewrites": [
+        {
+          "start": 2435,
+          "end": 2437,
+          "from": "§5",
+          "to": "[§5](05-5-refactor-notes.md)"
+        },
+        {
+          "start": 3518,
+          "end": 3520,
+          "from": "§3",
+          "to": "[§3](03-3-what-ssr-must-inject-for-hydration-the-html-contract.md)"
+        },
+        {
+          "start": 8097,
+          "end": 8099,
+          "from": "§5",
+          "to": "[§5](05-5-refactor-notes.md)"
+        },
+        {
+          "start": 9282,
+          "end": 9284,
+          "from": "§2",
+          "to": "[§2](02-2-the-artifact-set-static.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "04-build-pipeline-and-artifacts/02-2-the-artifact-set-static.md",
+      "source": "04-build-pipeline-and-artifacts.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/04-build-pipeline-and-artifacts.md",
+      "startByte": 11082,
+      "endByte": 12472,
+      "rewrites": [
+        {
+          "start": 1068,
+          "end": 1070,
+          "from": "§1",
+          "to": "[§1](01-1-pipeline-buildclient-srcdir-outdir-build-ts-63-298.md)"
+        },
+        {
+          "start": 1201,
+          "end": 1203,
+          "from": "§1",
+          "to": "[§1](01-1-pipeline-buildclient-srcdir-outdir-build-ts-63-298.md)"
+        },
+        {
+          "start": 1344,
+          "end": 1346,
+          "from": "§5",
+          "to": "[§5](05-5-refactor-notes.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "04-build-pipeline-and-artifacts/03-3-what-ssr-must-inject-for-hydration-the-html-contract.md",
+      "source": "04-build-pipeline-and-artifacts.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/04-build-pipeline-and-artifacts.md",
+      "startByte": 12472,
+      "endByte": 17972,
+      "rewrites": [
+        {
+          "start": 1331,
+          "end": 1333,
+          "from": "§2",
+          "to": "[§2](02-2-the-artifact-set-static.md)"
+        },
+        {
+          "start": 1473,
+          "end": 1475,
+          "from": "§2",
+          "to": "[§2](02-2-the-artifact-set-static.md)"
+        },
+        {
+          "start": 2644,
+          "end": 2646,
+          "from": "§4",
+          "to": "[§4](04-4-versioning-caching-contract.md)"
+        },
+        {
+          "start": 2819,
+          "end": 2821,
+          "from": "§1",
+          "to": "[§1](01-1-pipeline-buildclient-srcdir-outdir-build-ts-63-298.md)"
+        },
+        {
+          "start": 4403,
+          "end": 4405,
+          "from": "§1",
+          "to": "[§1](01-1-pipeline-buildclient-srcdir-outdir-build-ts-63-298.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "04-build-pipeline-and-artifacts/04-4-versioning-caching-contract.md",
+      "source": "04-build-pipeline-and-artifacts.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/04-build-pipeline-and-artifacts.md",
+      "startByte": 17972,
+      "endByte": 18835,
+      "rewrites": [
+        {
+          "start": 297,
+          "end": 299,
+          "from": "§1",
+          "to": "[§1](01-1-pipeline-buildclient-srcdir-outdir-build-ts-63-298.md)"
+        },
+        {
+          "start": 849,
+          "end": 851,
+          "from": "§5",
+          "to": "[§5](05-5-refactor-notes.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "04-build-pipeline-and-artifacts/05-5-refactor-notes.md",
+      "source": "04-build-pipeline-and-artifacts.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/04-build-pipeline-and-artifacts.md",
+      "startByte": 18835,
+      "endByte": 19508,
+      "rewrites": [
+        {
+          "start": 359,
+          "end": 361,
+          "from": "§1",
+          "to": "[§1](01-1-pipeline-buildclient-srcdir-outdir-build-ts-63-298.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "05-cli-dev-hmr/00-overview.md",
+      "source": "05-cli-dev-hmr.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/05-cli-dev-hmr.md",
+      "startByte": 0,
+      "endByte": 243,
+      "rewrites": []
+    },
+    {
+      "outPath": "05-cli-dev-hmr/01-1-entry-and-self-location.md",
+      "source": "05-cli-dev-hmr.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/05-cli-dev-hmr.md",
+      "startByte": 243,
+      "endByte": 2815,
+      "rewrites": [
+        {
+          "start": 572,
+          "end": 574,
+          "from": "§3",
+          "to": "[§3](03-3-sprig-init-the-scaffold-contract.md)"
+        },
+        {
+          "start": 1557,
+          "end": 1559,
+          "from": "§6",
+          "to": "[§6](06-6-dev-server-hmr-dev-ts-hmr-ts.md)"
+        },
+        {
+          "start": 1703,
+          "end": 1705,
+          "from": "§4",
+          "to": "[§4](04-4-sprig-dev-the-three-layer-architecture.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "05-cli-dev-hmr/02-2-command-surface.md",
+      "source": "05-cli-dev-hmr.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/05-cli-dev-hmr.md",
+      "startByte": 2815,
+      "endByte": 5417,
+      "rewrites": [
+        {
+          "start": 126,
+          "end": 128,
+          "from": "§3",
+          "to": "[§3](03-3-sprig-init-the-scaffold-contract.md)"
+        },
+        {
+          "start": 255,
+          "end": 257,
+          "from": "§4",
+          "to": "[§4](04-4-sprig-dev-the-three-layer-architecture.md)"
+        },
+        {
+          "start": 345,
+          "end": 347,
+          "from": "§4",
+          "to": "[§4](04-4-sprig-dev-the-three-layer-architecture.md)"
+        },
+        {
+          "start": 412,
+          "end": 414,
+          "from": "§4",
+          "to": "[§4](04-4-sprig-dev-the-three-layer-architecture.md)"
+        },
+        {
+          "start": 1073,
+          "end": 1075,
+          "from": "§5",
+          "to": "[§5](05-5-sprig-build-rune-composition-emission.md)"
+        },
+        {
+          "start": 1605,
+          "end": 1607,
+          "from": "§6",
+          "to": "[§6](06-6-dev-server-hmr-dev-ts-hmr-ts.md)"
+        },
+        {
+          "start": 1988,
+          "end": 1990,
+          "from": "§5",
+          "to": "[§5](05-5-sprig-build-rune-composition-emission.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "05-cli-dev-hmr/03-3-sprig-init-the-scaffold-contract.md",
+      "source": "05-cli-dev-hmr.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/05-cli-dev-hmr.md",
+      "startByte": 5417,
+      "endByte": 6888,
+      "rewrites": [
+        {
+          "start": 471,
+          "end": 473,
+          "from": "§1",
+          "to": "[§1](01-1-entry-and-self-location.md)"
+        },
+        {
+          "start": 1027,
+          "end": 1029,
+          "from": "§5",
+          "to": "[§5](05-5-sprig-build-rune-composition-emission.md)"
+        },
+        {
+          "start": 1446,
+          "end": 1448,
+          "from": "§4",
+          "to": "[§4](04-4-sprig-dev-the-three-layer-architecture.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "05-cli-dev-hmr/04-4-sprig-dev-the-three-layer-architecture.md",
+      "source": "05-cli-dev-hmr.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/05-cli-dev-hmr.md",
+      "startByte": 6888,
+      "endByte": 13334,
+      "rewrites": [
+        {
+          "start": 1854,
+          "end": 1856,
+          "from": "§5",
+          "to": "[§5](05-5-sprig-build-rune-composition-emission.md)"
+        },
+        {
+          "start": 1983,
+          "end": 1985,
+          "from": "§3",
+          "to": "[§3](03-3-sprig-init-the-scaffold-contract.md)"
+        },
+        {
+          "start": 2987,
+          "end": 2989,
+          "from": "§1",
+          "to": "[§1](01-1-entry-and-self-location.md)"
+        },
+        {
+          "start": 3494,
+          "end": 3496,
+          "from": "§5",
+          "to": "[§5](05-5-sprig-build-rune-composition-emission.md)"
+        },
+        {
+          "start": 3963,
+          "end": 3965,
+          "from": "§6",
+          "to": "[§6](06-6-dev-server-hmr-dev-ts-hmr-ts.md)"
+        },
+        {
+          "start": 5299,
+          "end": 5301,
+          "from": "§2",
+          "to": "[§2](02-2-command-surface.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "05-cli-dev-hmr/05-5-sprig-build-rune-composition-emission.md",
+      "source": "05-cli-dev-hmr.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/05-cli-dev-hmr.md",
+      "startByte": 13334,
+      "endByte": 15625,
+      "rewrites": [
+        {
+          "start": 739,
+          "end": 741,
+          "from": "§4",
+          "to": "[§4](04-4-sprig-dev-the-three-layer-architecture.md)"
+        },
+        {
+          "start": 1726,
+          "end": 1728,
+          "from": "§2",
+          "to": "[§2](02-2-command-surface.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "05-cli-dev-hmr/06-6-dev-server-hmr-dev-ts-hmr-ts.md",
+      "source": "05-cli-dev-hmr.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/05-cli-dev-hmr.md",
+      "startByte": 15625,
+      "endByte": 18167,
+      "rewrites": [
+        {
+          "start": 1156,
+          "end": 1158,
+          "from": "§1",
+          "to": "[§1](01-1-entry-and-self-location.md)"
+        },
+        {
+          "start": 1175,
+          "end": 1177,
+          "from": "§2",
+          "to": "[§2](02-2-command-surface.md)"
+        },
+        {
+          "start": 1620,
+          "end": 1622,
+          "from": "§1",
+          "to": "[§1](01-1-entry-and-self-location.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "05-cli-dev-hmr/07-7-refactor-notes.md",
+      "source": "05-cli-dev-hmr.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/05-cli-dev-hmr.md",
+      "startByte": 18167,
+      "endByte": 19138,
+      "rewrites": [
+        {
+          "start": 317,
+          "end": 319,
+          "from": "§4",
+          "to": "[§4](04-4-sprig-dev-the-three-layer-architecture.md)"
+        },
+        {
+          "start": 957,
+          "end": 959,
+          "from": "§4",
+          "to": "[§4](04-4-sprig-dev-the-three-layer-architecture.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "06-keep-serving-composition/00-overview.md",
+      "source": "06-keep-serving-composition.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/06-keep-serving-composition.md",
+      "startByte": 0,
+      "endByte": 1143,
+      "rewrites": [
+        {
+          "start": 140,
+          "end": 142,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 218,
+          "end": 221,
+          "from": "§10",
+          "to": "[§10](10-10-refactor-notes.md)"
+        },
+        {
+          "start": 354,
+          "end": 356,
+          "from": "§2",
+          "to": "[§2](02-2-the-keepapi-seam-session-types-current-as-built.md)"
+        },
+        {
+          "start": 357,
+          "end": 359,
+          "from": "§4",
+          "to": "[§4](04-4-the-auth-gateway-api-body-gateway-current-as-built.md)"
+        },
+        {
+          "start": 563,
+          "end": 565,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 577,
+          "end": 579,
+          "from": "§5",
+          "to": "[§5](05-5-asset-serving-serveasset-hardening-contract.md)"
+        },
+        {
+          "start": 637,
+          "end": 639,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 649,
+          "end": 651,
+          "from": "§5",
+          "to": "[§5](05-5-asset-serving-serveasset-hardening-contract.md)"
+        },
+        {
+          "start": 652,
+          "end": 654,
+          "from": "§9",
+          "to": "[§9](09-9-zero-composition-derivation.md)"
+        },
+        {
+          "start": 908,
+          "end": 910,
+          "from": "§2",
+          "to": "[§2](02-2-the-keepapi-seam-session-types-current-as-built.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "06-keep-serving-composition/01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md",
+      "source": "06-keep-serving-composition.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/06-keep-serving-composition.md",
+      "startByte": 1143,
+      "endByte": 4836,
+      "rewrites": [
+        {
+          "start": 199,
+          "end": 201,
+          "from": "§2",
+          "to": "[§2](02-2-the-keepapi-seam-session-types-current-as-built.md)"
+        },
+        {
+          "start": 202,
+          "end": 204,
+          "from": "§4",
+          "to": "[§4](04-4-the-auth-gateway-api-body-gateway-current-as-built.md)"
+        },
+        {
+          "start": 258,
+          "end": 261,
+          "from": "§10",
+          "to": "[§10](10-10-refactor-notes.md)"
+        },
+        {
+          "start": 2171,
+          "end": 2173,
+          "from": "§2",
+          "to": "[§2](02-2-the-keepapi-seam-session-types-current-as-built.md)"
+        },
+        {
+          "start": 3479,
+          "end": 3481,
+          "from": "§5",
+          "to": "[§5](05-5-asset-serving-serveasset-hardening-contract.md)"
+        },
+        {
+          "start": 3482,
+          "end": 3484,
+          "from": "§9",
+          "to": "[§9](09-9-zero-composition-derivation.md)"
+        },
+        {
+          "start": 3630,
+          "end": 3632,
+          "from": "§3",
+          "to": "[§3](03-3-the-servesprig-composition-current-as-built.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "06-keep-serving-composition/02-2-the-keepapi-seam-session-types-current-as-built.md",
+      "source": "06-keep-serving-composition.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/06-keep-serving-composition.md",
+      "startByte": 4836,
+      "endByte": 6663,
+      "rewrites": [
+        {
+          "start": 80,
+          "end": 82,
+          "from": "§4",
+          "to": "[§4](04-4-the-auth-gateway-api-body-gateway-current-as-built.md)"
+        },
+        {
+          "start": 218,
+          "end": 220,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 1310,
+          "end": 1312,
+          "from": "§4",
+          "to": "[§4](04-4-the-auth-gateway-api-body-gateway-current-as-built.md)"
+        },
+        {
+          "start": 1536,
+          "end": 1538,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 1619,
+          "end": 1621,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 1694,
+          "end": 1696,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "06-keep-serving-composition/03-3-the-servesprig-composition-current-as-built.md",
+      "source": "06-keep-serving-composition.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/06-keep-serving-composition.md",
+      "startByte": 6663,
+      "endByte": 12408,
+      "rewrites": [
+        {
+          "start": 249,
+          "end": 251,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 1209,
+          "end": 1212,
+          "from": "§10",
+          "to": "[§10](10-10-refactor-notes.md)"
+        },
+        {
+          "start": 1803,
+          "end": 1805,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 2878,
+          "end": 2880,
+          "from": "§4",
+          "to": "[§4](04-4-the-auth-gateway-api-body-gateway-current-as-built.md)"
+        },
+        {
+          "start": 3354,
+          "end": 3356,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 3541,
+          "end": 3543,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 3636,
+          "end": 3638,
+          "from": "§4",
+          "to": "[§4](04-4-the-auth-gateway-api-body-gateway-current-as-built.md)"
+        },
+        {
+          "start": 3689,
+          "end": 3691,
+          "from": "§7",
+          "to": "[§7](07-7-head-meta-provenance-logging.md)"
+        },
+        {
+          "start": 3852,
+          "end": 3854,
+          "from": "§6",
+          "to": "[§6](06-6-vendored-browser-libs.md)"
+        },
+        {
+          "start": 3891,
+          "end": 3893,
+          "from": "§5",
+          "to": "[§5](05-5-asset-serving-serveasset-hardening-contract.md)"
+        },
+        {
+          "start": 4076,
+          "end": 4078,
+          "from": "§4",
+          "to": "[§4](04-4-the-auth-gateway-api-body-gateway-current-as-built.md)"
+        },
+        {
+          "start": 4846,
+          "end": 4848,
+          "from": "§2",
+          "to": "[§2](02-2-the-keepapi-seam-session-types-current-as-built.md)"
+        },
+        {
+          "start": 5054,
+          "end": 5056,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 5490,
+          "end": 5492,
+          "from": "§6",
+          "to": "[§6](06-6-vendored-browser-libs.md)"
+        },
+        {
+          "start": 5620,
+          "end": 5622,
+          "from": "§7",
+          "to": "[§7](07-7-head-meta-provenance-logging.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "06-keep-serving-composition/04-4-the-auth-gateway-api-body-gateway-current-as-built.md",
+      "source": "06-keep-serving-composition.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/06-keep-serving-composition.md",
+      "startByte": 12408,
+      "endByte": 22341,
+      "rewrites": [
+        {
+          "start": 212,
+          "end": 214,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 417,
+          "end": 419,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 593,
+          "end": 595,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 1058,
+          "end": 1060,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 1278,
+          "end": 1280,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 1471,
+          "end": 1473,
+          "from": "§6",
+          "to": "[§6](06-6-vendored-browser-libs.md)"
+        },
+        {
+          "start": 1602,
+          "end": 1604,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 4983,
+          "end": 4985,
+          "from": "§2",
+          "to": "[§2](02-2-the-keepapi-seam-session-types-current-as-built.md)"
+        },
+        {
+          "start": 6674,
+          "end": 6676,
+          "from": "§2",
+          "to": "[§2](02-2-the-keepapi-seam-session-types-current-as-built.md)"
+        },
+        {
+          "start": 7439,
+          "end": 7441,
+          "from": "§3",
+          "to": "[§3](03-3-the-servesprig-composition-current-as-built.md)"
+        },
+        {
+          "start": 7935,
+          "end": 7937,
+          "from": "§3",
+          "to": "[§3](03-3-the-servesprig-composition-current-as-built.md)"
+        },
+        {
+          "start": 8402,
+          "end": 8404,
+          "from": "§3",
+          "to": "[§3](03-3-the-servesprig-composition-current-as-built.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "06-keep-serving-composition/05-5-asset-serving-serveasset-hardening-contract.md",
+      "source": "06-keep-serving-composition.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/06-keep-serving-composition.md",
+      "startByte": 22341,
+      "endByte": 23785,
+      "rewrites": [
+        {
+          "start": 271,
+          "end": 273,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "06-keep-serving-composition/06-6-vendored-browser-libs.md",
+      "source": "06-keep-serving-composition.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/06-keep-serving-composition.md",
+      "startByte": 23785,
+      "endByte": 24781,
+      "rewrites": [
+        {
+          "start": 362,
+          "end": 364,
+          "from": "§5",
+          "to": "[§5](05-5-asset-serving-serveasset-hardening-contract.md)"
+        },
+        {
+          "start": 488,
+          "end": 490,
+          "from": "§3",
+          "to": "[§3](03-3-the-servesprig-composition-current-as-built.md)"
+        },
+        {
+          "start": 773,
+          "end": 775,
+          "from": "§3",
+          "to": "[§3](03-3-the-servesprig-composition-current-as-built.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "06-keep-serving-composition/07-7-head-meta-provenance-logging.md",
+      "source": "06-keep-serving-composition.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/06-keep-serving-composition.md",
+      "startByte": 24781,
+      "endByte": 25429,
+      "rewrites": []
+    },
+    {
+      "outPath": "06-keep-serving-composition/08-8-json-folder-routing.md",
+      "source": "06-keep-serving-composition.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/06-keep-serving-composition.md",
+      "startByte": 25429,
+      "endByte": 26863,
+      "rewrites": []
+    },
+    {
+      "outPath": "06-keep-serving-composition/09-9-zero-composition-derivation.md",
+      "source": "06-keep-serving-composition.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/06-keep-serving-composition.md",
+      "startByte": 26863,
+      "endByte": 29848,
+      "rewrites": [
+        {
+          "start": 828,
+          "end": 830,
+          "from": "§5",
+          "to": "[§5](05-5-asset-serving-serveasset-hardening-contract.md)"
+        },
+        {
+          "start": 1415,
+          "end": 1417,
+          "from": "§5",
+          "to": "[§5](05-5-asset-serving-serveasset-hardening-contract.md)"
+        },
+        {
+          "start": 1753,
+          "end": 1755,
+          "from": "§8",
+          "to": "[§8](08-8-json-folder-routing.md)"
+        },
+        {
+          "start": 1947,
+          "end": 1949,
+          "from": "§3",
+          "to": "[§3](03-3-the-servesprig-composition-current-as-built.md)"
+        },
+        {
+          "start": 2108,
+          "end": 2110,
+          "from": "§2",
+          "to": "[§2](02-2-the-keepapi-seam-session-types-current-as-built.md)"
+        },
+        {
+          "start": 2243,
+          "end": 2245,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 2561,
+          "end": 2563,
+          "from": "§3",
+          "to": "[§3](03-3-the-servesprig-composition-current-as-built.md)"
+        },
+        {
+          "start": 2603,
+          "end": 2605,
+          "from": "§3",
+          "to": "[§3](03-3-the-servesprig-composition-current-as-built.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "06-keep-serving-composition/10-10-refactor-notes.md",
+      "source": "06-keep-serving-composition.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/06-keep-serving-composition.md",
+      "startByte": 29848,
+      "endByte": 30973,
+      "rewrites": [
+        {
+          "start": 53,
+          "end": 55,
+          "from": "§1",
+          "to": "[§1](01-1-the-frontend-contract-sprig-s-simple-rules-target-not-yet-.md)"
+        },
+        {
+          "start": 322,
+          "end": 324,
+          "from": "§3",
+          "to": "[§3](03-3-the-servesprig-composition-current-as-built.md)"
+        },
+        {
+          "start": 418,
+          "end": 420,
+          "from": "§3",
+          "to": "[§3](03-3-the-servesprig-composition-current-as-built.md)"
+        },
+        {
+          "start": 523,
+          "end": 525,
+          "from": "§4",
+          "to": "[§4](04-4-the-auth-gateway-api-body-gateway-current-as-built.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "07-isolate-workbench/00-overview.md",
+      "source": "07-isolate-workbench.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/07-isolate-workbench.md",
+      "startByte": 0,
+      "endByte": 419,
+      "rewrites": []
+    },
+    {
+      "outPath": "07-isolate-workbench/01-1-what-isolate-is-end-to-end.md",
+      "source": "07-isolate-workbench.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/07-isolate-workbench.md",
+      "startByte": 419,
+      "endByte": 3923,
+      "rewrites": [
+        {
+          "start": 962,
+          "end": 964,
+          "from": "§5",
+          "to": "[§5](05-5-the-isolate-case-format.md)"
+        },
+        {
+          "start": 1199,
+          "end": 1201,
+          "from": "§3",
+          "to": "[§3](03-3-the-server-server-a-rune-generated-keep-backend.md)"
+        },
+        {
+          "start": 1785,
+          "end": 1787,
+          "from": "§2",
+          "to": "[§2](02-2-the-isolate-cli-cli.md)"
+        },
+        {
+          "start": 1789,
+          "end": 1791,
+          "from": "§5",
+          "to": "[§5](05-5-the-isolate-case-format.md)"
+        },
+        {
+          "start": 2175,
+          "end": 2177,
+          "from": "§6",
+          "to": "[§6](06-6-sprig-isolate-cli-main-ts.md)"
+        },
+        {
+          "start": 2552,
+          "end": 2554,
+          "from": "§2",
+          "to": "[§2](02-2-the-isolate-cli-cli.md)"
+        },
+        {
+          "start": 2897,
+          "end": 2899,
+          "from": "§6",
+          "to": "[§6](06-6-sprig-isolate-cli-main-ts.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "07-isolate-workbench/02-2-the-isolate-cli-cli.md",
+      "source": "07-isolate-workbench.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/07-isolate-workbench.md",
+      "startByte": 3923,
+      "endByte": 10869,
+      "rewrites": [
+        {
+          "start": 520,
+          "end": 522,
+          "from": "§1",
+          "to": "[§1](01-1-what-isolate-is-end-to-end.md)"
+        },
+        {
+          "start": 698,
+          "end": 700,
+          "from": "§5",
+          "to": "[§5](05-5-the-isolate-case-format.md)"
+        },
+        {
+          "start": 1149,
+          "end": 1151,
+          "from": "§3",
+          "to": "[§3](03-3-the-server-server-a-rune-generated-keep-backend.md)"
+        },
+        {
+          "start": 1403,
+          "end": 1405,
+          "from": "§1",
+          "to": "[§1](01-1-what-isolate-is-end-to-end.md)"
+        },
+        {
+          "start": 2291,
+          "end": 2293,
+          "from": "§3",
+          "to": "[§3](03-3-the-server-server-a-rune-generated-keep-backend.md)"
+        },
+        {
+          "start": 2560,
+          "end": 2562,
+          "from": "§3",
+          "to": "[§3](03-3-the-server-server-a-rune-generated-keep-backend.md)"
+        },
+        {
+          "start": 3032,
+          "end": 3043,
+          "from": "DX-IDEAL §3",
+          "to": "[DX-IDEAL §3](../DX-IDEAL/04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 3863,
+          "end": 3865,
+          "from": "§6",
+          "to": "[§6](06-6-sprig-isolate-cli-main-ts.md)"
+        },
+        {
+          "start": 3930,
+          "end": 3932,
+          "from": "§1",
+          "to": "[§1](01-1-what-isolate-is-end-to-end.md)"
+        },
+        {
+          "start": 4309,
+          "end": 4311,
+          "from": "§4",
+          "to": "[§4](04-4-the-workbench-ui-app.md)"
+        },
+        {
+          "start": 4578,
+          "end": 4580,
+          "from": "§5",
+          "to": "[§5](05-5-the-isolate-case-format.md)"
+        },
+        {
+          "start": 5250,
+          "end": 5252,
+          "from": "§1",
+          "to": "[§1](01-1-what-isolate-is-end-to-end.md)"
+        },
+        {
+          "start": 6009,
+          "end": 6011,
+          "from": "§3",
+          "to": "[§3](03-3-the-server-server-a-rune-generated-keep-backend.md)"
+        },
+        {
+          "start": 6575,
+          "end": 6577,
+          "from": "§1",
+          "to": "[§1](01-1-what-isolate-is-end-to-end.md)"
+        },
+        {
+          "start": 6713,
+          "end": 6715,
+          "from": "§8",
+          "to": "[§8](08-8-known-drift-refactor-targets.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "07-isolate-workbench/03-3-the-server-server-a-rune-generated-keep-backend.md",
+      "source": "07-isolate-workbench.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/07-isolate-workbench.md",
+      "startByte": 10869,
+      "endByte": 21836,
+      "rewrites": [
+        {
+          "start": 2405,
+          "end": 2407,
+          "from": "§1",
+          "to": "[§1](01-1-what-isolate-is-end-to-end.md)"
+        },
+        {
+          "start": 2679,
+          "end": 2681,
+          "from": "§2",
+          "to": "[§2](02-2-the-isolate-cli-cli.md)"
+        },
+        {
+          "start": 4257,
+          "end": 4259,
+          "from": "§2",
+          "to": "[§2](02-2-the-isolate-cli-cli.md)"
+        },
+        {
+          "start": 4766,
+          "end": 4768,
+          "from": "§2",
+          "to": "[§2](02-2-the-isolate-cli-cli.md)"
+        },
+        {
+          "start": 5228,
+          "end": 5230,
+          "from": "§5",
+          "to": "[§5](05-5-the-isolate-case-format.md)"
+        },
+        {
+          "start": 5622,
+          "end": 5624,
+          "from": "§2",
+          "to": "[§2](02-2-the-isolate-cli-cli.md)"
+        },
+        {
+          "start": 5626,
+          "end": 5628,
+          "from": "§5",
+          "to": "[§5](05-5-the-isolate-case-format.md)"
+        },
+        {
+          "start": 7321,
+          "end": 7323,
+          "from": "§4",
+          "to": "[§4](04-4-the-workbench-ui-app.md)"
+        },
+        {
+          "start": 7499,
+          "end": 7501,
+          "from": "§2",
+          "to": "[§2](02-2-the-isolate-cli-cli.md)"
+        },
+        {
+          "start": 8149,
+          "end": 8151,
+          "from": "§2",
+          "to": "[§2](02-2-the-isolate-cli-cli.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "07-isolate-workbench/04-4-the-workbench-ui-app.md",
+      "source": "07-isolate-workbench.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/07-isolate-workbench.md",
+      "startByte": 21836,
+      "endByte": 24010,
+      "rewrites": [
+        {
+          "start": 667,
+          "end": 669,
+          "from": "§3",
+          "to": "[§3](03-3-the-server-server-a-rune-generated-keep-backend.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "07-isolate-workbench/05-5-the-isolate-case-format.md",
+      "source": "07-isolate-workbench.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/07-isolate-workbench.md",
+      "startByte": 24010,
+      "endByte": 28962,
+      "rewrites": [
+        {
+          "start": 1643,
+          "end": 1645,
+          "from": "§4",
+          "to": "[§4](04-4-the-workbench-ui-app.md)"
+        },
+        {
+          "start": 1971,
+          "end": 1973,
+          "from": "§8",
+          "to": "[§8](08-8-known-drift-refactor-targets.md)"
+        },
+        {
+          "start": 2088,
+          "end": 2090,
+          "from": "§2",
+          "to": "[§2](02-2-the-isolate-cli-cli.md)"
+        },
+        {
+          "start": 2508,
+          "end": 2510,
+          "from": "§4",
+          "to": "[§4](04-4-the-workbench-ui-app.md)"
+        },
+        {
+          "start": 3111,
+          "end": 3113,
+          "from": "§4",
+          "to": "[§4](04-4-the-workbench-ui-app.md)"
+        },
+        {
+          "start": 4108,
+          "end": 4110,
+          "from": "§3",
+          "to": "[§3](03-3-the-server-server-a-rune-generated-keep-backend.md)"
+        },
+        {
+          "start": 4685,
+          "end": 4687,
+          "from": "§3",
+          "to": "[§3](03-3-the-server-server-a-rune-generated-keep-backend.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "07-isolate-workbench/06-6-sprig-isolate-cli-main-ts.md",
+      "source": "07-isolate-workbench.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/07-isolate-workbench.md",
+      "startByte": 28962,
+      "endByte": 29571,
+      "rewrites": [
+        {
+          "start": 548,
+          "end": 550,
+          "from": "§1",
+          "to": "[§1](01-1-what-isolate-is-end-to-end.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "07-isolate-workbench/07-7-generated-vs-authored-boundaries.md",
+      "source": "07-isolate-workbench.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/07-isolate-workbench.md",
+      "startByte": 29571,
+      "endByte": 30497,
+      "rewrites": [
+        {
+          "start": 665,
+          "end": 667,
+          "from": "§5",
+          "to": "[§5](05-5-the-isolate-case-format.md)"
+        },
+        {
+          "start": 761,
+          "end": 763,
+          "from": "§1",
+          "to": "[§1](01-1-what-isolate-is-end-to-end.md)"
+        },
+        {
+          "start": 774,
+          "end": 776,
+          "from": "§5",
+          "to": "[§5](05-5-the-isolate-case-format.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "07-isolate-workbench/08-8-known-drift-refactor-targets.md",
+      "source": "07-isolate-workbench.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/07-isolate-workbench.md",
+      "startByte": 30497,
+      "endByte": 31782,
+      "rewrites": [
+        {
+          "start": 724,
+          "end": 726,
+          "from": "§5",
+          "to": "[§5](05-5-the-isolate-case-format.md)"
+        },
+        {
+          "start": 1181,
+          "end": 1183,
+          "from": "§1",
+          "to": "[§1](01-1-what-isolate-is-end-to-end.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "08-install-skills-annotate/00-overview.md",
+      "source": "08-install-skills-annotate.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/08-install-skills-annotate.md",
+      "startByte": 0,
+      "endByte": 313,
+      "rewrites": []
+    },
+    {
+      "outPath": "08-install-skills-annotate/01-1-why-a-local-install-exists-at-all.md",
+      "source": "08-install-skills-annotate.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/08-install-skills-annotate.md",
+      "startByte": 313,
+      "endByte": 2902,
+      "rewrites": [
+        {
+          "start": 2162,
+          "end": 2164,
+          "from": "§6",
+          "to": "[§6](06-6-refactor-notes.md)"
+        },
+        {
+          "start": 2515,
+          "end": 2517,
+          "from": "§6",
+          "to": "[§6](06-6-refactor-notes.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "08-install-skills-annotate/02-2-claude-asset-deployment-skills-ts.md",
+      "source": "08-install-skills-annotate.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/08-install-skills-annotate.md",
+      "startByte": 2902,
+      "endByte": 7587,
+      "rewrites": []
+    },
+    {
+      "outPath": "08-install-skills-annotate/03-3-scripts-sync-rune-ts.md",
+      "source": "08-install-skills-annotate.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/08-install-skills-annotate.md",
+      "startByte": 7587,
+      "endByte": 7883,
+      "rewrites": []
+    },
+    {
+      "outPath": "08-install-skills-annotate/04-4-the-annotate-overlay-annotate-ts-annotate-client-js.md",
+      "source": "08-install-skills-annotate.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/08-install-skills-annotate.md",
+      "startByte": 7883,
+      "endByte": 10002,
+      "rewrites": [
+        {
+          "start": 1298,
+          "end": 1300,
+          "from": "§2",
+          "to": "[§2](02-2-claude-asset-deployment-skills-ts.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "08-install-skills-annotate/05-5-this-repo-hosts-its-own-composed-app.md",
+      "source": "08-install-skills-annotate.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/08-install-skills-annotate.md",
+      "startByte": 10002,
+      "endByte": 12631,
+      "rewrites": [
+        {
+          "start": 902,
+          "end": 904,
+          "from": "§2",
+          "to": "[§2](02-2-claude-asset-deployment-skills-ts.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "08-install-skills-annotate/06-6-refactor-notes.md",
+      "source": "08-install-skills-annotate.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/08-install-skills-annotate.md",
+      "startByte": 12631,
+      "endByte": 13325,
+      "rewrites": [
+        {
+          "start": 186,
+          "end": 188,
+          "from": "§1",
+          "to": "[§1](01-1-why-a-local-install-exists-at-all.md)"
+        },
+        {
+          "start": 373,
+          "end": 375,
+          "from": "§1",
+          "to": "[§1](01-1-why-a-local-install-exists-at-all.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "09-ecosystem-contracts/00-overview.md",
+      "source": "09-ecosystem-contracts.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/09-ecosystem-contracts.md",
+      "startByte": 0,
+      "endByte": 603,
+      "rewrites": [
+        {
+          "start": 484,
+          "end": 486,
+          "from": "§5",
+          "to": "[§5](05-5-history-the-retired-cross-framework-record-legacy.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "09-ecosystem-contracts/01-1-the-composition-seam.md",
+      "source": "09-ecosystem-contracts.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/09-ecosystem-contracts.md",
+      "startByte": 603,
+      "endByte": 1480,
+      "rewrites": [
+        {
+          "start": 86,
+          "end": 88,
+          "from": "§2",
+          "to": "[§2](02-2-sprig-s-spec-obligations.md)"
+        },
+        {
+          "start": 89,
+          "end": 91,
+          "from": "§4",
+          "to": "[§4](04-4-locked-invariants-sprig-s-half.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "09-ecosystem-contracts/02-2-sprig-s-spec-obligations.md",
+      "source": "09-ecosystem-contracts.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/09-ecosystem-contracts.md",
+      "startByte": 1480,
+      "endByte": 5556,
+      "rewrites": []
+    },
+    {
+      "outPath": "09-ecosystem-contracts/03-3-the-waist-rule-sprig-s-half.md",
+      "source": "09-ecosystem-contracts.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/09-ecosystem-contracts.md",
+      "startByte": 5556,
+      "endByte": 6936,
+      "rewrites": []
+    },
+    {
+      "outPath": "09-ecosystem-contracts/04-4-locked-invariants-sprig-s-half.md",
+      "source": "09-ecosystem-contracts.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/09-ecosystem-contracts.md",
+      "startByte": 6936,
+      "endByte": 8689,
+      "rewrites": [
+        {
+          "start": 124,
+          "end": 126,
+          "from": "§1",
+          "to": "[§1](01-1-the-composition-seam.md)"
+        },
+        {
+          "start": 557,
+          "end": 559,
+          "from": "§1",
+          "to": "[§1](01-1-the-composition-seam.md)"
+        },
+        {
+          "start": 601,
+          "end": 603,
+          "from": "§2",
+          "to": "[§2](02-2-sprig-s-spec-obligations.md)"
+        },
+        {
+          "start": 876,
+          "end": 878,
+          "from": "§3",
+          "to": "[§3](03-3-the-waist-rule-sprig-s-half.md)"
+        },
+        {
+          "start": 962,
+          "end": 964,
+          "from": "§2",
+          "to": "[§2](02-2-sprig-s-spec-obligations.md)"
+        },
+        {
+          "start": 1585,
+          "end": 1587,
+          "from": "§1",
+          "to": "[§1](01-1-the-composition-seam.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "09-ecosystem-contracts/05-5-history-the-retired-cross-framework-record-legacy.md",
+      "source": "09-ecosystem-contracts.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/09-ecosystem-contracts.md",
+      "startByte": 8689,
+      "endByte": 11912,
+      "rewrites": [
+        {
+          "start": 568,
+          "end": 570,
+          "from": "§2",
+          "to": "[§2](02-2-sprig-s-spec-obligations.md)"
+        },
+        {
+          "start": 630,
+          "end": 632,
+          "from": "§1",
+          "to": "[§1](01-1-the-composition-seam.md)"
+        },
+        {
+          "start": 671,
+          "end": 673,
+          "from": "§1",
+          "to": "[§1](01-1-the-composition-seam.md)"
+        },
+        {
+          "start": 751,
+          "end": 753,
+          "from": "§2",
+          "to": "[§2](02-2-sprig-s-spec-obligations.md)"
+        },
+        {
+          "start": 754,
+          "end": 756,
+          "from": "§4",
+          "to": "[§4](04-4-locked-invariants-sprig-s-half.md)"
+        },
+        {
+          "start": 1407,
+          "end": 1409,
+          "from": "§1",
+          "to": "[§1](01-1-the-composition-seam.md)"
+        },
+        {
+          "start": 1596,
+          "end": 1598,
+          "from": "§4",
+          "to": "[§4](04-4-locked-invariants-sprig-s-half.md)"
+        },
+        {
+          "start": 2635,
+          "end": 2637,
+          "from": "§4",
+          "to": "[§4](04-4-locked-invariants-sprig-s-half.md)"
+        },
+        {
+          "start": 2767,
+          "end": 2769,
+          "from": "§2",
+          "to": "[§2](02-2-sprig-s-spec-obligations.md)"
+        },
+        {
+          "start": 2956,
+          "end": 2958,
+          "from": "§4",
+          "to": "[§4](04-4-locked-invariants-sprig-s-half.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "10-known-issues-and-refactor-drivers/00-overview.md",
+      "source": "10-known-issues-and-refactor-drivers.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/10-known-issues-and-refactor-drivers.md",
+      "startByte": 0,
+      "endByte": 436,
+      "rewrites": []
+    },
+    {
+      "outPath": "10-known-issues-and-refactor-drivers/01-1-hydration-architecture-pain-from-isolate-feedback-md-2026-.md",
+      "source": "10-known-issues-and-refactor-drivers.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/10-known-issues-and-refactor-drivers.md",
+      "startByte": 436,
+      "endByte": 6219,
+      "rewrites": [
+        {
+          "start": 2947,
+          "end": 2949,
+          "from": "§4",
+          "to": "[§4](04-4-structural-tensions-a-refactor-should-resolve.md)"
+        },
+        {
+          "start": 3104,
+          "end": 3115,
+          "from": "DX-IDEAL §3",
+          "to": "[DX-IDEAL §3](../DX-IDEAL/04-3-per-subsystem-ideal.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "10-known-issues-and-refactor-drivers/02-2-agent-fleet-economics-from-optimize-md-feedback.md",
+      "source": "10-known-issues-and-refactor-drivers.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/10-known-issues-and-refactor-drivers.md",
+      "startByte": 6219,
+      "endByte": 8469,
+      "rewrites": []
+    },
+    {
+      "outPath": "10-known-issues-and-refactor-drivers/03-3-docs-move-with-the-api-release-discipline-from-readme-md.md",
+      "source": "10-known-issues-and-refactor-drivers.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/10-known-issues-and-refactor-drivers.md",
+      "startByte": 8469,
+      "endByte": 9310,
+      "rewrites": []
+    },
+    {
+      "outPath": "10-known-issues-and-refactor-drivers/04-4-structural-tensions-a-refactor-should-resolve.md",
+      "source": "10-known-issues-and-refactor-drivers.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/10-known-issues-and-refactor-drivers.md",
+      "startByte": 9310,
+      "endByte": 11265,
+      "rewrites": [
+        {
+          "start": 1091,
+          "end": 1093,
+          "from": "§1",
+          "to": "[§1](01-1-hydration-architecture-pain-from-isolate-feedback-md-2026-.md)"
+        },
+        {
+          "start": 1428,
+          "end": 1430,
+          "from": "§1",
+          "to": "[§1](01-1-hydration-architecture-pain-from-isolate-feedback-md-2026-.md)"
+        },
+        {
+          "start": 1469,
+          "end": 1471,
+          "from": "§1",
+          "to": "[§1](01-1-hydration-architecture-pain-from-isolate-feedback-md-2026-.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "DX-IDEAL/00-overview.md",
+      "source": "DX-IDEAL.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/DX-IDEAL.md",
+      "startByte": 0,
+      "endByte": 882,
+      "rewrites": []
+    },
+    {
+      "outPath": "DX-IDEAL/01-0-the-one-line-thesis.md",
+      "source": "DX-IDEAL.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/DX-IDEAL.md",
+      "startByte": 882,
+      "endByte": 4399,
+      "rewrites": [
+        {
+          "start": 926,
+          "end": 928,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 932,
+          "end": 934,
+          "from": "§4",
+          "to": "[§4](05-4-the-biggest-cross-cutting-forks.md)"
+        },
+        {
+          "start": 1024,
+          "end": 1026,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 1178,
+          "end": 1180,
+          "from": "§5",
+          "to": "[§5](06-5-build-order-max-dx-leverage-first.md)"
+        },
+        {
+          "start": 1350,
+          "end": 1352,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 1672,
+          "end": 1674,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 1939,
+          "end": 1941,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 2430,
+          "end": 2432,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 2746,
+          "end": 2748,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 3010,
+          "end": 3012,
+          "from": "§5",
+          "to": "[§5](06-5-build-order-max-dx-leverage-first.md)"
+        },
+        {
+          "start": 3116,
+          "end": 3118,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 3152,
+          "end": 3154,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "DX-IDEAL/02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md",
+      "source": "DX-IDEAL.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/DX-IDEAL.md",
+      "startByte": 4399,
+      "endByte": 7523,
+      "rewrites": [
+        {
+          "start": 2221,
+          "end": 2223,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 2254,
+          "end": 2256,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 2259,
+          "end": 2261,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 2291,
+          "end": 2293,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 2320,
+          "end": 2322,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 2365,
+          "end": 2367,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "DX-IDEAL/03-2-the-universal-dx-layer-cross-cutting-build-this-once.md",
+      "source": "DX-IDEAL.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/DX-IDEAL.md",
+      "startByte": 7523,
+      "endByte": 14424,
+      "rewrites": [
+        {
+          "start": 1502,
+          "end": 1504,
+          "from": "§4",
+          "to": "[§4](05-4-the-biggest-cross-cutting-forks.md)"
+        },
+        {
+          "start": 1727,
+          "end": 1729,
+          "from": "§4",
+          "to": "[§4](05-4-the-biggest-cross-cutting-forks.md)"
+        },
+        {
+          "start": 1747,
+          "end": 1749,
+          "from": "§5",
+          "to": "[§5](06-5-build-order-max-dx-leverage-first.md)"
+        },
+        {
+          "start": 2126,
+          "end": 2128,
+          "from": "§4",
+          "to": "[§4](05-4-the-biggest-cross-cutting-forks.md)"
+        },
+        {
+          "start": 2645,
+          "end": 2647,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 2928,
+          "end": 2930,
+          "from": "§6",
+          "to": "[§6](07-6-what-must-not-change-the-good-dx-to-protect.md)"
+        },
+        {
+          "start": 3161,
+          "end": 3163,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 3864,
+          "end": 3866,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 3896,
+          "end": 3898,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 4677,
+          "end": 4679,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "DX-IDEAL/04-3-per-subsystem-ideal.md",
+      "source": "DX-IDEAL.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/DX-IDEAL.md",
+      "startByte": 14424,
+      "endByte": 72373,
+      "rewrites": [
+        {
+          "start": 2255,
+          "end": 2257,
+          "from": "§4",
+          "to": "[§4](05-4-the-biggest-cross-cutting-forks.md)"
+        },
+        {
+          "start": 2515,
+          "end": 2517,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 2778,
+          "end": 2780,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 4556,
+          "end": 4558,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 5053,
+          "end": 5055,
+          "from": "§4",
+          "to": "[§4](05-4-the-biggest-cross-cutting-forks.md)"
+        },
+        {
+          "start": 5967,
+          "end": 5969,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 6319,
+          "end": 6321,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 6322,
+          "end": 6324,
+          "from": "§4",
+          "to": "[§4](05-4-the-biggest-cross-cutting-forks.md)"
+        },
+        {
+          "start": 6665,
+          "end": 6667,
+          "from": "§5",
+          "to": "[§5](06-5-build-order-max-dx-leverage-first.md)"
+        },
+        {
+          "start": 8292,
+          "end": 8294,
+          "from": "§7",
+          "to": "[§7](07-6-what-must-not-change-the-good-dx-to-protect.md)"
+        },
+        {
+          "start": 11406,
+          "end": 11408,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 13001,
+          "end": 13003,
+          "from": "§6",
+          "to": "[§6](07-6-what-must-not-change-the-good-dx-to-protect.md)"
+        },
+        {
+          "start": 13407,
+          "end": 13409,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 15327,
+          "end": 15329,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 15796,
+          "end": 15798,
+          "from": "§4",
+          "to": "[§4](05-4-the-biggest-cross-cutting-forks.md)"
+        },
+        {
+          "start": 16029,
+          "end": 16031,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 17708,
+          "end": 17710,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 17957,
+          "end": 17959,
+          "from": "§4",
+          "to": "[§4](05-4-the-biggest-cross-cutting-forks.md)"
+        },
+        {
+          "start": 18451,
+          "end": 18453,
+          "from": "§6",
+          "to": "[§6](07-6-what-must-not-change-the-good-dx-to-protect.md)"
+        },
+        {
+          "start": 18463,
+          "end": 18465,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 20479,
+          "end": 20481,
+          "from": "§7",
+          "to": "[§7](07-6-what-must-not-change-the-good-dx-to-protect.md)"
+        },
+        {
+          "start": 21153,
+          "end": 21155,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 21548,
+          "end": 21550,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 22709,
+          "end": 22711,
+          "from": "§6",
+          "to": "[§6](07-6-what-must-not-change-the-good-dx-to-protect.md)"
+        },
+        {
+          "start": 23569,
+          "end": 23571,
+          "from": "§5",
+          "to": "[§5](06-5-build-order-max-dx-leverage-first.md)"
+        },
+        {
+          "start": 23867,
+          "end": 23869,
+          "from": "§0",
+          "to": "[§0](01-0-the-one-line-thesis.md)"
+        },
+        {
+          "start": 24186,
+          "end": 24188,
+          "from": "§5",
+          "to": "[§5](06-5-build-order-max-dx-leverage-first.md)"
+        },
+        {
+          "start": 24777,
+          "end": 24779,
+          "from": "§5",
+          "to": "[§5](06-5-build-order-max-dx-leverage-first.md)"
+        },
+        {
+          "start": 27700,
+          "end": 27702,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 27721,
+          "end": 27723,
+          "from": "§6",
+          "to": "[§6](07-6-what-must-not-change-the-good-dx-to-protect.md)"
+        },
+        {
+          "start": 27733,
+          "end": 27735,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 29311,
+          "end": 29313,
+          "from": "§6",
+          "to": "[§6](07-6-what-must-not-change-the-good-dx-to-protect.md)"
+        },
+        {
+          "start": 34462,
+          "end": 34464,
+          "from": "§5",
+          "to": "[§5](06-5-build-order-max-dx-leverage-first.md)"
+        },
+        {
+          "start": 34576,
+          "end": 34578,
+          "from": "§5",
+          "to": "[§5](06-5-build-order-max-dx-leverage-first.md)"
+        },
+        {
+          "start": 35427,
+          "end": 35429,
+          "from": "§5",
+          "to": "[§5](06-5-build-order-max-dx-leverage-first.md)"
+        },
+        {
+          "start": 35833,
+          "end": 35835,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 35991,
+          "end": 35993,
+          "from": "§4",
+          "to": "[§4](05-4-the-biggest-cross-cutting-forks.md)"
+        },
+        {
+          "start": 38824,
+          "end": 38826,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 40238,
+          "end": 40240,
+          "from": "§5",
+          "to": "[§5](06-5-build-order-max-dx-leverage-first.md)"
+        },
+        {
+          "start": 40818,
+          "end": 40820,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 40839,
+          "end": 40841,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 42583,
+          "end": 42585,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 43459,
+          "end": 43461,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 44134,
+          "end": 44136,
+          "from": "§6",
+          "to": "[§6](07-6-what-must-not-change-the-good-dx-to-protect.md)"
+        },
+        {
+          "start": 48842,
+          "end": 48844,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 54108,
+          "end": 54110,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 54875,
+          "end": 54877,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 55336,
+          "end": 55338,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 55455,
+          "end": 55457,
+          "from": "§4",
+          "to": "[§4](05-4-the-biggest-cross-cutting-forks.md)"
+        },
+        {
+          "start": 55469,
+          "end": 55471,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 55986,
+          "end": 55988,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "DX-IDEAL/05-4-the-biggest-cross-cutting-forks.md",
+      "source": "DX-IDEAL.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/DX-IDEAL.md",
+      "startByte": 72373,
+      "endByte": 75401,
+      "rewrites": [
+        {
+          "start": 82,
+          "end": 84,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 96,
+          "end": 98,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 106,
+          "end": 108,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 389,
+          "end": 391,
+          "from": "§5",
+          "to": "[§5](06-5-build-order-max-dx-leverage-first.md)"
+        },
+        {
+          "start": 483,
+          "end": 485,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 994,
+          "end": 996,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 1196,
+          "end": 1198,
+          "from": "§0",
+          "to": "[§0](01-0-the-one-line-thesis.md)"
+        },
+        {
+          "start": 1288,
+          "end": 1290,
+          "from": "§5",
+          "to": "[§5](06-5-build-order-max-dx-leverage-first.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "DX-IDEAL/06-5-build-order-max-dx-leverage-first.md",
+      "source": "DX-IDEAL.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/DX-IDEAL.md",
+      "startByte": 75401,
+      "endByte": 79663,
+      "rewrites": [
+        {
+          "start": 103,
+          "end": 105,
+          "from": "§2",
+          "to": "[§2](03-2-the-universal-dx-layer-cross-cutting-build-this-once.md)"
+        },
+        {
+          "start": 351,
+          "end": 353,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 506,
+          "end": 508,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 669,
+          "end": 671,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 1020,
+          "end": 1022,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 1216,
+          "end": 1218,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 1387,
+          "end": 1389,
+          "from": "§1",
+          "to": "[§1](02-1-the-organizing-principle-split-the-error-philosophy-by-mod.md)"
+        },
+        {
+          "start": 1748,
+          "end": 1750,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 2210,
+          "end": 2212,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 2643,
+          "end": 2645,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 3045,
+          "end": 3047,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 3191,
+          "end": 3193,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 3676,
+          "end": 3678,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 3795,
+          "end": 3797,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 3897,
+          "end": 3899,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 3940,
+          "end": 3942,
+          "from": "§3",
+          "to": "[§3](04-3-per-subsystem-ideal.md)"
+        }
+      ]
+    },
+    {
+      "outPath": "DX-IDEAL/07-6-what-must-not-change-the-good-dx-to-protect.md",
+      "source": "DX-IDEAL.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/DX-IDEAL.md",
+      "startByte": 79663,
+      "endByte": 80665,
+      "rewrites": []
+    },
+    {
+      "outPath": "README/00-overview.md",
+      "source": "README.md",
+      "sourcePath": "/Users/raphaelcastro/Documents/programming/tooling/sprig/refactor/spec/README.md",
+      "startByte": 0,
+      "endByte": 4023,
+      "rewrites": [
+        {
+          "start": 3287,
+          "end": 3298,
+          "from": "DX-IDEAL §3",
+          "to": "[DX-IDEAL §3](../DX-IDEAL/04-3-per-subsystem-ideal.md)"
+        },
+        {
+          "start": 3353,
+          "end": 3364,
+          "from": "DX-IDEAL §3",
+          "to": "[DX-IDEAL §3](../DX-IDEAL/04-3-per-subsystem-ideal.md)"
+        }
+      ]
+    }
+  ]
+}

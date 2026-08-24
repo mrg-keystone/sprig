@@ -1,0 +1,188 @@
+## 5. `sprig build` — rune composition emission
+
+`build(appDir, outDir, rune)` — the command dispatcher always passes `rune=true`
+(cli.ts:2143); the function's own default is `rune=false`, used only by `sprig dev`'s
+internal build call (dev composes in-process instead of emitting serve.ts). `sprig
+build`'s own `--rune` flag is accordingly a harmless no-op — composition is
+unconditional from the CLI (cli.ts:2136-2143; there is no `--no-rune`).
+
+`sprig build --clean` short-circuits to `sprig clean` instead of building:
+artifacts are removed INSTEAD of building, and NO build runs (cli.ts:2132-2135) —
+it is not clean-then-build.
+
+### Filesystem effects of a build
+
+A `sprig build --rune` (or dev's internal `rune=false` build) reaches exactly one
+of four outcomes. Rows are the outcome; columns are what each of
+`emitRuneComposition` (step 1), `stamp` (step 2), and `buildClient`+`writeBuildInfo`
+(step 3) writes:
+
+| outcome | `<gitRoot>/serve.ts` | `<gitRoot>/.gitignore` | `<gitRoot>/deno.json` workspace re-shape | `<gitRoot>/deno.json` chain — sprig re-pins | `<ui>/static/` | `<ui>/static/build-info.json` |
+|---|---|---|---|---|---|---|
+| **backed** — `rune=true`, `server/bootstrap/mod.ts` has a real `bootstrapServer` | written — `writeRuneServe` | `/serve.ts` appended | re-shaped — `ensureRuneWorkspace` | re-pinned to the exact CLI version — `stamp` | built — `buildClient` | written — `writeBuildInfo` |
+| **`rune=true`, no backend** | — | — | — | — | — | — |
+| **`rune=true`, clobber-abort** — real backend, but a marker-less hand-written `serve.ts` already exists | — | — | — | — | — | — |
+| **dev** — `rune=false` (dev's internal build call) | — | — | — | re-pinned to the exact CLI version — `stamp` | built — `buildClient` (into the dev temp cache, `devCacheDir`, NOT `<ui>/static/` — [§4](04-4-sprig-dev-the-three-layer-architecture.md)) | written — `writeBuildInfo` (into that same temp cache) |
+
+What each column writes:
+- `serve.ts`: marker-tagged composition root — `export default serveSprig({ keep: api })` (structure below).
+- `.gitignore`: the `/serve.ts` line (marks the generated file a build artifact, not source).
+- `deno.json` workspace re-shape: workspace over `./ui` + `./server`, hoisted imports, member `@mrg-keystone/sprig*` keys emptied, `start` task, `unstable:["kv"]` (example below).
+- `deno.json` chain — sprig re-pins: existing `@mrg-keystone/sprig` keys re-pinned to the exact CLI version up the chain (legacy `@sprig/core`/`@sprig/keep` names migrated first).
+- `<ui>/static/`: code-split islands, scoped CSS, templates.json — full catalog delegated to [04 §1](../04-build-pipeline-and-artifacts/01-1-pipeline-buildclient-srcdir-outdir-build-ts-63-298.md)/[§2](../04-build-pipeline-and-artifacts/02-2-the-artifact-set-static.md).
+- `<ui>/static/build-info.json`: provenance `{repo, commit, branch, buildTime}` from `.infra/git.json`, legacy fallback the deno.json `git` block.
+
+`rune=true` with no backend: `assertServerBackend` throws and exits 1 before
+`writeRuneServe`/`ensureRuneWorkspace` ever run — and before `stamp`, `buildClient`,
+or `writeBuildInfo` get a chance to either, since the whole process exits
+(cli.ts:989-1000). That row is not a partial write: this outcome produces ZERO
+filesystem effects.
+
+`rune=true` with a real backend but a pre-existing marker-less `serve.ts`:
+`writeRuneServe` greps that file for `RUNE_SERVE_MARKER`, doesn't find it, errors,
+and exits 1 before writing anything — before `ensureRuneWorkspace`, `stamp`,
+`buildClient`, or `writeBuildInfo` get a chance to run (cli.ts:1117-1126). Like the
+no-backend row, this outcome produces ZERO filesystem effects: the hand-written
+`serve.ts` is refused, not clobbered.
+
+With `rune=true`:
+1. `emitRuneComposition` — folds sibling `server/` + `ui/` into ONE git-root
+   deployable: `assertServerBackend` (requires `server/bootstrap/mod.ts` with
+   `bootstrapServer(`; missing → error + exit 1, cli.ts:989-1000, naming
+   `rune init`/`rune sync` as the fix), `writeRuneServe`, `ensureRuneWorkspace`.
+   There is NO UI-only build path: a pure-UI app exits here and produces no
+   `static/` — it is served by `sprig dev` ([§4](04-4-sprig-dev-the-three-layer-architecture.md)'s `sprigUi` composition, temp-cache
+   build) until a keep backend exists. Only dev's internal `rune=false` call builds
+   without composing.
+   - `writeRuneServe`: git-root `serve.ts` =
+     `export default serveSprig({ keep: api })` importing
+     `./server/bootstrap/mod.ts`. Carries `RUNE_SERVE_MARKER`; refuses to clobber a
+     hand-written serve.ts; adds `/serve.ts` to `.gitignore` (build artifact). The
+     emitted structure — the marker line, then a parameterized comment header
+     (derivation notes, a `deno serve -A serve.ts` usage line, and the `/ui` /
+     `/api` / `/docs` route map, with `serverRel`/`uiRel`/`assetsRel` interpolated
+     per app), then the two imports, then the export — shown here for the common
+     `ui/` + `server/` layout:
+
+     ```ts
+     // GENERATED by `sprig build --rune` — the single-origin composition root at the git root.
+     //
+     // ONE line: serveSprig folds the rune/keep backend (server/) and the sprig UI (ui/)
+     // into a { fetch } default export. srcDir (ui/src), assetsDir (ui/static/), base (/ui),
+     // and the bare-/ + favicon redirects are DERIVED from this file's location + the ui/ convention,
+     // so the app authors no composition and can't forget assetsDir (the cwd-relative default that
+     // shipped ?v=dev to prod). The Deno workspace in ./deno.json lets each half keep its own import
+     // map; serveSprig binds keep's IN-PROCESS Backend so the UI's resolve.ts reads data with no TCP.
+     //
+     //   deno serve -A serve.ts            (add --env-file=.env if your backend reads one)
+     //
+     //   /ui    → the SSR app        /api/* → the keep backend (token-gated)        /docs → Swagger
+     //
+     // Re-run `sprig build` after changing pages/islands to refresh ui/static/.
+     import { serveSprig } from "@mrg-keystone/sprig/keep";
+     import { api } from "./server/bootstrap/mod.ts";
+
+     export default serveSprig({ keep: api });
+     ```
+
+     `writeRuneServe` writes exactly this (with `serverRel`/`uiRel`/`assetsRel`
+     interpolated for the app's actual layout), and the clobber check greps an
+     existing `serve.ts` for the marker LINE — not the whole file — before
+     overwriting: the `RUNE_SERVE_MARKER` constant is the string
+     `` GENERATED by `sprig build --rune` ``, embedded verbatim in that leading
+     comment. The clobber check is a plain substring match against that exact
+     string, so the writer and the check can never drift apart.
+   - `ensureRuneWorkspace`: git-root deno.json becomes a workspace over `./ui` +
+     `./server`; hoists `@mrg-keystone/sprig(+/keep)`, `@std/path`,
+     `@preact/signals-core` to the root and **strips `@mrg-keystone/sprig*` from
+     members** (dual-core prevention — each member's own `deno.json` `imports`
+     loses those keys entirely, so resolution falls through to the hoisted root
+     copy); writes a `start` task (flag rule below); hoists `unstable:["kv"]`. The
+     resulting git-root `deno.json`, after-shape (`.env` present at build time; `<v>`
+     is the exact CLI version — the two sprig keys land here via `stamp`, step 2 below,
+     which is why "matches the after-shape" and "equals the exact CLI version" in the
+     success criteria are the same claim):
+
+     ```json
+     {
+       "workspace": ["./ui", "./server"],
+       "imports": {
+         "@mrg-keystone/sprig": "jsr:@mrg-keystone/sprig@<v>",
+         "@mrg-keystone/sprig/keep": "jsr:@mrg-keystone/sprig@<v>/keep",
+         "@std/path": "jsr:@std/path@^1",
+         "@preact/signals-core": "npm:@preact/signals-core@^1.8.0"
+       },
+       "tasks": {
+         "start": "deno serve -A --env-file=.env serve.ts"
+       },
+       "unstable": ["kv"]
+     }
+     ```
+
+     `./ui/deno.json` and `./server/deno.json` keep their own `imports`, but with
+     the `@mrg-keystone/sprig`/`@mrg-keystone/sprig/keep` keys removed — that
+     emptying is what "strips" above means.
+
+     The `start` task's `--env-file=.env` flag, by case. `ensureRuneWorkspace`
+     only (re)writes `tasks.start` when it is ABSENT, still contains `deno run`,
+     or still references `server.ts` (cli.ts:1219) — any other existing `start`
+     task is left untouched:
+
+     | `.env` state at the build that (re)writes `tasks.start` | resulting `start` task |
+     |---|---|
+     | present at `<gitRoot>/.env` | `deno serve -A --env-file=.env serve.ts` — the same existence check `sprig build --rune`'s own console output uses to print its `--env-file` hint |
+     | absent | `deno serve -A serve.ts` — flag omitted (`deno serve`, not `deno run` — see "Running the emitted root" below) |
+     | `.env` added AFTER the build that wrote a working `start` task | task text UNCHANGED — the flag is derived once, at the build that writes the task, and never re-derived later: a prior `.env`-absent build's `deno serve -A serve.ts` matches none of the three rewrite conditions above, so it survives verbatim. A `.env` added afterward is NOT picked up by any later `sprig build --rune` — add it before the first build that writes `start`, or hand-edit/delete the task to force a rewrite. |
+2. `stamp(appDir)` — re-pin existing `@mrg-keystone/sprig` keys to the exact CLI
+   version up the deno.json chain (local `file:` overrides untouched); migrates
+   legacy `@sprig/core`/`@sprig/keep` names first.
+3. `buildClient` (spec 04) + `writeBuildInfo` (provenance from `.infra/git.json`,
+   legacy fallback: the `git` block in deno.json).
+
+### Running the emitted root (`sprig serve`)
+
+`sprig serve [entry]` ([§2](02-2-command-surface.md)) runs the app's host entry as a
+**subprocess**, `deno run -A <entry>`, after loading `<projectRoot>/env/dev` —
+default entry `serve.ts` (cwd-relative); stdio + exit code forwarded
+(cli.ts:1239-1252). The entry must SELF-listen (NOT `deno serve` socket binding)
+— the app's own deno.json is discovered from cwd.
+
+Against THIS spec's generated composition root — the bare
+`export default serveSprig(...)` above — `deno run` ignores the default export,
+so the no-argument case evaluates the module without ever serving: `sprig serve`
+with no argument against `serve.ts` would exit having done nothing. That's
+exactly why the workspace `start` task above launches it via `deno serve -A
+serve.ts` instead, not via `sprig serve`/`deno run`.
+
+### Success criteria
+
+After a **backed** `sprig build --rune` (`server/bootstrap/mod.ts` has a real
+`bootstrapServer`):
+
+- `<gitRoot>/serve.ts` holds the marker-tagged content shown above — the
+  `RUNE_SERVE_MARKER` comment header, the two imports, and the `serveSprig` call.
+- `<gitRoot>/.gitignore` contains `/serve.ts`.
+- `<gitRoot>/deno.json` matches the workspace after-shape above, with
+  `@mrg-keystone/sprig*` absent from EVERY workspace member's own `imports`.
+- the `start` task's `--env-file` flag matches the `.env`-present case at the
+  build that (re)wrote `tasks.start` — not necessarily the CURRENT `.env` state
+  (a later `.env` addition is not picked up; see the case table above).
+- every existing `@mrg-keystone/sprig` pin, up the deno.json chain, equals the
+  exact running CLI version.
+
+A **pure-UI** `sprig build --rune` (no `server/bootstrap/mod.ts`) exits 1 and
+writes NOTHING — no `serve.ts`, no `.gitignore` edit, no workspace deno.json, no
+`<ui>/static/`, no `build-info.json` (`assertServerBackend` exits before
+`writeRuneServe`/`ensureRuneWorkspace`, `stamp`, `buildClient`, or
+`writeBuildInfo` ever run).
+
+A re-run of `sprig build --rune` over an unchanged tree is byte-idempotent,
+MODULO the `start` task's `--env-file` flag: that flag is derived once, at the
+build that (re)writes `tasks.start`, and is never re-derived by a later build
+that leaves an already-good `start` task alone. Every other emitted byte —
+`serve.ts`, the rest of `deno.json`, `<ui>/static/` — is stable across a re-run
+with no input change.
+
+A marker-less hand-written `serve.ts` is NEVER clobbered — `writeRuneServe`
+refuses and exits 1 before writing anything.
+
