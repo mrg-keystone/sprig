@@ -95,8 +95,8 @@ per-package roots so a single shared contract serves them both.
 | 1 | A shared `specRoot` walk-up rule (to `.git`, with project-dir fallback) | ✅ SPEC'D | this doc |
 | 2 | rune ENGINE resolves `spec/` at the git root | ✅ ALREADY (no change) | `resolveRoot` `spec-root.ts:22-33` returns the git root for a `spec/runes/` spec; LSP `main.rs:52-62` mirrors it |
 | 3 | rune RUNTIME (cake) reads the shared `spec/misc` from any cwd | ✅ DONE (rune repo) | keep `fixturesDir()` now walks to `.git` — `fixtures-store/mod.ts` + unit tests |
-| 4 | sprig resolves `spec/ui` at the git root | 🔲 **SPRIG TODO** | `framework/.sprig/annotate.ts:151` via `framework/cli.ts:399` |
-| 5 | sprig skill docs say "git root", not "project root" | 🔲 **SPRIG TODO** | 5 SKILL.md/README.md files (below) |
+| 4 | sprig resolves `spec/ui` at the git root | ✅ DONE (sprig) | `specRootOf()` in `framework/.sprig/spec-root.ts`, wired at `framework/cli.ts` (feeds the `annotate.ts` note/PNG paths) |
+| 5 | sprig skill docs say "git root", not "project root" | ✅ DONE (sprig) | the 5 SKILL.md/README.md files (below) now say "git root" |
 | 6 | Only `spec/` relocates; generated `src/` stays per-package | ✅ BY DESIGN | rune sync output stays `<pkgRoot>/src/<m>`; split-package via `--root` |
 
 ---
