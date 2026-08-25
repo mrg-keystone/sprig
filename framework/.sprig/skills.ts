@@ -39,10 +39,12 @@ export function agentsDest(): string {
 }
 
 /** Skip cleanly when Claude Code is absent (no ~/.claude AND no explicit override) so
- *  the surrounding CLI/tool install still succeeds. An explicit CLAUDE_SKILLS_DIR
- *  override always proceeds (e.g. a sandbox). */
+ *  the surrounding CLI/tool install still succeeds. An explicit CLAUDE_SKILLS_DIR or
+ *  CLAUDE_AGENTS_DIR override always proceeds (e.g. a sandbox) — checking only the
+ *  skills override made installAgents silently skip on any machine without ~/.claude
+ *  even when told exactly where to install (the CI agents test failed exactly so). */
 async function claudeAbsent(): Promise<boolean> {
-  if (Deno.env.get("CLAUDE_SKILLS_DIR")) return false;
+  if (Deno.env.get("CLAUDE_SKILLS_DIR") || Deno.env.get("CLAUDE_AGENTS_DIR")) return false;
   return !(await pathExists(join(home(), ".claude")));
 }
 
