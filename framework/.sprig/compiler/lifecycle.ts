@@ -14,6 +14,7 @@
 // after onServerInit and restored before onBrowserInit — so the client's first paint
 // matches the server's and onBrowserInit sees the server-produced state.
 import { isSignal } from "@mrg-keystone/sprig";
+import { tagSelf } from "./expr.ts";
 
 // deno-lint-ignore no-explicit-any
 type AnyInstance = Record<string, any>;
@@ -75,7 +76,7 @@ export async function renderOnServer<P = any>(
   Cls: ComponentClass<P>,
   props: P,
 ): Promise<{ html: string; snapshot: Record<string, unknown> }> {
-  const inst = new Cls(props);
+  const inst = tagSelf(new Cls(props));
   await inst.onServerInit?.(); // ← MUST complete before view() reads the fields
   const html = typeof inst.view === "function" ? inst.view() : "";
   const snapshot = snapshotOf(inst);
@@ -92,7 +93,7 @@ export function hydrateOnClient<P = any>(
   snapshot: Record<string, unknown>,
   props: P,
 ): AnyInstance {
-  const inst = new Cls(props);
+  const inst = tagSelf(new Cls(props));
   restore(inst, snapshot);
   inst.onBrowserInit?.();
   return inst;

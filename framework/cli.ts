@@ -25,6 +25,7 @@ import { createRenderer, Frontend, loadRoutes, serveSprig, sprigAuth, sprigUi } 
 import { bootstrap, type Route } from "@mrg-keystone/sprig";
 import { assertWorkbench, installRuntimeFromDeployment, installRuntimeFromWorkingTree, latestRuntimeRelease } from "./.sprig/install.ts";
 import { specRootOf } from "./.sprig/spec-root.ts";
+import { migrateImports, migrateVal, stampImports } from "./.sprig/pin-stamp.ts";
 import {
   checkArtifactVersion,
   ensureSpecSkeleton,
@@ -553,12 +554,9 @@ async function stamp(appDir: string): Promise<void> {
   await migrateLegacyRuntime(appDir);
   const v = cliVersion();
   if (!v) return; // no on-disk version to stamp with (remote jsr run) → nothing to do
-  const wanted: Record<string, string> = {
-    "@mrg-keystone/sprig": `jsr:@mrg-keystone/sprig@${v}`,
-    "@mrg-keystone/sprig/keep": `jsr:@mrg-keystone/sprig@${v}/keep`,
-  };
   let dir = resolve(appDir);
   let stamped = false;
+  let warnedAhead = false;
   for (;;) {
     for (const name of ["deno.json", "deno.jsonc"]) {
       const p = join(dir, name);
@@ -575,17 +573,19 @@ async function stamp(appDir: string): Promise<void> {
         continue; // JSONC-with-comments / unparseable → don't risk a rewrite
       }
       if (!cfg.imports) continue;
-      let changed = false;
-      for (const [k, want] of Object.entries(wanted)) {
-        const cur = cfg.imports[k];
-        if (typeof cur !== "string") continue; // only restamp a key that already exists
-        if (/^(\.{0,2}\/|\/|file:)/.test(cur)) continue; // leave a LOCAL / file: override alone
-        if (cur !== want) {
-          cfg.imports[k] = want;
-          changed = true;
-        }
+      // stampImports NEVER downgrades: a pin AHEAD of this CLI means the CLI install is
+      // stale, not the app — restamping would silently re-introduce every runtime bug
+      // fixed since, so it keeps the pin and we point at `sprig update` instead.
+      const res = stampImports(cfg.imports, v);
+      if (res.aheadPin && !warnedAhead) {
+        console.warn(
+          `sprig: ${p} pins @mrg-keystone/sprig@${res.aheadPin} but this CLI is ${v} — ` +
+            `keeping the newer pin. Run 'sprig update' to bring the CLI current.`,
+        );
+        warnedAhead = true;
       }
-      if (changed) {
+      if (res.changed) {
+        cfg.imports = res.imports;
         await Deno.writeTextFile(p, JSON.stringify(cfg, null, 2) + "\n");
         stamped = true;
       }
@@ -633,30 +633,12 @@ async function migrateLegacyRuntime(appDir: string): Promise<void> {
   const v = cliVersion();
   const root = resolve(appDir);
   let configs = 0, files = 0;
-  // Rename a legacy-scoped import KEY (bare `@sprig/core`/`@sprig/keep` OR a `.../<subpath>` prefix)
-  // to the modern scope; a non-legacy key is returned unchanged.
-  const migrateKey = (k: string): string =>
-    k === "@sprig/core"
-      ? "@mrg-keystone/sprig"
-      : k === "@sprig/keep"
-      ? "@mrg-keystone/sprig/keep"
-      : k.startsWith("@sprig/core/")
-      ? "@mrg-keystone/sprig/" + k.slice("@sprig/core/".length)
-      : k.startsWith("@sprig/keep/")
-      ? "@mrg-keystone/sprig/keep/" + k.slice("@sprig/keep/".length)
-      : k;
-  // Rewrite a value's scope (`@sprig/core@X[/keep]` → `@mrg-keystone/sprig@X[/keep]`) and re-pin the
-  // @mrg-keystone/sprig version to the CLI's, so a migrated mapping matches the runtime that builds it.
-  const migrateVal = (val: string): string => {
-    let out = val.replaceAll("@sprig/core", "@mrg-keystone/sprig").replaceAll("@sprig/keep", "@mrg-keystone/sprig/keep");
-    if (v) out = out.replace(/(@mrg-keystone\/sprig)@[^/"']+/g, `$1@${v}`);
-    return out;
-  };
 
   // 1) IMPORT MAPS — rename the legacy KEY (and value) to the modern one, walking up to the fs root so
-  //    a `--rune` monorepo's workspace-root map is caught too. A pre-existing LOCAL/`file:` override on
-  //    the modern key (an intentional dev checkout) is preserved; otherwise it takes the jsr pin (which
-  //    the version-stamp below then keeps current). The legacy key is always dropped.
+  //    a `--rune` monorepo's workspace-root map is caught too. migrateImports (pin-stamp.ts) touches
+  //    ONLY legacy entries — a modern entry passes through byte-identical, so this is a true no-op on a
+  //    migrated app (a stale CLI once DOWNGRADED an app's runtime pin through this very path); a
+  //    pre-existing LOCAL/`file:` override on the modern key wins and the legacy key is dropped.
   let dir = root;
   for (;;) {
     for (const name of ["deno.json", "deno.jsonc"]) {
@@ -669,31 +651,16 @@ async function migrateLegacyRuntime(appDir: string): Promise<void> {
       }
       const imports = cfg.imports;
       if (!imports) continue;
-      let changed = false;
-      const next: Record<string, string> = {};
-      for (const [k, val] of Object.entries(imports)) {
-        const key = migrateKey(k);
-        const value = migrateVal(val);
-        // A deliberate LOCAL/`file:` override already on the modern key wins — drop the legacy key
-        // rather than clobber it (an intentional dev checkout, incl. `sprig dev`'s local-pin swap).
-        if (key !== k) {
-          const existing = imports[key];
-          if (typeof existing === "string" && /^(\.{0,2}\/|\/|file:)/.test(existing)) {
-            changed = true;
-            continue;
-          }
-        }
-        if (key !== k || value !== val) changed = true;
-        next[key] = value;
-      }
-      if (changed) cfg.imports = next;
+      const res = migrateImports(imports, v);
+      let changed = res.changed;
+      if (changed) cfg.imports = res.imports;
       // tasks: rewrite a legacy CLI reference (e.g. `deno run -A jsr:@sprig/core@X/cli build --rune`)
       // to the modern package, so `deno task build` doesn't invoke the pre-rename CLI.
       const tasks = (cfg as { tasks?: Record<string, unknown> }).tasks;
       if (tasks) {
         for (const [tk, tv] of Object.entries(tasks)) {
           if (typeof tv === "string" && (tv.includes("@sprig/core") || tv.includes("@sprig/keep"))) {
-            tasks[tk] = migrateVal(tv);
+            tasks[tk] = migrateVal(tv, v);
             changed = true;
           }
         }

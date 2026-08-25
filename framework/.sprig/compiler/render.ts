@@ -164,6 +164,10 @@ function renderNode(node: Node, opts: RenderOpts): string {
   switch (node.type) {
     case "text":
       return node.text;
+    case "raw_text":
+      // the body of an inline <script>/<style> — emit verbatim (it used to fall
+      // through to the default and ship an EMPTY element, silently)
+      return node.text;
     case "interpolation":
       return escape(stringify(evalExpr(field(node, "expression"), opts.scope)));
     case "element":

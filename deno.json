@@ -70,6 +70,7 @@
       "framework/.sprig/compiler/serialize.ts",
       "framework/.sprig/core.ts",
       "framework/.sprig/install.ts",
+      "framework/.sprig/pin-stamp.ts",
       "framework/.sprig/skills.ts",
       "framework/.sprig/spec-root.ts",
       "framework/.sprig/vendored-tests.ts",

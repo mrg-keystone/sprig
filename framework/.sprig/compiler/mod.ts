@@ -5,7 +5,7 @@ import { basename, dirname, join, relative, toFileUrl } from "@std/path";
 import { walk } from "@std/fs/walk";
 import { clearStaticCache, type ComponentDef, islandHost, type Registry, renderNodes, resolveIslands, type RouteCtx } from "./render.ts";
 import { snapshotOf } from "./lifecycle.ts";
-import { named, type Node } from "./node.ts";
+import { named, type Node, templateHasEventBindings } from "./node.ts";
 import { fromSerialized, serialize, type SerializedTemplate } from "./serialize.ts";
 
 // The wasm-backed parser is a BUILD/DEV concern only — loaded lazily so the prod runtime
@@ -13,6 +13,7 @@ import { fromSerialized, serialize, type SerializedTemplate } from "./serialize.
 // into its import graph. Only sprig dev / a missing prebuild ever triggers this import.
 let _parser: typeof import("./parse.ts") | null = null;
 const parser = async () => (_parser ??= await import("./parse.ts"));
+import { tagSelf } from "./expr.ts";
 import type { Scope } from "./expr.ts";
 import { makeServerCtx, withServerInjector } from "./island.ts";
 import { versionOf } from "./hash.ts";
@@ -121,14 +122,18 @@ export async function createRenderer(
         // but never hydrates — no state snapshot here, and the build ships no client entry for it.
         // Any browser hook (onBrowserLoad on a route, or onBrowserInit on an island) → hydrate.
         const proto = Cls.prototype as { onServerLoad?: unknown; onBrowserLoad?: unknown; onBrowserInit?: unknown };
+        // …but a template that wires (event) bindings must hydrate regardless, or every
+        // handler ships dead — the build applies the identical check when deciding
+        // whether to emit the island chunk, so both sides agree.
         const serverOnly = typeof proto.onServerLoad === "function" &&
-          typeof proto.onBrowserLoad !== "function" && typeof proto.onBrowserInit !== "function";
+          typeof proto.onBrowserLoad !== "function" && typeof proto.onBrowserInit !== "function" &&
+          !templateHasEventBindings(source);
         island = {
           // sync fallback (islands behind control flow / not pre-resolved): runs
           // onServerInit synchronously (an async one isn't awaited on this path).
           scope: (inputs, reqCtx) =>
             withServerInjector(() => {
-              const inst = new Cls(makeServerCtx(inputs)) as { onServerInit?: (ctx?: RouteCtx) => unknown; onServerLoad?: (ctx?: RouteCtx) => unknown };
+              const inst = tagSelf(new Cls(makeServerCtx(inputs))) as { onServerInit?: (ctx?: RouteCtx) => unknown; onServerLoad?: (ctx?: RouteCtx) => unknown };
               // A route names its server hook onServerLoad (the route-level twin of a component's
               // onServerInit); prefer it, fall back to onServerInit so islands are unchanged. Route
               // logic receives the request ctx (url/params/session); an island ignores the arg.
@@ -144,7 +149,7 @@ export async function createRenderer(
             // render came through app.fetch) so onServerInit/onServerLoad resolve
             // request-scoped tokens — inject(Backend) — like resolve.ts does.
             withServerInjector(() => {
-              const inst = new Cls(makeServerCtx(inputs)) as Record<string, unknown> & { onServerInit?: (ctx?: RouteCtx) => unknown; onServerLoad?: (ctx?: RouteCtx) => unknown };
+              const inst = tagSelf(new Cls(makeServerCtx(inputs))) as Record<string, unknown> & { onServerInit?: (ctx?: RouteCtx) => unknown; onServerLoad?: (ctx?: RouteCtx) => unknown };
               // onServerLoad (route) preferred over onServerInit (component); await either before render.
               // Route logic receives the request ctx (url/params/session); an island ignores the arg.
               return Promise.resolve((inst.onServerLoad ?? inst.onServerInit)?.call(inst, reqCtx)).then(() => inst as Scope);

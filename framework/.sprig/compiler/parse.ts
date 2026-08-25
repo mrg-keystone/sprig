@@ -43,6 +43,78 @@ export function hasParseError(node: Node): boolean {
   return node?.hasError === true;
 }
 
+// The block keywords the Angular-flavored grammar lexes after `@` in text
+// content. Anything else after `@` cannot open a block, so a bare `@` there is
+// prose (an email, a handle) — escape it instead of letting the parse die.
+const BLOCK_KEYWORD =
+  /^(?:if|else|for|empty|let|switch|case|default|defer|placeholder|loading|error)\b/;
+
+/** Escape a bare `@` in TEXT content as `&#64;` so the grammar doesn't lex it as
+ *  a control-flow opener. Only `@` NOT followed by a block keyword is escaped,
+ *  and only in plain text — tags, comments, interpolations and raw
+ *  script/style content pass through untouched (`@media` in <style> and
+ *  decorators in <script> are real syntax there). The entity is invisible to
+ *  the reader: text nodes are emitted raw into HTML on the server, and the
+ *  client applies re-renders via innerHTML, so both channels display `@`. */
+export function escapeLooseAt(html: string): string {
+  let out = "";
+  let i = 0;
+  const n = html.length;
+  while (i < n) {
+    const ch = html[i];
+    if (ch === "<") {
+      if (html.startsWith("<!--", i)) {
+        const end = html.indexOf("-->", i + 4);
+        const stop = end === -1 ? n : end + 3;
+        out += html.slice(i, stop);
+        i = stop;
+        continue;
+      }
+      const raw = /^<(script|style)\b/i.exec(html.slice(i, i + 8));
+      if (raw) {
+        const close = new RegExp(`</${raw[1]}\\s*>`, "i").exec(html.slice(i));
+        const stop = close ? i + close.index + close[0].length : n;
+        out += html.slice(i, stop);
+        i = stop;
+        continue;
+      }
+      const end = html.indexOf(">", i + 1);
+      const stop = end === -1 ? n : end + 1;
+      out += html.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    if (ch === "{" && html[i + 1] === "{") {
+      const end = html.indexOf("}}", i + 2);
+      const stop = end === -1 ? n : end + 2;
+      out += html.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    if (ch === "@" && !BLOCK_KEYWORD.test(html.slice(i + 1, i + 14))) {
+      out += "&#64;";
+      i++;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
+/** The first ERROR/MISSING node in the tree — where the syntax error actually is. */
+function firstErrorNode(node: Node): Node | null {
+  if (node.type === "ERROR" || node.isMissing) return node;
+  if (!node.hasError) return null;
+  for (let i = 0; i < (node.childCount ?? 0); i++) {
+    const child = node.child(i);
+    if (!child) continue;
+    const found = firstErrorNode(child);
+    if (found) return found;
+  }
+  return node;
+}
+
 /** Parse a template string → the root AST node. By default a template that does
  *  not parse cleanly THROWS (so a typo'd/truncated template fails the build and
  *  is never baked into an island chunk / the SSR registry) rather than silently
@@ -51,14 +123,27 @@ export function hasParseError(node: Node): boolean {
  *  suppress the live push instead of clobbering mounted islands). */
 export async function parseTemplate(html: string, opts: { allowError?: boolean } = {}): Promise<Node> {
   const parser = await loadParser();
-  const tree = parser.parse(html);
+  // Prose-proof the text content first (a bare `@` would otherwise lex as a
+  // control-flow opener and fail the whole parse). Every consumer of this tree
+  // takes the source from the tree itself (serialize round-trips rootNode.text,
+  // render slices opts.source = template.text), so offsets stay coherent.
+  const source = escapeLooseAt(html);
+  const tree = parser.parse(source);
   if (!tree) throw new Error("template parse returned null");
   const root = tree.rootNode;
   if (!opts.allowError && hasParseError(root)) {
+    const err = firstErrorNode(root);
+    const at = err?.startPosition
+      ? `line ${err.startPosition.row + 1}, column ${err.startPosition.column + 1}`
+      : "unknown position";
+    const excerpt = err
+      ? source.slice(err.startIndex, Math.min(err.endIndex, err.startIndex + 80))
+      : "";
     throw new Error(
-      "sprig: template failed to parse cleanly (tree-sitter reported a syntax error). " +
+      `sprig: template failed to parse cleanly (syntax error at ${at}). ` +
         "Fix the template HTML — a malformed template must not ship.\n" +
-        `  source: ${JSON.stringify(html.length > 120 ? html.slice(0, 120) + "…" : html)}`,
+        `  near: ${JSON.stringify(excerpt)}\n` +
+        `  source: ${JSON.stringify(source.length > 120 ? source.slice(0, 120) + "…" : source)}`,
     );
   }
   return root;

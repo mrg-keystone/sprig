@@ -14,6 +14,7 @@
 import { basename, dirname, fromFileUrl, join, relative, resolve as resolvePath, toFileUrl } from "@std/path";
 import { walk } from "@std/fs/walk";
 import { parseTemplate } from "./parse.ts";
+import { templateHasEventBindings } from "./node.ts";
 import { serialize } from "./serialize.ts";
 import { componentScopeId, scopeCss } from "./scope.ts";
 import { assertStaticPage, pageLocalOf, splitShellHtml } from "./mod.ts";
@@ -144,8 +145,13 @@ export async function buildClient(srcDir: string, outDir: string): Promise<Build
     }
     // A route's SERVER-ONLY logic (onServerLoad, no browser hook) runs at SSR for its data but never
     // hydrates — ship NO client entry (its template is already registered above). A browser hook
-    // (onBrowserLoad) makes it a normal client island.
-    if (isServerOnlyRouteLogic(await Deno.readTextFile(logic))) continue;
+    // (onBrowserLoad) makes it a normal client island. So does a template with (event) bindings:
+    // classifying such a page server-only would ship every handler DEAD, silently — the SSR
+    // registry (mod.ts) applies the identical template check so both sides agree.
+    if (
+      isServerOnlyRouteLogic(await Deno.readTextFile(logic)) &&
+      !templateHasEventBindings(ast.source)
+    ) continue;
     const prev = seen.get(sel);
     if (prev) {
       throw new Error(

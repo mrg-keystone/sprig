@@ -5,6 +5,27 @@ import { field, named, type Node } from "./node.ts";
 
 export type Scope = Record<string, unknown>;
 
+/** Hidden own-property linking every scope object DERIVED from a class instance
+ *  back to THE instance. Scope derivation (cloneScope's descriptor copy, the
+ *  Object.create children for @let/@for/handlers/arrows) preserves prototype
+ *  lookups, so public members resolve — but the derived object is NOT the
+ *  instance, so a `#private` member access inside a method fails its brand
+ *  check ("Receiver must be an instance of …"). Tag the instance at creation;
+ *  descriptor copies carry the symbol, Object.create children inherit it, and
+ *  method calls rebind `this` through it to the real receiver. */
+export const SELF: unique symbol = Symbol.for("sprig.self");
+
+/** The true class instance behind a (possibly derived) scope object. */
+export function selfOf<T>(scope: T): T {
+  return ((scope as { [SELF]?: T })?.[SELF]) ?? scope;
+}
+
+/** Tag a freshly constructed class instance as its own scope root. */
+export function tagSelf<T extends object>(inst: T): T {
+  Object.defineProperty(inst, SELF, { value: inst });
+  return inst;
+}
+
 const GLOBALS: Record<string, unknown> = { true: true, false: false, null: null, undefined: undefined };
 
 export function evalExpr(node: Node | null, scope: Scope): unknown {
@@ -65,14 +86,18 @@ export function evalExpr(node: Node | null, scope: Scope): unknown {
           : field(fnNode, "property")!.text;
         const fn = recv[prop];
         const args = argsNode ? named(argsNode).map((a: Node) => evalExpr(a, scope)) : [];
-        return typeof fn === "function" ? (fn as (...a: unknown[]) => unknown).apply(recv, args) : undefined;
+        // selfOf: if the receiver is a derived scope of a class instance, rebind to
+        // the instance so #private members inside the method pass their brand check.
+        return typeof fn === "function" ? (fn as (...a: unknown[]) => unknown).apply(selfOf(recv), args) : undefined;
       }
       const fn = evalExpr(fnNode, scope);
       const args = argsNode ? named(argsNode).map((a: Node) => evalExpr(a, scope)) : [];
       // a bare call naming a scope member (e.g. a class-component method) → bind `this`
       // to the scope so class-style methods can use `this`; plain closures ignore it.
       if (fnNode.type === "identifier" && (fnNode.text in (scope as object))) {
-        return typeof fn === "function" ? (fn as (...a: unknown[]) => unknown).apply(scope, args) : undefined;
+        // selfOf: bind to the real instance (not a clone/child scope) so the
+        // method's own #private accesses pass their brand check.
+        return typeof fn === "function" ? (fn as (...a: unknown[]) => unknown).apply(selfOf(scope), args) : undefined;
       }
       return typeof fn === "function" ? (fn as (...a: unknown[]) => unknown)(...args) : undefined;
     }

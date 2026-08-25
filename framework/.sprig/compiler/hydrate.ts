@@ -12,7 +12,7 @@
 // signal write re-paints) and wire (event) bindings via delegation on the island root.
 import { type Accessor, clientRoot, type ComponentCtx, effect, persistState, restoreState, runInInjector, signal, type WritableAccessor } from "@mrg-keystone/sprig";
 import { fromSerialized, type SerializedTemplate } from "./serialize.ts";
-import { evalStatement, type Scope } from "./expr.ts";
+import { evalStatement, type Scope, tagSelf } from "./expr.ts";
 import { type ComponentDef, type Handler, type MockSpec, type Registry, renderNodes } from "./render.ts";
 import { named } from "./node.ts";
 import { scopeId } from "./scope.ts";
@@ -24,7 +24,7 @@ import { restore } from "./lifecycle.ts";
 export function makeClassSetup(Cls: new (ctx: any) => Record<string, unknown>) {
   // construct inside the client root injector so inject() resolves in the constructor /
   // field initializers (mirrors the server's withServerInjector), e.g. inject(StateService).
-  return (ctx: ComponentCtx) => runInInjector(clientRoot(), () => new Cls(ctx));
+  return (ctx: ComponentCtx) => runInInjector(clientRoot(), () => tagSelf(new Cls(ctx)));
 }
 
 export interface IslandEntry {
