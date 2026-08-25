@@ -25,6 +25,12 @@ import { createRenderer, loadRoutes, serveSprig, sprigAuth, sprigUi } from "../p
 import { bootstrap, type Route } from "@mrg-keystone/sprig";
 import { assertWorkbench, installRuntimeFromDeployment, installRuntimeFromWorkingTree, latestRuntimeRelease } from "./.sprig/install.ts";
 import { specRootOf } from "./.sprig/spec-root.ts";
+import {
+  checkArtifactVersion,
+  ensureSpecSkeleton,
+  registerManifestEntries,
+  verifyContractFreshness,
+} from "./.sprig/artifact.ts";
 // NOTE: `./.sprig/annotate.ts` is imported LAZILY (a dynamic `import(...)` inside the `dev`
 // handlers), never statically — so `build` / `--help` / `isolate` don't pull the annotate overlay
 // machinery onto their load path, and a future top-level hazard in it can't poison every command.
@@ -1728,21 +1734,35 @@ async function dev(rawArgs: string[] = []): Promise<void> {
 
 async function init(dir = "."): Promise<void> {
   const appAbs = resolve(dir);
-  // Refuse to scaffold OVER an existing project (never clobber the user's files): a
-  // NAMED target that already exists is an error; the current dir (".") is refused only
-  // when it is non-empty, so `sprig init` still works in a fresh, empty directory.
+  // An existing target that carries a spec/ artifact takes a CONTRIBUTOR run
+  // (artifact contract: every toolchain's init is an idempotent contributor —
+  // it adds its OWN half only where absent and never clobbers a byte that
+  // exists). Any other existing target is refused: never scaffold OVER a
+  // project that isn't a composed-app repo.
+  let laterInit = false;
+  const hasSpec = await Deno.stat(join(appAbs, "spec")).then(() => true).catch(() => false);
   if (dir === ".") {
-    for await (const entry of Deno.readDir(appAbs)) {
-      console.error(
-        `sprig init: ${appAbs} is not empty (e.g. ${entry.name}) — run it in an empty directory or pass a new app name.`,
-      );
-      Deno.exit(1);
+    if (hasSpec) {
+      laterInit = true;
+    } else {
+      for await (const entry of Deno.readDir(appAbs)) {
+        console.error(
+          `sprig init: ${appAbs} is not empty (e.g. ${entry.name}) — run it in an empty directory or pass a new app name.`,
+        );
+        Deno.exit(1);
+      }
     }
   } else {
     try {
       await Deno.stat(appAbs);
-      console.error(`sprig init: "${dir}" already exists — choose a new name or remove it first.`);
-      Deno.exit(1);
+      if (hasSpec) {
+        laterInit = true;
+      } else {
+        console.error(
+          `sprig init: "${dir}" already exists and is not a composed-app repo (no spec/) — choose a new name or remove it first.`,
+        );
+        Deno.exit(1);
+      }
     } catch (e) {
       if (!(e instanceof Deno.errors.NotFound)) throw e;
     }
@@ -1927,6 +1947,14 @@ async function init(dir = "."): Promise<void> {
   await Deno.mkdir(appAbs, { recursive: true });
   for (const [path, content] of Object.entries(files)) {
     const abs = join(appAbs, path);
+    if (laterInit) {
+      // Contributor run: add only what is absent; a byte that exists —
+      // another toolchain's half or a dev-edited file — is never rewritten.
+      try {
+        await Deno.stat(abs);
+        continue;
+      } catch { /* absent — write it */ }
+    }
     await Deno.mkdir(dirname(abs), { recursive: true });
     await Deno.writeTextFile(abs, content);
   }
@@ -1940,6 +1968,18 @@ async function init(dir = "."): Promise<void> {
   // scaffold and every later build agree on the composition.
   await writeRuneServe(appAbs, "ui", "server", "ui/static");
   await ensureRuneWorkspace(appAbs, "ui", "server");
+  // The shared spec/ artifact: skeleton (atomic, iff absent — whichever
+  // toolchain's init runs first writes it, vendoring the conformance vectors),
+  // the version handshake, and sprig's additive manifest registration.
+  await ensureSpecSkeleton(appAbs);
+  {
+    const versionError = await checkArtifactVersion(appAbs);
+    if (versionError) {
+      console.error(`sprig init: ${versionError}`);
+      Deno.exit(1);
+    }
+  }
+  await registerManifestEntries(appAbs);
   // Enforce the exact sprig pin (the template already writes it; this is the same stamp build/dev
   // apply, so init and every later build agree on the key + format). No-op when already current.
   await stamp(appAbs);
@@ -2158,8 +2198,40 @@ switch (cmd) {
     // <git root>/ui (works run from the root or from inside ui/), build IT to
     // <ui>/static (cwd-independent), then fold in the server/ keep backend + write the
     // git-root serve.ts + workspace deno.json.
+    // `--ui-only` builds JUST the client bundle for the given app dir — no
+    // composition, no serve.ts/workspace emission. The toolchain repo's own
+    // workbench (app/) builds this way: its hand-written serve.ts is not a
+    // composition root to regenerate.
+    const uiOnly = rest.includes("--ui-only");
     const appArg = rest.find((a) => !a.startsWith("-"));
+    if (uiOnly) {
+      const app = resolve(appArg ?? ".");
+      await build(app, join(app, "static"), false);
+      break;
+    }
     const ui = await resolveBuildAppDir(appArg);
+    // Artifact gates (both fail LOUD, never a silent misread): the manifest
+    // version handshake, and contract freshness — a committed typed client
+    // must match the committed openapi.json it claims to come from.
+    {
+      const gitRoot = dirname(ui);
+      for (const err of [
+        await checkArtifactVersion(gitRoot),
+        await verifyContractFreshness(gitRoot),
+      ]) {
+        if (err) {
+          console.error(`sprig build: ${err}`);
+          Deno.exit(1);
+        }
+      }
+      // Additive self-registration: an app with a spec/ artifact gets sprig's
+      // manifest entries the first build after upgrade (only-if-absent; never
+      // touches another toolchain's entries).
+      try {
+        await Deno.stat(join(gitRoot, "spec"));
+        await registerManifestEntries(gitRoot);
+      } catch { /* no artifact — nothing to register */ }
+    }
     await build(ui, join(ui, "static"), true);
     break;
   }

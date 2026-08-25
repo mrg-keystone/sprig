@@ -30,7 +30,7 @@
     "install": "deno run -A jsr:@mrg-keystone/sprig/cli install",
     "install:dev": "deno run -A framework/cli.ts install --dev",
     "dev": "deno run -A framework/cli.ts dev app",
-    "build": "deno run -A framework/cli.ts build app",
+    "build": "deno run -A framework/cli.ts build app --ui-only",
     "start": "deno serve -A --unstable-kv serve.ts",
     "sync:rune": "deno run -A scripts/sync-rune.ts",
     "sync:agent-guardrail": "deno run -A scripts/sync-agent-guardrail.ts",
