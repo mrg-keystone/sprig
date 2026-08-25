@@ -972,6 +972,93 @@ export interface SprigUiConfig {
  *
  * The host owns /api, /docs, and every other route; the sprig middleware owns /ui/**.
  */
+
+/** Configuration for {@link Frontend}. Everything is derivable from the
+ *  ui/-convention app the CLI scaffolds; pass overrides only off the path. */
+export interface FrontendConfig {
+  /** The SSR base the pages live under (default "/ui"). */
+  base?: string;
+  /** Static assets dir (default `<gitRoot>/ui/static`). */
+  assetsDir?: string;
+  /** An explicit composed app; default composes from `<gitRoot>/ui/src`. */
+  app?: SprigApp;
+}
+
+/**
+ * The composed app's FRONTEND — a directly-servable fetch handler that accepts
+ * the provisioned in-process client as an OPTIONAL THIRD ARGUMENT. The third
+ * argument IS the entire seam: a fetch-shaped client the composing backend
+ * layer mints per request; sprig binds it into the request-scoped `Backend`
+ * DI token, so `inject(Backend)` in SSR reads in-process with zero cookie
+ * plumbing. With no third argument (`Deno.serve(Frontend())` — UI-only), the
+ * token stays unbound and `inject(Backend)` fails loud; islands' `/api/*`
+ * calls simply have nothing serving them.
+ *
+ * The three canonical serving shapes:
+ *
+ *   Deno.serve(Backend(appName, module))                            // backend alone
+ *   Deno.serve(Backend(appName, module, { frontend: Frontend() }))  // full-stack
+ *   Deno.serve(Frontend())                                          // frontend alone
+ *
+ * Frontend owns everything the backend layer does not intercept: the SSR pages
+ * under `base`, their assets, the root redirect, and a 404 for the rest —
+ * total coverage, never a hang or a throw.
+ */
+export function Frontend(
+  config: FrontendConfig = {},
+): (
+  req: Request,
+  info?: Deno.ServeHandlerInfo,
+  backend?: { fetch: typeof fetch },
+) => Promise<Response> {
+  const base = config.base ?? "/ui";
+  const assetsDir = config.assetsDir ?? deriveUiDir("static");
+  const assetPrefix = `${base}/_assets`;
+  assetsGuard(assetsDir);
+  const version = assetsVersioner(assetsDir);
+  const buildMeta = buildMetaReader(assetsDir);
+  const srcDir = deriveUiDir("src");
+  let appOnce: Promise<SprigApp> | undefined;
+  const getApp = (): Promise<SprigApp> =>
+    config.app ? Promise.resolve(config.app) : (appOnce ??= composeApp(srcDir, base));
+
+  fwLog("compose", `Frontend: base=${base}; assetsDir=${assetsDir}`);
+
+  return async (req, _info, backendArg) => {
+    const url = new URL(req.url);
+    const path = url.pathname;
+    if (path === "/" || path === "") {
+      return Response.redirect(new URL(base, url), 302);
+    }
+    if (path === "/favicon.ico") {
+      return Response.redirect(new URL(`${assetPrefix}/favicon.ico`, url), 302);
+    }
+    if (path !== base && !path.startsWith(base + "/")) {
+      return new Response("Not Found", { status: 404 });
+    }
+    if (FORBIDDEN_METHODS.has(req.method)) {
+      return new Response("Method Not Allowed", {
+        status: 405,
+        headers: { "allow": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS" },
+      });
+    }
+    if (path.startsWith(assetPrefix + "/")) {
+      return await serveAsset(assetsDir, path.slice(assetPrefix.length + 1), req, version) ??
+        new Response("Not Found", { status: 404 });
+    }
+    const app = await getApp();
+    // The REQUEST-SCOPED binding of the cardinal invariant: the third-argument
+    // client is minted per request by the composing layer; wrap it fresh here,
+    // per call — never captured into module scope or a singleton provider.
+    const backend = backendArg ? backendClient(backendArg.fetch) : undefined;
+    const res = await app.fetch(req, _info, {
+      backend,
+      assetsVersion: (await version()) ?? undefined,
+    });
+    return injectHeadMeta(res, await buildMeta());
+  };
+}
+
 export function sprigUi(
   config: SprigUiConfig,
 ): (req: Request, info?: Deno.ServeHandlerInfo) => Promise<Response | null> {

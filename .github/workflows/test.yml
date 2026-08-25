@@ -1,0 +1,21 @@
+# Tests + conformance on every push/PR: the framework + keep-package suites,
+# which include the artifact-format golden vectors (the spec-root walk) and the
+# Frontend seam contract — drift against the shared contracts fails here the
+# day it lands.
+name: test
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno test -A framework/ packages/

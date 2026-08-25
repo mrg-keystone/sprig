@@ -17,7 +17,7 @@ import { basename, dirname, join, relative, resolve, toFileUrl } from "@std/path
 // are unanalyzable + don't resolve once this is published to JSR).
 import { buildClient, forcedImportMap } from "./.sprig/compiler/build.ts";
 import { createDevServer } from "./.sprig/compiler/dev.ts";
-import { createRenderer, loadRoutes, serveSprig, sprigAuth, sprigUi } from "../packages/keep/mod.ts";
+import { createRenderer, Frontend, loadRoutes, serveSprig, sprigAuth, sprigUi } from "../packages/keep/mod.ts";
 // The runtime via the BARE specifier, not "./.sprig/core.ts": in the merged-config dev child the
 // import map resolves @mrg-keystone/sprig to the APP'S stamped pin, so the CLI's bootstrap and the
 // app's own modules share ONE core (dev == prod resolution; a relative import here would load a
@@ -72,13 +72,13 @@ function runeRange(): string {
   // Direct import.meta.dirname, NOT installRoot(): its jsr guard Deno.exit(1)s
   // (uncatchable) — this read must degrade to the floor on a remote jsr: run.
   const fwDir = import.meta.dirname;
-  if (!fwDir) return "^5";
+  if (!fwDir) return "^6";
   try {
     const cfg = JSON.parse(Deno.readTextFileSync(join(fwDir, "..", "server", "deno.json"))) as { imports?: Record<string, string> };
     const range = cfg.imports?.["@mrg-keystone/rune"]?.match(/\/rune@([^"/]+)$/)?.[1];
     if (range) return range;
   } catch { /* fall through to a sane floor */ }
-  return "^5";
+  return "^6";
 }
 
 /** This CLI's on-disk install root — the dir holding `framework/` (a repo checkout or `~/.sprig`).
@@ -1136,32 +1136,31 @@ async function writeRuneServe(gitRoot: string, uiRel: string, serverRel: string,
       Deno.exit(1);
     }
   }
-  // ZERO composition: serve.ts is ONE line — `serveSprig({ keep: api })`. srcDir (<ui|app>/src),
-  // assetsDir (<ui|app>/static), base (/ui), and the bare-/ + favicon redirects are all DERIVED by
-  // serveSprig from this file's location + the ui/-or-app/ convention (probed on disk), so no app
-  // authors (and can't misauthor) a composition — the assetsDir a hand-written file used to forget
-  // is derived and pinned.
-  // The only named value is the imported keep backend. The Deno workspace in ./deno.json lets each half
-  // keep its own import map; serveSprig binds keep's IN-PROCESS Backend so resolve.ts reads with no TCP.
+  // The CANONICAL composition (the three serving shapes): the backend layer —
+  // intrinsic /api/ mount, docs under /api/docs/* — wraps the directly-servable
+  // Frontend, provisioning a fresh REQUEST-BOUND in-process client per request
+  // (SSR reads carry the request's own cookies; Set-Cookie from in-process
+  // calls lands on the outer browser response). The backend root stays the
+  // dev-owned bootstrap `api`, so `rune dev` and the headless runner keep their
+  // single boot; BackendFrom applies the layer to it.
   const src = [
     `// ${MARKER} — the single-origin composition root at the git root.`,
     `//`,
-    `// ONE line: serveSprig folds the rune/keep backend (${serverRel}/) and the sprig UI (${uiRel}/)`,
-    `// into a { fetch } default export. srcDir (${uiRel}/src), assetsDir (${assetsRel}/), base (/ui),`,
-    `// and the bare-/ + favicon redirects are DERIVED from this file's location + the ${uiRel}/ layout,`,
-    `// so the app authors no composition and can't forget assetsDir (the cwd-relative default that`,
-    `// shipped ?v=dev to prod). The Deno workspace in ./deno.json lets each half keep its own import`,
-    `// map; serveSprig binds keep's IN-PROCESS Backend so the UI's resolve.ts reads data with no TCP.`,
+    `// The canonical composed shape: the backend layer (intrinsic /api/ mount) wraps`,
+    `// the directly-servable Frontend and provisions the request-bound in-process`,
+    `// client into it per request — SSR's inject(Backend) reads with no TCP and the`,
+    `// request's own cookies; islands call /api/* over the wire; both channels are`,
+    `// byte-identical by contract (the parity suite gates it).`,
     `//`,
     `//   deno serve -A serve.ts            (add --env-file=.env if your backend reads one)`,
     `//`,
-    `//   /ui    → the SSR app        /api/* → the keep backend (token-gated)        /docs → Swagger`,
+    `//   /ui → the SSR app     /api/* → the keep backend     /api/docs/* → docs & cake`,
     `//`,
     `// Re-run \`sprig build\` after changing pages/islands to refresh ${assetsRel}/.`,
-    `import { serveSprig } from "@mrg-keystone/sprig/keep";`,
+    `import { Frontend } from "@mrg-keystone/sprig/keep";`,
     `import { api } from "./${serverRel}/bootstrap/mod.ts";`,
     ``,
-    `export default serveSprig({ keep: api });`,
+    `export default { fetch: api.compose({ frontend: Frontend() }) };`,
     ``,
   ].join("\n");
   await Deno.writeTextFile(servePath, src);
@@ -1662,8 +1661,18 @@ async function dev(rawArgs: string[] = []): Promise<void> {
   let hostFetch: (req: Request, info: Deno.ServeHandlerInfo) => Promise<Response>;
   if (rune) {
     const { api } = await keepPromise!; // was loading concurrently since above
-    const composed = serveSprig({ keep: api, app: sprigApp, base, assetsDir: outDir });
-    hostFetch = (req, info) => composed.fetch(req, info);
+    if (typeof api.compose === "function") {
+      // Dev serves EXACTLY the prod composition: the backend layer (intrinsic
+      // /api/ mount, docs at /api/docs/*) wrapping the Frontend with the
+      // request-bound in-process client provisioned per request.
+      const frontend = Frontend({ app: sprigApp, base, assetsDir: outDir });
+      const layer = api.compose({ frontend });
+      hostFetch = (req, info) => Promise.resolve(layer(req, info));
+    } else {
+      // Legacy keep (<5.1): the serveSprig shape (UI /ui, /api, /docs).
+      const composed = serveSprig({ keep: api, app: sprigApp, base, assetsDir: outDir });
+      hostFetch = (req, info) => composed.fetch(req, info);
+    }
   } else {
     // pure-UI app: the sprig middleware + the standalone /auth gateway (sessionless legacy mode),
     // so the built-in login()/warmAuth() client works without a keep backend.

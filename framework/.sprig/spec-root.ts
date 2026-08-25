@@ -10,9 +10,10 @@ import { dirname, join, resolve } from "@std/path";
 
 function gitEntryExists(dir: string): boolean {
   try {
-    // `.git` can be a directory (a normal clone) OR a file (a `git worktree`
-    // checkout points elsewhere via a `.git` file) — test for existence, not type.
-    Deno.statSync(join(dir, ".git"));
+    // `.git` can be a directory (a normal clone), a file (a `git worktree`
+    // pointer), or a symlink — the contract's test is EXISTENCE-ONLY (lstat:
+    // never opened, never validated, and a symlinked .git counts).
+    Deno.lstatSync(join(dir, ".git"));
     return true;
   } catch {
     return false;
