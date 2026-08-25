@@ -4,14 +4,22 @@
 import { type Accessor, type ComponentCtx, Injector, runInInjector, signal, type WritableAccessor } from "@mrg-keystone/sprig";
 import type { Scope } from "./expr.ts";
 
-/** Run an island's setup() with a fresh SERVER component injector active, so
+/** Run an island's setup() with a SERVER component injector active, so
  *  `inject()` resolves inside setup() (scope "both"/"server" services) instead of
  *  throwing — matching the documented DI contract and the inject() error message.
  *  Without this wrap, `current` is undefined during SSR setup() and every inject()
- *  in an island throws (uncaught → HTTP 500). A child("component") injector mirrors
- *  the root → route → component hierarchy. */
-export function withServerInjector<T>(fn: () => T): T {
-  return runInInjector(new Injector("server", "root").child("component"), fn);
+ *  in an island throws (uncaught → HTTP 500).
+ *
+ *  When the caller passes the REQUEST's injector (the route injector carrying
+ *  the per-request `Backend` binding), the component injector is ITS child, so
+ *  a page's `onServerInit`/`onServerLoad` resolves `inject(Backend)` exactly
+ *  like `resolve.ts` does. Without a parent (isolate previews, tests), a fresh
+ *  root stands in and request-scoped tokens correctly report unbound. */
+export function withServerInjector<T>(fn: () => T, parent?: Injector): T {
+  const component = parent
+    ? parent.child("component")
+    : new Injector("server", "root").child("component");
+  return runInInjector(component, fn);
 }
 
 export function makeServerCtx(inputs: Scope, emit?: (name: string, value: unknown) => void): ComponentCtx {

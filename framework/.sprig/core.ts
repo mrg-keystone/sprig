@@ -398,6 +398,11 @@ export interface RouteCtx {
   url: URL;
   params: Record<string, string>;
   session: SessionProfile | null;
+  /** INTERNAL: the request's route injector (carries the per-request `Backend`
+   *  binding). The renderer parents each page/island server injector to it so
+   *  `inject(Backend)` resolves inside `onServerInit`/`onServerLoad` exactly as
+   *  it does inside `resolve.ts`. Not part of the public RouteCtx contract. */
+  _injector?: Injector;
 }
 
 /** The reactive scope an island's logic.ts builds. */
@@ -813,7 +818,12 @@ export function bootstrap(config: AppConfig): SprigApp {
       // per-request route ctx (url/params/session) a route's logic.ts onServerLoad receives — the
       // same shape the guard chain already got as GuardCtx, so a page reads its query/auth whether
       // it's a resolve.ts (ResolveCtx) or a logic.ts (RouteCtx). Always present (unlike assetsVersion).
-      const reqCtx: RouteCtx = { url, params: matched.params, session: env?.session ?? null };
+      const reqCtx: RouteCtx = {
+        url,
+        params: matched.params,
+        session: env?.session ?? null,
+        _injector: routeInjector,
+      };
       const ropts = { assetsVersion: env?.assetsVersion, reqCtx };
       const renderer = config.renderer;
       // the generated-nav model (from route metadata + the current path) handed to layouts/shell

@@ -18,7 +18,7 @@ import { makeServerCtx, withServerInjector } from "./island.ts";
 import { versionOf } from "./hash.ts";
 import { componentScopeId } from "./scope.ts";
 import { perfConfig, type PerfConfig, perfHeadSnippet } from "./perf.ts";
-import type { ComponentDef as CoreComponentDef, MatchedLevel, Resolve } from "@mrg-keystone/sprig";
+import type { ComponentDef as CoreComponentDef, Injector, MatchedLevel, Resolve } from "@mrg-keystone/sprig";
 
 export interface SsrRenderer {
   /** Render the matched CHAIN (outer layouts → leaf page) nested inside the shell, return a
@@ -134,18 +134,21 @@ export async function createRenderer(
               // logic receives the request ctx (url/params/session); an island ignores the arg.
               (inst.onServerLoad ?? inst.onServerInit)?.call(inst, reqCtx);
               return inst as Scope;
-            }),
+            }, (reqCtx as { _injector?: Injector } | undefined)?._injector),
           // the async pre-pass path: construct + start onServerInit INSIDE the injector
           // (so inject() resolves in the constructor AND in onServerInit's synchronous
           // part, matching the sync path), then AWAIT the result before render. DI across
           // an await still needs async-aware context (documented limitation).
           resolve: (inputs, reqCtx) =>
+            // Parent the component injector to the REQUEST's injector (when the
+            // render came through app.fetch) so onServerInit/onServerLoad resolve
+            // request-scoped tokens — inject(Backend) — like resolve.ts does.
             withServerInjector(() => {
               const inst = new Cls(makeServerCtx(inputs)) as Record<string, unknown> & { onServerInit?: (ctx?: RouteCtx) => unknown; onServerLoad?: (ctx?: RouteCtx) => unknown };
               // onServerLoad (route) preferred over onServerInit (component); await either before render.
               // Route logic receives the request ctx (url/params/session); an island ignores the arg.
               return Promise.resolve((inst.onServerLoad ?? inst.onServerInit)?.call(inst, reqCtx)).then(() => inst as Scope);
-            }),
+            }, (reqCtx as { _injector?: Injector } | undefined)?._injector),
           trigger: (Cls as { trigger?: string }).trigger ?? "load",
           snapshot: !serverOnly, // server-only route logic never hydrates; everything else snapshots
           serverOnly, // the SSR renders it statically (no hydration boundary); the build skips its client entry
@@ -419,9 +422,12 @@ export async function createRenderer(
             ctrl.enqueue(enc.encode(documentHead(base, v, perf, titleOf(levels), opts.favicon, appHead)));
             const body = applyBasePrefix(await renderBody(levels, inputs, chrome, ropts?.reqCtx));
             ctrl.enqueue(enc.encode(body + documentTail(base, v, reserved, pageName(leaf), perf, !!opts.dev)));
-          } catch {
+          } catch (err) {
             // headers + head are already on the wire, so a render failure can't become a
-            // 500 — emit a marker and close (matches the renderDocument 500's no-leak rule).
+            // 500 — emit a marker and close (matches the renderDocument 500's no-leak
+            // rule). The error itself is NEVER swallowed silently: a debuggable line
+            // goes to the server log (a measured hunt burned an hour on the bare marker).
+            console.error("[sprig] render error:", err);
             ctrl.enqueue(enc.encode("<!-- sprig: render error -->\n</body></html>"));
           } finally {
             ctrl.close();
