@@ -48,8 +48,9 @@
     "include": [
       "LICENSE",
       "deno.json",
-      "framework/.sprig/annotate.ts",
       "framework/.sprig/annotate-client.js",
+      "framework/.sprig/annotate.ts",
+      "framework/.sprig/artifact.ts",
       "framework/.sprig/auth.ts",
       "framework/.sprig/compiler/build.ts",
       "framework/.sprig/compiler/dev.ts",
@@ -71,6 +72,7 @@
       "framework/.sprig/install.ts",
       "framework/.sprig/skills.ts",
       "framework/.sprig/spec-root.ts",
+      "framework/.sprig/vendored-tests.ts",
       "framework/cli.ts",
       "packages/keep/mod.ts",
       "packages/keep/vendor/apexcharts.js"
