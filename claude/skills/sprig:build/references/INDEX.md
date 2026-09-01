@@ -10,6 +10,7 @@ for an area you're unsure about. Start from `../SKILL.md`.
 | `routing.md` | `defineRoutes` + `load`; auto-loading a page's `logic.ts`/`resolve.ts` data (no module map); route guards (`guards: [...]` — return the target route to proceed, another route to 302); `createRenderer` + `bootstrap` |
 | `serving.md` | `serveSprig` single-origin composition (the scaffold default: keep backend + UI, in-process `Backend`, `deno serve serve.ts`) + `sprigUi` middleware to mount under an existing host; the `static/` build output |
 | `isolate.md` | `sprig isolate` — the Storybook-style workbench: components that have an `isolate/` folder (fixture + named cases), with a controls panel, console, tests, and HMR |
+| `wiring.md` | template wiring between sibling islands: `sets:`/`reads:`/`edits:` channels, outlet forwarding to pages, `sprig map`, the wiring lint, migrating off nested live islands |
 
 ## Task → file
 
@@ -24,3 +25,4 @@ for an area you're unsure about. Start from `../SKILL.md`.
 | Persist state across navigation | `component-model.md` (StateService) |
 | Serve the app / mount in a host framework | `serving.md` |
 | Preview or debug one component alone | `isolate.md` |
+| Share state between sibling islands / shell ↔ pages | `wiring.md` |

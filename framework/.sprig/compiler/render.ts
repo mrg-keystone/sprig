@@ -170,8 +170,10 @@ const lineOf = (source: string, idx: number): number => {
 /** Collect the wiring tethers declared on a tag's attributes (component tags and
  *  `router-outlet`). Shorthand `sets:org` joins channel `org`; longhand
  *  `sets:org={selectedOrg}` renames only the channel side. Malformed wiring fails
- *  the render loudly — a template that lies about its dataflow must not ship. */
-function collectWiring(attrs: Node[], source: string): TetherSpec[] {
+ *  the render loudly — a template that lies about its dataflow must not ship.
+ *  Exported for the whole-app static analysis (wiring-lint.ts: `sprig map` + the
+ *  §6 lint), which must collect tethers EXACTLY the way the runtime does. */
+export function collectWiring(attrs: Node[], source: string): TetherSpec[] {
   const out: TetherSpec[] = [];
   for (const attr of attrs) {
     if (attr.type !== "attribute") continue;

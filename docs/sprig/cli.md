@@ -9,9 +9,26 @@ or via the `deno task` aliases that `sprig init` writes into your app's `deno.js
 sprig init  [dir]               scaffold a minimal, runnable sprig app           (default: .)
 sprig dev   [appDir] [entry]    state-preserving HMR dev server (no Vite)        (default: app, serve.ts)
 sprig build [appDir]            code-split islands + scope CSS + Tailwind → static/  (default: app)
+sprig check [appDir]            typecheck under the CLI runtime + template wiring lint  (default: .)
+sprig map   [appDir]            print the wiring channels (who sets/edits/reads)  (default: .)
 sprig serve [entry]             boot a serve.ts's default { fetch } handler      (default: serve.ts)
 sprig help
 ```
+
+## `map [appDir]` (and the wiring lint)
+
+`sprig map` renders the app's dataflow from its templates alone — one stable-ordered line
+per wiring channel, one clause per verb, pages joined through a forwarding
+`<router-outlet>` included:
+
+```
+org: set by side-nav → edited by org-quick-rename → read by org-detail, app-detail
+```
+
+`sprig check` runs the wiring lint over the whole template graph (undeclared signal /
+no-origin channel → **error**; lone participant / multiple `sets:` → **warning**), and
+`sprig build` refuses to ship a template graph with wiring errors. See
+[wiring.md](./wiring.md).
 
 ## `init [dir]`
 

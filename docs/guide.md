@@ -12,6 +12,7 @@ handler.
 - [Folder-components](#folder-components)
 - [Template syntax](#template-syntax)
 - [Islands & hydration](#islands--hydration)
+- [Wiring islands](#wiring-islands)
 - [Data & services (DI)](#data--services-di)
 - [View encapsulation](#view-encapsulation)
 - [Routing](#routing)
@@ -194,6 +195,136 @@ are preserved), and delegates `(event)` bindings on the island root.
 
 ---
 
+## Wiring islands
+
+Sibling islands share state through **template wiring**: three directional verbs written
+where a component is *instantiated*, so the app's coordination is readable from the HTML
+alone — no store module gluing islands together behind the template's back.
+
+```html
+<!-- shell — STATIC: no logic.ts, never hydrates. Read it aloud:
+     "side-nav sets the org; the quick-rename field edits it under a
+      different name; pages read it." -->
+<div class="frame">
+  <side-nav sets:org></side-nav>
+  <org-quick-rename edits:draft={org}></org-quick-rename>
+  <main class="content">
+    <router-outlet reads:org></router-outlet>
+  </main>
+</div>
+```
+
+```ts
+// components/side-nav/logic.ts — nothing new to learn: it's just a signal
+export default class SideNav {
+  org = signal<string | null>(null);   // tethered by sets:org → read-write
+  pick(o: string) { this.org.set(o); }
+}
+```
+
+```ts
+// components/org-quick-rename/logic.ts — its own signal is named `draft`,
+// longhand-tethered to the `org` channel. It edits org; it does not ORIGINATE it.
+export default class OrgQuickRename {
+  // widened with `undefined`: an edits:/reads: field adopts the channel's value,
+  // which reads `undefined` if it tethers before the origin's sets: seeds it
+  draft = signal<string | null | undefined>(null);
+  rename(o: string) { this.draft.set(o); }
+}
+```
+
+```ts
+// pages/org-detail/logic.ts — no verb on the page anywhere; the shell's
+// <router-outlet reads:org> forwards the tether to its matching `org` signal.
+export default class OrgDetail {
+  org = signal<string | null | undefined>(null);   // tethered read-ONLY via forwarding
+}
+```
+
+### The verbs
+
+| verb      | tether     | `.set()` | seeds the channel | role in the story |
+|-----------|------------|----------|-------------------|--------------------|
+| `sets:x`  | read-write | allowed  | yes — the FIRST `sets:` in template order (a later `sets:` adopts like `edits:`) | the **origin** of x — this component decides what x is |
+| `reads:x` | read-only  | **throws** | no — adopts the channel's value | a consumer of x — uses it, cannot write it |
+| `edits:x` | read-write | allowed  | no — adopts the channel's value (own initial value discarded) | modifies an x that originates **elsewhere** |
+
+`sets:` and `edits:` are mechanically identical (read-write); they differ in narrative
+role and in the lint: every channel needs at least one `sets:` origin, and `edits:`
+deliberately doesn't satisfy that — an editor of a value nothing originates is a bug.
+
+### Channel rules
+
+- **Naming creates the channel.** `sets:org` tethers the component's own `org` signal to
+  a channel named `org`; components naming the same channel share the same value.
+- **Longhand renames only the channel side.** `edits:draft={org}` tethers the component's
+  `draft` signal to channel `org`. The `{...}` value is a **compile-time literal channel
+  identifier**, never an interpolated expression — that's what lets `sprig map` and the
+  lint resolve every channel statically.
+- **Scope is per template.** A channel belongs to the template that declared the wiring;
+  the same name in two unrelated templates is two different channels. A channel declared
+  inside a page's template dies when navigation swaps the page; shell-declared channels
+  survive navigation.
+- **Seeding.** The channel starts from the FIRST `sets:` component's current value in
+  template order (the enclosing template's participants precede a mounted page's). Every
+  other tether — `reads:`, `edits:`, a later `sets:` — adopts the channel's current value
+  and its own initial value is discarded. A participant that tethers before the origin
+  observes `undefined` (type the field to include `undefined`); an explicit write that
+  lands before the origin hydrates is never clobbered by the late seed.
+- **Buffered, not an event.** The channel holds the latest value; a late-hydrating island
+  reads it on tether and never misses an earlier write.
+- **Retention.** A channel outlives any single participant: when its only `sets:` origin
+  unmounts (an outlet-swapped page moving on), the last written value is retained until a
+  new origin tethers or the declaring render tree unmounts.
+- **Enforced direction.** `.set()`/`.update()`/`.value=` through a `reads:` tether
+  **throws — in dev AND production**. Dev names the component, the channel, and the
+  template line; production strips the detail but keeps the throw. The template cannot
+  lie about dataflow.
+- **Forwarding.** `<router-outlet reads:org>` forwards the tether to whatever page
+  mounts: a page with an `org` signal gets the read-only tether; a page without one is
+  untouched. The match is against the attribute's **local** name even under longhand
+  (`reads:org={selectedOrg}` still requires the page's signal to be named `org`). Only
+  the page root is forwarded — islands nested inside the page are not.
+- **No verb → black box.** A component with no wiring attribute, not mounted under a
+  forwarding outlet, exposes nothing and hears nothing.
+- **SSR.** Channels don't exist server-side; every component SSRs from its own defaults
+  (the usual `@if (x())` empty-state discipline). Hydration tethers client-side.
+
+### `sprig map` and the lint
+
+Because the templates contain the dataflow, the CLI can draw it:
+
+```
+$ sprig map
+org: set by side-nav → edited by org-quick-rename → read by org-detail, app-detail
+```
+
+One line per channel, one clause per verb, pages joined through forwarding included —
+stable-ordered, so it diffs cleanly as a regression guard.
+
+`sprig check` (and `sprig build`, which refuses to ship errors) lints the whole app's
+template graph:
+
+1. a verb naming a signal the component doesn't declare → **error** (the forwarding
+   `router-outlet` is exempt — it forwards tethers, it doesn't own them);
+2. a channel with no `sets:` participant → **error** (the value has no origin);
+3. a channel with exactly one participant → **warning** (dead wire or typo) — the
+   forwarding element itself never counts, and each distinct routed page that matches
+   counts once, however many routes reach it;
+4. more than one `sets:` on a channel → **warning** (two origins is usually a bug).
+
+### Migrating from nested live islands
+
+Nested live islands are **no longer the coordination pattern**. Wrapping siblings in a
+live parent just to share one value hydrates a huge tree and invites index-collision
+event bugs. Restructure to **siblings under a static frame + wiring**: the parent
+becomes a static template (no `logic.ts`, no hydration, no cost), the value's owner gets
+`sets:`, editors get `edits:`, consumers get `reads:`, and pages join through
+`<router-outlet reads:x>` — then delete the manual outlet/store workarounds. The shell
+example above is exactly that shape.
+
+---
+
 ## Data & services (DI)
 
 A page's `resolve.ts` runs on the server inside a request-scoped injector and returns the
@@ -319,6 +450,8 @@ controlled 500. Complete runnable example: `fixtures/guarded-app`.
 sprig init  [dir]              scaffold a minimal, runnable sprig app (default: .)
 sprig dev   [appDir] [entry]   state-preserving HMR dev server (default: app, serve.ts)
 sprig build [appDir]           code-split islands + scope CSS + Tailwind → static/ (default: app)
+sprig check [appDir]           typecheck under the CLI runtime + the template wiring lint
+sprig map   [appDir]           print the wiring channels — who sets/edits/reads each value
 sprig serve [entry]            boot a serve.ts's default { fetch } handler (default: serve.ts)
 ```
 
