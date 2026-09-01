@@ -13,7 +13,8 @@
 import { type Accessor, clientRoot, type ComponentCtx, effect, persistState, restoreState, runInInjector, signal, type WritableAccessor } from "@mrg-keystone/sprig";
 import { fromSerialized, type SerializedTemplate } from "./serialize.ts";
 import { evalStatement, type Scope, tagSelf } from "./expr.ts";
-import { type ComponentDef, type Handler, type MockSpec, type Registry, renderNodes } from "./render.ts";
+import { type ComponentDef, type Handler, type MockSpec, type Registry, renderNodes, type WiringSpec } from "./render.ts";
+import { forwardTethers, setWiringDev, teardownWiringInside, tetherIsland } from "./wiring.ts";
 import { named } from "./node.ts";
 import { scopeId } from "./scope.ts";
 import { restore } from "./lifecycle.ts";
@@ -281,6 +282,10 @@ export function teardownInside(root: ParentNode | null): void {
   for (let i = islandMounts.length - 1; i >= 0; i--) {
     if (gone(islandMounts[i].el)) islandMounts.splice(i, 1);
   }
+  // template-wiring channels: an outlet whose content is being discarded takes its
+  // content's channel region with it (page-scoped channels die on navigation); the
+  // regions above the swap point retain their channels + last written values.
+  teardownWiringInside(root);
 }
 
 // ───────────────────────────── HMR (dev only) ───────────────────────────────
@@ -301,7 +306,7 @@ const live: LiveIsland[] = [];
 /** Turn on live-instance tracking (called by the dev HMR client at startup). */
 export function enableHmr(): void {
   hmrEnabled = true;
-  devDiagnostics = true; // the HMR client only runs under `sprig dev`
+  setDevDiagnostics(true); // the HMR client only runs under `sprig dev`
 }
 
 // ─────────────────────── dev-mode dispatch diagnostics ──────────────────────
@@ -310,9 +315,11 @@ export function enableHmr(): void {
 // naming the element and its stamp so a dead click is discoverable instead of silent.
 // Off in production (never set outside `sprig dev`) → zero runtime cost there.
 let devDiagnostics = false;
-/** Enable/disable the dev-only dispatch-miss warnings (tests; the dev bootstrap sets it). */
+/** Enable/disable the dev-only diagnostics (tests; the dev bootstrap sets it): the
+ *  dispatch-miss warnings, and the rich detail on wiring's always-shipped throws. */
 export function setDevDiagnostics(on: boolean): void {
   devDiagnostics = on;
+  setWiringDev(on);
 }
 
 /** Test-only: how many instances the HMR `live` registry currently holds (it must stay
@@ -420,9 +427,10 @@ let bootCfg: SprigConfig | null = null;
 /** Scan `root` for <sprig-island> and schedule each one's chunk to load on its trigger. */
 export function bootstrapIslands(cfg: SprigConfig, root: ParentNode = document): void {
   bootCfg = cfg;
-  // dev-only dispatch diagnostics (spec §1): cfg.hmr is emitted ONLY under `sprig dev`,
-  // so gating on it keeps production dispatch-miss handling silent and free.
-  if (cfg.hmr) devDiagnostics = true;
+  // dev-only diagnostics (spec §1 dispatch misses + spec §3 wiring error detail):
+  // cfg.hmr is emitted ONLY under `sprig dev`, so gating on it keeps production
+  // dispatch-miss handling silent and free.
+  if (cfg.hmr) setDevDiagnostics(true);
   // record the matched page so islands without a data-page host attr still resolve their
   // child components against the right page-local registry (registryForPage parity).
   setCurrentPage(cfg.page);
@@ -779,6 +787,16 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
   // (StateService's constructor also queues a restore() microtask, but that lands
   // AFTER this synchronous task; this call is what makes the first paint correct.)
   restoreState();
+  // TEMPLATE WIRING (spec §3): tether this island's declared verbs to its render
+  // tree's channels, then apply any forwarding tether declared by the outlet that
+  // mounts it (`<router-outlet reads:org>` → the page's own `org` signal — the one
+  // way wiring crosses into a router-mounted page). Both REPLACE the declared
+  // fields with the channel accessor and run BEFORE the first effect render, so
+  // the first client paint reads the channel; constructor-time closures over the
+  // pre-tether signal observe the stale one (documented).
+  const wiring = inputs.__wiring as WiringSpec | undefined;
+  if (wiring) tetherIsland(el, scope as Record<string, unknown>, wiring, sel);
+  forwardTethers(el, scope as Record<string, unknown>, sel);
   // hand external tooling (the preview harness) a live handle on this island,
   // recording it so late subscribers are replayed (see onIslandMounted). Also stash
   // the scope on the element itself — the DOM is shared even if a tool's chunk got a

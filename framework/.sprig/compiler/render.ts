@@ -130,6 +130,87 @@ const rkey = (path: string | undefined, n: Node): string => (path ?? "") + "/" +
  *  { props } forces those props onto every instance of that selector. */
 export type MockSpec = "stub" | { stub?: boolean; props?: Record<string, unknown> };
 
+// ─────────────────────────── template wiring (spec §3) ──────────────────────
+/** ONE collected wiring tether: verb, the component's FIELD (signal) name, the
+ *  CHANNEL name (same as `f` for shorthand `sets:org`; renamed by longhand
+ *  `sets:org={selectedOrg}`), and the 1-based template line it was declared on
+ *  (the dev-mode error detail). */
+export interface TetherSpec {
+  v: "sets" | "reads" | "edits";
+  f: string;
+  c: string;
+  l?: number;
+}
+/** An island's compile-time wiring, carried to the client in the props bridge:
+ *  `o` is the scope stamp of the DECLARING template (the per-template channel
+ *  namespace — spec §3 channel scope), `t` the tethers declared on the tag. */
+export interface WiringSpec {
+  o?: string;
+  t: TetherSpec[];
+}
+
+const WIRE_VERB = /^(sets|reads|edits):([A-Za-z_$][\w$-]*)$/;
+/** Is `name` a wiring-verb attribute (`sets:x` / `reads:x` / `edits:x`)? Such
+ *  attributes are COMPILER-CONSUMED: excluded from a component's @inputs and never
+ *  emitted as literal DOM attributes. */
+export function isWiringAttrName(name: string): boolean {
+  return name.startsWith("sets:") || name.startsWith("reads:") || name.startsWith("edits:");
+}
+
+// the longhand channel literal: `{channel}` — a compile-time identifier, NEVER an
+// interpolated expression (spec §3: §5/§6's whole-app analysis needs it static).
+const CHANNEL_LITERAL = /^\{\s*([A-Za-z_$][\w$]*)\s*\}$/;
+
+const lineOf = (source: string, idx: number): number => {
+  let line = 1;
+  for (let i = 0; i < idx && i < source.length; i++) if (source[i] === "\n") line++;
+  return line;
+};
+
+/** Collect the wiring tethers declared on a tag's attributes (component tags and
+ *  `router-outlet`). Shorthand `sets:org` joins channel `org`; longhand
+ *  `sets:org={selectedOrg}` renames only the channel side. Malformed wiring fails
+ *  the render loudly — a template that lies about its dataflow must not ship. */
+function collectWiring(attrs: Node[], source: string): TetherSpec[] {
+  const out: TetherSpec[] = [];
+  for (const attr of attrs) {
+    if (attr.type !== "attribute") continue;
+    const name = field(attr, "name")!.text;
+    if (!isWiringAttrName(name)) continue;
+    const m = WIRE_VERB.exec(name);
+    if (!m) throw new Error(`sprig: malformed wiring attribute "${name}" — expected <verb>:<signalName> (template-wiring-spec.md §3)`);
+    const v = m[1] as TetherSpec["v"];
+    const f = m[2];
+    let c = f;
+    const val = field(attr, "value");
+    if (val) {
+      // the value must be the LITERAL {channel} form: reject interpolation outright
+      // (the channel name is a compile-time constant, not a template expression).
+      for (const part of named(val)) {
+        if (part.type === "interpolation") {
+          throw new Error(
+            `sprig: ${name} names its channel with an interpolated expression — the channel is a ` +
+              `compile-time literal: write ${name}={channelName} (template-wiring-spec.md §3)`,
+          );
+        }
+      }
+      // parse.ts's pre-pass carries the brace literal through the grammar entity-
+      // encoded (&#123;…&#125;) — decode before matching the {channel} shape.
+      const text = decodeEntities(named(val).map((part: Node) => part.text).join("")).trim();
+      const b = CHANNEL_LITERAL.exec(text);
+      if (!b) {
+        throw new Error(
+          `sprig: ${name}=${JSON.stringify(text)} — the longhand wiring value must be a literal ` +
+            `channel identifier like ${name}={channelName} (template-wiring-spec.md §3)`,
+        );
+      }
+      c = b[1];
+    }
+    out.push({ v, f, c, l: lineOf(source, attr.startIndex) });
+  }
+  return out;
+}
+
 const VOID = new Set([
   "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
 ]);
@@ -230,7 +311,17 @@ function renderElement(node: Node, opts: RenderOpts): string {
   // the load rendered inside it so the client can diff nesting and swap the deepest changed one.
   if (tag === "router-outlet") {
     const key = opts.outletKey ? ` data-level="${opts.outletKey.replace(/"/g, "&quot;")}"` : "";
-    return `<sprig-outlet${key}>${opts.outlet ?? ""}</sprig-outlet>`;
+    // TEMPLATE WIRING (spec §3): the outlet is the framework's FORWARDING element.
+    // Its wiring verbs are stamped onto the persistent <sprig-outlet> boundary
+    // (verb:localName=channel tokens + the declaring template's stamp) so hydration
+    // can forward each tether to whatever page mounts — including after a soft-nav
+    // swap, which replaces only the outlet's innerHTML and keeps these attributes.
+    const tethers = collectWiring(attrs, opts.source);
+    const wire = tethers.length
+      ? ` data-wire="${escapeAttr(tethers.map((t) => `${t.v}:${t.f}=${t.c}`).join(" "))}"` +
+        ` data-wire-owner="${escapeAttr(opts.scopeAttr ?? "")}"`
+      : "";
+    return `<sprig-outlet${key}${wire}>${opts.outlet ?? ""}</sprig-outlet>`;
   }
 
   // content projection: <content>/<ng-content> emits projected nodes (or its own children as a
@@ -263,8 +354,10 @@ function computeInputs(attrs: Node[], scope: Scope): Scope {
     } else if (attr.type === "two_way_binding") {
       inputs[field(attr, "name")!.text] = evalExpr(field(attr, "value"), scope);
     } else if (attr.type === "attribute") {
+      const name = field(attr, "name")!.text;
+      if (isWiringAttrName(name)) continue; // compiler-consumed (spec §3) — never an @input
       const v = field(attr, "value");
-      if (v) inputs[field(attr, "name")!.text] = inputText(v, scope);
+      if (v) inputs[name] = inputText(v, scope);
     }
   }
   return inputs;
@@ -283,6 +376,12 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
   };
   // compute the child's @inputs from the parent's bindings, evaluated in the parent scope
   const inputs: Scope = computeInputs(attrs, opts.scope);
+  // TEMPLATE WIRING (spec §3): the tethers this call-site declares on the child's tag.
+  // The DECLARING template (the current one — its scopeAttr) owns the channel names;
+  // an island carries them to the client through its props bridge (`__wiring`). SSR
+  // itself never tethers: channels do not exist server-side (components render from
+  // their own defaults), and no wiring attribute reaches the DOM.
+  const tethers = collectWiring(attrs, opts.source);
   // preview overrides (mocks): "stub" → a labelled placeholder; { props } → force
   // those props onto this instance (e.g. force a child button disabled).
   const mock = opts.mocks?.[comp.selector];
@@ -310,6 +409,7 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
       // must hydrate from these props once the post-render re-scan arms it (rescanIslands).
       const shellProps: Record<string, unknown> = { ...inputs };
       if (opts.mocks) shellProps.__mocks = opts.mocks;
+      if (tethers.length) shellProps.__wiring = { o: opts.scopeAttr, t: tethers } satisfies WiringSpec;
       return islandHost(childScope, comp.selector, comp.island.trigger, shellProps, "");
     }
     // an island: use the scope the async pre-pass already resolved for this node (its
@@ -333,6 +433,7 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
     const propsObj: Record<string, unknown> = { ...inputs };
     if (opts.mocks) propsObj.__mocks = opts.mocks;
     if (snap) propsObj.__snapshot = snap;
+    if (tethers.length) propsObj.__wiring = { o: opts.scopeAttr, t: tethers } satisfies WiringSpec;
     return islandHost(childScope, comp.selector, comp.island.trigger, propsObj, inner);
   }
   // static child: render its template; in CLIENT mode, wire (event) bindings on the
@@ -627,6 +728,9 @@ function buildAttrs(attrNodes: Node[], opts: RenderOpts): BuiltAttrs {
     if (attr.type === "attribute") {
       const name = field(attr, "name")!.text;
       if (name === "i18n" || name.startsWith("i18n-") || name === "ngProjectAs") continue;
+      // wiring verbs are compiler-consumed (spec §3) — they must never leak into the
+      // emitted DOM (they'd ship as meaningless literal attributes and desync morphs).
+      if (isWiringAttrName(name)) continue;
       const v = field(attr, "value");
       const text = v ? quotedText(v, scope) : "";
       if (name === "class") {

@@ -102,6 +102,61 @@ export function escapeLooseAt(html: string): string {
   return out;
 }
 
+// TEMPLATE WIRING longhand (spec §3): `sets:org={selectedOrg}` — the braces hold a
+// LITERAL compile-time channel identifier, but the grammar rejects both an unquoted
+// `={…}` value AND a bare `{` inside a quoted value. Rewrite it to a quoted,
+// entity-encoded form (`sets:org="&#123;selectedOrg&#125;"`) before parsing, so the
+// attribute arrives as an ordinary quoted value whose entity-decoded text is the
+// `{channel}` literal render.ts's wiring collector reads. Applied only INSIDE
+// tags — text content, comments, interpolations and raw <script>/<style> bodies
+// pass through untouched (same skip discipline as escapeLooseAt above; offsets
+// shift, but every consumer takes the source from the tree itself, so they stay
+// coherent).
+const WIRE_LONGHAND = /(\s(?:sets|reads|edits):[A-Za-z_$][\w$-]*)=\{\s*([A-Za-z_$][\w$]*)\s*\}(?=[\s>/]|$)/g;
+
+/** Quote + entity-encode the wiring-longhand `={channel}` form inside start tags. */
+export function quoteWiringLonghand(html: string): string {
+  if (!html.includes("={")) return html; // fast path: no longhand anywhere
+  let out = "";
+  let i = 0;
+  const n = html.length;
+  while (i < n) {
+    const ch = html[i];
+    if (ch === "<") {
+      if (html.startsWith("<!--", i)) {
+        const end = html.indexOf("-->", i + 4);
+        const stop = end === -1 ? n : end + 3;
+        out += html.slice(i, stop);
+        i = stop;
+        continue;
+      }
+      const raw = /^<(script|style)\b/i.exec(html.slice(i, i + 8));
+      if (raw) {
+        const close = new RegExp(`</${raw[1]}\\s*>`, "i").exec(html.slice(i));
+        const stop = close ? i + close.index + close[0].length : n;
+        out += html.slice(i, stop);
+        i = stop;
+        continue;
+      }
+      const end = html.indexOf(">", i + 1);
+      const stop = end === -1 ? n : end + 1;
+      out += html.slice(i, stop).replace(WIRE_LONGHAND, '$1="&#123;$2&#125;"');
+      i = stop;
+      continue;
+    }
+    if (ch === "{" && html[i + 1] === "{") {
+      const end = html.indexOf("}}", i + 2);
+      const stop = end === -1 ? n : end + 2;
+      out += html.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
 /** The first ERROR/MISSING node in the tree — where the syntax error actually is. */
 function firstErrorNode(node: Node): Node | null {
   if (node.type === "ERROR" || node.isMissing) return node;
@@ -124,10 +179,11 @@ function firstErrorNode(node: Node): Node | null {
 export async function parseTemplate(html: string, opts: { allowError?: boolean } = {}): Promise<Node> {
   const parser = await loadParser();
   // Prose-proof the text content first (a bare `@` would otherwise lex as a
-  // control-flow opener and fail the whole parse). Every consumer of this tree
+  // control-flow opener and fail the whole parse), and quote the wiring-longhand
+  // `={channel}` form the grammar can't lex unquoted. Every consumer of this tree
   // takes the source from the tree itself (serialize round-trips rootNode.text,
   // render slices opts.source = template.text), so offsets stay coherent.
-  const source = escapeLooseAt(html);
+  const source = escapeLooseAt(quoteWiringLonghand(html));
   const tree = parser.parse(source);
   if (!tree) throw new Error("template parse returned null");
   const root = tree.rootNode;

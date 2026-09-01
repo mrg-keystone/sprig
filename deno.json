@@ -68,6 +68,7 @@
       "framework/.sprig/compiler/render.ts",
       "framework/.sprig/compiler/scope.ts",
       "framework/.sprig/compiler/serialize.ts",
+      "framework/.sprig/compiler/wiring.ts",
       "framework/.sprig/core.ts",
       "framework/.sprig/install.ts",
       "framework/.sprig/pin-stamp.ts",
