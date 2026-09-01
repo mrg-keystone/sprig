@@ -76,6 +76,16 @@ export interface Handler {
   modifiers: string[]; // e.g. ["enter"]
   body: Node; // the handler statement AST
   scope: Scope; // the element's scope at render time
+  /** the scope stamp of the template that AUTHORED this binding — fixed at render
+   *  (compile) time to the scopeAttr in effect where the binding appears, NEVER
+   *  inferred from whichever scope attribute sits on the hosting element at dispatch
+   *  (an element routinely carries several: a child's root tag has its own component's
+   *  stamp plus the parent's marker when the parent binds a handler onto the tag).
+   *  Dispatch (hydrate.ts scopedHandlersFor) verifies the element's marker stamp
+   *  against this, so a (stamp, index) lookup only matches a handler its own template
+   *  emitted (template-wiring-spec.md §1). Absent only when rendering without any
+   *  component context (no scopeAttr — e.g. a raw fragment render in tests). */
+  owner?: string;
 }
 export interface RenderOpts {
   scope: Scope;
@@ -510,8 +520,22 @@ export async function resolveIslands(nodes: Node[], opts: RenderOpts, resolved: 
   await Promise.all(tasks);
 }
 
+/** The delegation-marker token for ONE collected handler: `<ownerStamp>:<index>`.
+ *  The owner stamp identifies the AUTHORING template unambiguously (the element's own
+ *  scope attributes can't — a child's root tag carries several), and the index is the
+ *  handler's slot in the island INSTANCE's table — the numeric index stays part of the
+ *  lookup key exactly as before, only now qualified by owner (spec §1). With no
+ *  component context (no scopeAttr) the bare index is emitted, the pre-stamp format,
+ *  which dispatch resolves without an owner check. */
+function handlerToken(owner: string | undefined, idx: number): string {
+  return owner ? `${owner}:${idx}` : String(idx);
+}
+
 /** CLIENT mode: collect (event) bindings on a component tag into the host's handler
- *  table and return the data-sprig-* markers to stamp on the child's root element. */
+ *  table and return the data-sprig-* markers to stamp on the child's root element.
+ *  The handlers' OWNER is the CURRENT (enclosing) template — it authored the binding,
+ *  even though the marker lands on the child component's root element (which carries
+ *  the child's scope attribute); the stamped token keeps ownership unambiguous. */
 function eventAttrs(attrs: Node[], opts: RenderOpts): string {
   if (!opts.handlers) return "";
   const marks: Record<string, string> = {};
@@ -521,8 +545,9 @@ function eventAttrs(attrs: Node[], opts: RenderOpts): string {
     if (name.startsWith("@")) continue;
     const [base, ...modifiers] = name.split(".");
     const key = `data-sprig-${base}`;
-    marks[key] = marks[key] ? `${marks[key]} ${opts.handlers.length}` : String(opts.handlers.length);
-    opts.handlers.push({ base, modifiers, body: field(attr, "handler")!, scope: opts.scope });
+    const token = handlerToken(opts.scopeAttr, opts.handlers.length);
+    marks[key] = marks[key] ? `${marks[key]} ${token}` : token;
+    opts.handlers.push({ base, modifiers, body: field(attr, "handler")!, scope: opts.scope, owner: opts.scopeAttr || undefined });
   }
   return Object.entries(marks).map(([k, v]) => ` ${k}="${v}"`).join("");
 }
@@ -629,12 +654,15 @@ function buildAttrs(attrNodes: Node[], opts: RenderOpts): BuiltAttrs {
       if (!name.startsWith("@")) {
         const [base, ...modifiers] = name.split(".");
         // Multiple same-base bindings (keyup.enter + keyup.escape, click + click.ctrl)
-        // must ALL be reachable: append this handler's index to a space-separated list
+        // must ALL be reachable: append this handler's token to a space-separated list
         // rather than overwriting the marker, so dispatch can pick the matching one.
+        // Each token is `<ownerStamp>:<index>` (spec §1) — the owner is the CURRENT
+        // template (its scopeAttr), fixed here at render time.
         const key = `data-sprig-${base}`;
         const prev = plain[key];
-        plain[key] = prev ? `${prev} ${opts.handlers.length}` : String(opts.handlers.length);
-        opts.handlers.push({ base, modifiers, body: field(attr, "handler")!, scope });
+        const token = handlerToken(opts.scopeAttr, opts.handlers.length);
+        plain[key] = prev ? `${prev} ${token}` : token;
+        opts.handlers.push({ base, modifiers, body: field(attr, "handler")!, scope, owner: opts.scopeAttr || undefined });
       }
     }
     // two_way_binding / reference / structural_directive / template_input → no-op here

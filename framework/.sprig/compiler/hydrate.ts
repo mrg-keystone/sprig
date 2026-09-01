@@ -301,6 +301,18 @@ const live: LiveIsland[] = [];
 /** Turn on live-instance tracking (called by the dev HMR client at startup). */
 export function enableHmr(): void {
   hmrEnabled = true;
+  devDiagnostics = true; // the HMR client only runs under `sprig dev`
+}
+
+// ─────────────────────── dev-mode dispatch diagnostics ──────────────────────
+// Spec §1 [DECIDE] (accepted default): a handler-table MISS (teleported content, or any
+// owner/nearest-root mismatch) runs NO handler — and, in dev only, logs a console warning
+// naming the element and its stamp so a dead click is discoverable instead of silent.
+// Off in production (never set outside `sprig dev`) → zero runtime cost there.
+let devDiagnostics = false;
+/** Enable/disable the dev-only dispatch-miss warnings (tests; the dev bootstrap sets it). */
+export function setDevDiagnostics(on: boolean): void {
+  devDiagnostics = on;
 }
 
 /** Test-only: how many instances the HMR `live` registry currently holds (it must stay
@@ -408,6 +420,9 @@ let bootCfg: SprigConfig | null = null;
 /** Scan `root` for <sprig-island> and schedule each one's chunk to load on its trigger. */
 export function bootstrapIslands(cfg: SprigConfig, root: ParentNode = document): void {
   bootCfg = cfg;
+  // dev-only dispatch diagnostics (spec §1): cfg.hmr is emitted ONLY under `sprig dev`,
+  // so gating on it keeps production dispatch-miss handling silent and free.
+  if (cfg.hmr) devDiagnostics = true;
   // record the matched page so islands without a data-page host attr still resolve their
   // child components against the right page-local registry (registryForPage parity).
   setCurrentPage(cfg.page);
@@ -791,7 +806,12 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
   let source = entry.template.source;
   const tick = hmrEnabled ? signal(0) : null;
 
-  // current handler table — rebuilt on every render; closed over by the listeners
+  // current handler table — rebuilt on every render; closed over by the listeners.
+  // The table is PER-ISLAND-INSTANCE (each hydrateIsland call owns its own array), and
+  // dispatch below is SCOPED to it: an event resolves only against the table of the
+  // NEAREST live island root containing the matched element (spec §1) — never against
+  // an ancestor island's table, which is what made nested live islands double-fire
+  // (a child's binding index N also hit the wrapping island's handler N).
   let handlers: Handler[] = [];
   // one delegated listener per distinct dom event the template uses (re-runnable so
   // event types introduced by a LATER render also get delegated — not just first-render).
@@ -801,10 +821,7 @@ function hydrateIsland(el: HTMLElement, entry: IslandEntry): void {
       if (wired.has(base)) continue;
       wired.add(base);
       el.addEventListener(base, (ev: Event) => {
-        const t = (ev.target as HTMLElement)?.closest?.(`[data-sprig-${base}]`) as HTMLElement | null;
-        if (!t || !el.contains(t)) return;
-        const marker = t.getAttribute(`data-sprig-${base}`) ?? "";
-        for (const h of resolveHandlers(marker, handlers, ev)) {
+        for (const h of scopedHandlersFor(el, ev.target as Element | null, base, handlers, ev)) {
           if (h.base === "submit") ev.preventDefault();
           evalStatement(h.body, h.scope, ev);
         }
@@ -1039,19 +1056,71 @@ const MOD_FLAG: Record<string, "ctrlKey" | "shiftKey" | "altKey" | "metaKey"> = 
   cmd: "metaKey",
   command: "metaKey",
 };
-/** Resolve a `data-sprig-<base>` marker (the index, or space-joined index list, that
- *  render.ts stamps for the bindings sharing one DOM base) into the handlers that should
- *  fire for `ev` — every handler whose index is listed AND whose chord modifiers match
- *  the event, in order (mirroring addEventListener: two same-base handlers both fire). */
-export function resolveHandlers(marker: string, handlers: Handler[], ev: Event): Handler[] {
+/** Resolve a `data-sprig-<base>` marker (a space-joined token list, one token per
+ *  binding sharing that DOM base) into the handlers that should fire for `ev` — every
+ *  listed handler whose chord modifiers match the event, in order (mirroring
+ *  addEventListener: two same-base handlers both fire). A token is `<ownerStamp>:<idx>`
+ *  (spec §1 — render.ts fixes the owner stamp at compile time to the template that
+ *  AUTHORED the binding) or a bare `<idx>` (a render with no component context — no
+ *  owner check). A stamped token whose index is unfilled OR whose owner stamp doesn't
+ *  match the table entry's is a MISS: no handler runs for it (`onMiss` is told, for the
+ *  dev diagnostic) — a modifier non-match is normal chord filtering, NOT a miss. */
+export function resolveHandlers(marker: string, handlers: Handler[], ev: Event, onMiss?: (token: string) => void): Handler[] {
   const out: Handler[] = [];
-  for (const idx of marker.split(/\s+/)) {
-    if (idx === "") continue;
-    const h = handlers[Number(idx)];
-    if (!h || (h.modifiers.length && !keyMatches(ev, h.modifiers))) continue;
+  for (const token of marker.split(/\s+/)) {
+    if (token === "") continue;
+    const sep = token.lastIndexOf(":");
+    const stamp = sep === -1 ? undefined : token.slice(0, sep);
+    const h = handlers[Number(sep === -1 ? token : token.slice(sep + 1))];
+    if (!h || (stamp !== undefined && h.owner !== stamp)) {
+      onMiss?.(token);
+      continue;
+    }
+    if (h.modifiers.length && !keyMatches(ev, h.modifiers)) continue;
     out.push(h);
   }
   return out;
+}
+
+/** The NEAREST live island root containing `t`, INCLUSIVE of `t` itself — the one
+ *  element anchoring a handler table that may resolve `t`'s markers (spec §1). "Live"
+ *  = hydrated: hydrateIsland stamps data-sprig-hydrated the moment it builds the
+ *  instance's table, and static components never register (no table ⇒ never a root). */
+export function nearestIslandRoot(t: Element): Element | null {
+  return t.closest?.("sprig-island[data-sprig-hydrated]") ?? null;
+}
+
+/** SCOPED event dispatch for ONE island instance's delegated listener (spec §1).
+ *  From the event target, find the matched `[data-sprig-<base>]` element (closest,
+ *  inclusive), then walk up — again inclusive — to the NEAREST live island root. Only
+ *  when that root is THIS instance's own root does its table resolve the marker, by
+ *  (owner stamp, index); every other listener on the bubble path returns [] untouched.
+ *  The walk stops at the nearest root whether or not the lookup matches — a miss
+ *  (teleported content, or any owner/nearest-root mismatch) runs NO handler and never
+ *  falls through to an ancestor's table, even one holding an identical (stamp, index)
+ *  entry (two nested instances of the same component rely on exactly that). A miss
+ *  emits a dev-only console warning naming the element and its stamp. */
+export function scopedHandlersFor(
+  root: Element,
+  target: Element | null,
+  base: string,
+  handlers: Handler[],
+  ev: Event,
+  onMiss?: (token: string, el: Element) => void,
+): Handler[] {
+  const t = target?.closest?.(`[data-sprig-${base}]`) as Element | null;
+  if (!t || !root.contains(t)) return [];
+  if (nearestIslandRoot(t) !== root) return []; // an inner instance's table owns this element
+  const marker = t.getAttribute(`data-sprig-${base}`) ?? "";
+  const miss = onMiss ?? ((token: string, on: Element) => {
+    if (!devDiagnostics) return;
+    console.warn(
+      `[sprig] no handler for data-sprig-${base}="${token}" on <${on.tagName.toLowerCase()}> — ` +
+        `the stamp has no matching entry in the nearest island's table. Content teleported (or rendered) ` +
+        `across a live-island boundary does not keep its (event) handlers.`,
+    );
+  });
+  return resolveHandlers(marker, handlers, ev, (token) => miss(token, t));
 }
 
 export function keyMatches(e: Event, mods: string[]): boolean {
