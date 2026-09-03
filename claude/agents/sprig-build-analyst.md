@@ -45,13 +45,25 @@ The orchestrator passes — absolute, already resolved:
 2. Write `spec/misc/build/cheatsheet.md` with exactly these sections, telegraphic style:
    - **Units** — one line per unit: `<selector>` · folder · static/island ·
      props `name: type = default, …` · events emitted · composes `<children>`.
-   - **Seams** — each shared service/store: path, public API one-liners.
+   - **Seams** — each shared service (DI singleton, resolve, typed client): path, public
+     API one-liners.
+   - **Channels** — the cross-island state map, one line per channel:
+     `<name>: sets by <origin> → edits by <…> → reads by <…> · shell|page scope`.
+     Islands share state ONLY via the `sets:`/`reads:`/`edits:` template verbs
+     (`~/.claude/skills/sprig:build/references/wiring.md`) — never a `state/*.ts`
+     signal module, a shared store, a nested live parent island, or `ctx.output()`
+     across an island boundary (outputs are template-internal). If `index.md`'s seams
+     prescribe a store module or an exported signal, TRANSLATE it into a channel here
+     (owner `sets:`, editors `edits:`, consumers `reads:`, pages via
+     `<router-outlet reads:x>`) and flag the translation in your return — a store seam
+     copied verbatim reaches every builder and only fails in a real browser.
    - **Facts** — the orchestrator's facts block, verbatim.
    - **Gotchas** — the app-specific traps, each ONE line (e.g. resolve contract:
      `ResolveCtx = { params, url } ONLY — no headers/session; session → logic.ts
      RouteCtx`; headless test dialect: `import { expect, test } from "@playwright/test"`;
      island hydration: gate on `__sprigScope`; route scheme:
-     `/<components|pages>/<category>/<folder>/<case>`).
+     `/<components|pages>/<category>/<folder>/<case>`; cross-island state: wiring verbs
+     only, `sprig map` proves the dataflow, the wiring lint fails `sprig build`).
 3. Keep it ≤3KB. If a section would blow the cap, cut detail from **Gotchas** last and
    **Units** first (builders hold their own unit's full spec already — the sheet is for
    SIBLING knowledge).
@@ -74,7 +86,7 @@ historically crawled the disk for is already at hand:
 - **Sprig internals** — islands & `isolate` (`isolate-events`, `sprig isolate`), the
   component model, routing, serving/SSR, templates — are documented in the skill references
   installed alongside you. Read them directly instead of hunting the runtime source:
-  - `~/.claude/skills/sprig:build/references/{isolate,component-model,routing,serving,templates}.md`
+  - `~/.claude/skills/sprig:build/references/{isolate,component-model,wiring,routing,serving,templates}.md`
   - `~/.claude/skills/sprig:audit/references/{playwright-mcp-recipes,sprig-bug-catalog}.md`
   - `~/.claude/skills/sprig:breakdown/references/{capture-recipes,isolate-format}.md`
 - **To resolve an import alias** (e.g. `@mrg-keystone/sprig`, `#assert`): read the PROJECT's

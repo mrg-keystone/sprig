@@ -129,7 +129,9 @@ to the client before hydration. Three measured traps:
   any class instance stored as `this.x`/a public field arrives client-side as a lossy plain
   object (`push is not a function`). Capture them as **constructor-local closures** used by
   arrow-function methods instead. (`#private` fields can also trip bundler brand-checks —
-  closures are the safe shape.)
+  closures are the safe shape.) And note: **`ctx.output()` handles are template-internal
+  — they do not cross island boundaries.** For island → island (or shell ↔ page) state,
+  wire it with `sets:`/`reads:`/`edits:` (see `wiring.md`), never a `state/*.ts` store.
 - **`[value]` on `<input>`/`<textarea>` only patches the attribute.** After the user types,
   the live `.value` diverges from your signal; re-sync in `onBrowserInit` with an `effect()`
   that writes `el.value` from the signal.
