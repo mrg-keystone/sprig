@@ -480,8 +480,12 @@ function renderComponent(comp: ComponentDef, attrs: Node[], children: Node[], op
   }
   // forward `resolved` so an island nested inside this static component still finds the
   // scope the async pre-pass (resolveIslands) recorded for it — else it falls back to its
-  // stale synchronous scope() value (bug H).
-  const html = renderNodes(named(tpl), { scope: inputs, registry: opts.registry, outlet: opts.outlet, outletKey: opts.outletKey, source: tpl.text, projected, scopeAttr: childScope, mocks: opts.mocks, resolved: opts.resolved, resolvedPath: node ? rkey(opts.resolvedPath, node) : opts.resolvedPath });
+  // stale synchronous scope() value (bug H). Also thread `handlers` (CLIENT mode) exactly
+  // as the island branch does: content the parent PROJECTS through this static wrapper
+  // (<ng-content> → renderContent spreads these opts) carries the parent's (event)
+  // bindings, and without the collector they render unstamped — no `data-sprig-*`
+  // marker — and the click is silently dropped client-side.
+  const html = renderNodes(named(tpl), { scope: inputs, registry: opts.registry, outlet: opts.outlet, outletKey: opts.outletKey, source: tpl.text, handlers: opts.handlers, projected, scopeAttr: childScope, mocks: opts.mocks, resolved: opts.resolved, resolvedPath: node ? rkey(opts.resolvedPath, node) : opts.resolvedPath });
   const out = injectRootAttrs(html, eventAttrs(attrs, opts));
   if (key) {
     if (staticCache.size >= STATIC_CACHE_MAX) staticCache.clear(); // crude bound
