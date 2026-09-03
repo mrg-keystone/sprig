@@ -86,6 +86,15 @@ one its input contract and summarize what it returns.
    builder-returned gotcha propagates by APPENDING one line to the cheatsheet — never by
    fattening later briefs. Before a page-composition wave, optionally re-spawn the analyst
    to refresh the sheet against as-built props.
+   **Cross-island state is wired, never stored.** Islands share state ONLY via the
+   `sets:`/`reads:`/`edits:` template verbs (`references/wiring.md`); the cheatsheet MUST
+   carry the **channel map** (channel → origin `sets:` → editors → readers, shell vs
+   page scope). No `state/*.ts` signal modules, no shared store, no nested live parent
+   island, no `ctx.output()` across island boundaries — if `index.md` §seams prescribes
+   any of those, the analyst translates them into channels before the first wave
+   (measured: a store-module seam reached every builder verbatim and only surfaced as a
+   `ctx.output` stub once tests ran in a real browser). `sprig map` proves the dataflow;
+   the wiring lint in `sprig check` fails the build on an unwired channel.
 2. **Build each unit in isolation, in build order.** Walk the breakdown `index.md` build
    order — **tokens → shared components (primitives before composites) → page-local
    components → page compositions** — and for each unit delegate to **`sprig-build-component`**

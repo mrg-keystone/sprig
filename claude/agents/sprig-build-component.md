@@ -161,10 +161,11 @@ playbooks), and never research the framework source — the shapes above are ver
 ## Resources
 
 - **First stop: the build CHEATSHEET** when your brief carries its path
-  (`spec/misc/build/cheatsheet.md`) — sibling prop/event APIs, store seams, facts, and the
-  app's gotchas, pre-digested. Read it INSTEAD of sibling templates and instead of the
+  (`spec/misc/build/cheatsheet.md`) — sibling prop/event APIs, service seams, the
+  **channel map** (cross-island state as `sets:`/`reads:`/`edits:`), facts, and the app's
+  gotchas, pre-digested. Read it INSTEAD of sibling templates and instead of the
   references below.
-- The references (`~/.claude/skills/sprig:build/references/{component-model,templates,isolate}.md`,
+- The references (`~/.claude/skills/sprig:build/references/{component-model,templates,wiring,isolate}.md`,
   cross-skill `~/.claude/skills/sprig:breakdown/references/isolate-format.md`) are
   **failure-time material, not a preamble**: open ONE only when the recipe above + the
   cheatsheet don't cover the exact shape you're implementing (an unfamiliar construct, a
@@ -202,7 +203,7 @@ historically crawled the disk for is already at hand:
 - **Sprig internals** — islands & `isolate` (`isolate-events`, `sprig isolate`), the
   component model, routing, serving/SSR, templates — are documented in the skill references
   installed alongside you. Read them directly instead of hunting the runtime source:
-  - `~/.claude/skills/sprig:build/references/{isolate,component-model,routing,serving,templates}.md`
+  - `~/.claude/skills/sprig:build/references/{isolate,component-model,wiring,routing,serving,templates}.md`
   - `~/.claude/skills/sprig:audit/references/{playwright-mcp-recipes,sprig-bug-catalog}.md`
   - `~/.claude/skills/sprig:breakdown/references/{capture-recipes,isolate-format}.md`
 - **To resolve an import alias** (e.g. `@mrg-keystone/sprig`, `#assert`): read the PROJECT's
@@ -227,6 +228,7 @@ escalate to a root-wide `find`.
 - Loop past the iteration budget on one case OR one failing command (3 identical non-green verdicts = exhausted, `ran: false` included) — return it red/blocked with a diagnosis instead.
 - Ship a server write as spinner-and-`location.reload()` (the anti-pattern) — server writes are optimistic unless a `data-note` overrides.
 - Make an island that takes server data as frozen props and `reload()`s after actions, or a whole-page island.
+- Share state between islands through a `state/*.ts` module, an exported signal, a shared store, a nested live parent island, or a `ctx.output()` handle (outputs are template-internal) — islands share state ONLY via the cheatsheet's channel map (`sets:`/`reads:`/`edits:` on the instantiating tag; `references/wiring.md`). A brief that hands you a store seam is a brief to push back on, not to implement.
 - Compose a unit into a page before its `isolate/` cases are green.
 - Read a full-page breakdown screenshot for a component unit, re-read ANY image, or read
   images before the unit's structure is green — visual polish is the LAST phase.
