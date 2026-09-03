@@ -26,6 +26,19 @@ const readVendor = async (name: string): Promise<string> => {
 const VENDOR: Record<string, { body: string; type: string }> = {
   "apexcharts.js": { body: await readVendor("apexcharts.js"), type: "text/javascript; charset=utf-8" },
 };
+/** The SHARED vendor-asset route: every serving path (serveSprig, Frontend/api.compose, sprigUi)
+ *  answers `<assetPrefix>/vendor/<name>` from the VENDOR map above, NOT the app's build output —
+ *  the renderer injects these tags on every page and the app never emits the files, so a serving
+ *  path without this route 404s the tag on every page load. Returns null for a non-vendor path
+ *  (fall through to the built-assets route); an unknown vendored name is a handled 404. */
+function serveVendorAsset(path: string, assetPrefix: string): Response | null {
+  const prefix = assetPrefix + "/vendor/";
+  if (!path.startsWith(prefix)) return null;
+  const asset = VENDOR[path.slice(prefix.length)];
+  return asset
+    ? new Response(asset.body, { headers: { "content-type": asset.type, "cache-control": "public, max-age=86400" } })
+    : new Response("Not Found", { status: 404 });
+}
 
 // The SSR renderer is server-only (Deno APIs) so it can't live in client-safe
 // @mrg-keystone/sprig; it belongs with the rest of the server glue. The actual COMPILER
@@ -864,15 +877,11 @@ export function serveSprig(config: ServeSprigConfig): ServeDefaultExport {
         const authRes = await serveAuthGateway(req, config.keep, authInfraUrl, authExchangePath);
         if (authRes) return authRes;
       }
-      // framework-vendored libs (apexcharts, …) → served straight from the in-source VENDOR
-      // map above, NOT the app's build output. This is what "ship it to the client" means:
-      // the server hands over its own bundled copy; the app never emits it.
-      if (path.startsWith(assetPrefix + "/vendor/")) {
-        const asset = VENDOR[path.slice((assetPrefix + "/vendor/").length)];
-        return asset
-          ? new Response(asset.body, { headers: { "content-type": asset.type, "cache-control": "public, max-age=86400" } })
-          : new Response("Not Found", { status: 404 });
-      }
+      // framework-vendored libs (apexcharts, …) → the shared vendor route. This is what
+      // "ship it to the client" means: the server hands over its own bundled copy; the
+      // app never emits it.
+      const vendorRes = serveVendorAsset(path, assetPrefix);
+      if (vendorRes) return vendorRes;
       // built assets → static dir (immutable only for content-addressed requests)
       if (path.startsWith(assetPrefix + "/")) {
         return serveAsset(assetsDir, path.slice(assetPrefix.length + 1), req, version);
@@ -1042,6 +1051,9 @@ export function Frontend(
         headers: { "allow": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS" },
       });
     }
+    // framework-vendored libs → the shared vendor route (the build output never has them)
+    const vendorRes = serveVendorAsset(path, assetPrefix);
+    if (vendorRes) return vendorRes;
     if (path.startsWith(assetPrefix + "/")) {
       return await serveAsset(assetsDir, path.slice(assetPrefix.length + 1), req, version) ??
         new Response("Not Found", { status: 404 });
@@ -1083,6 +1095,9 @@ export function sprigUi(
     if (FORBIDDEN_METHODS.has(req.method)) {
       return new Response("Method Not Allowed", { status: 405, headers: { "allow": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS" } });
     }
+    // framework-vendored libs → the shared vendor route (the build output never has them)
+    const vendorRes = serveVendorAsset(path, assetPrefix);
+    if (vendorRes) return vendorRes;
     if (path.startsWith(assetPrefix + "/")) {
       return serveAsset(assetsDir, path.slice(assetPrefix.length + 1), req, version);
     }
