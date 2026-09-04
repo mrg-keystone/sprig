@@ -303,14 +303,93 @@ export async function buildClient(srcDir: string, outDir: string): Promise<Build
   return { islands: islands.map((i) => i.sel), chunks, out: join(outDir, "client.js"), bytes: total, hash };
 }
 
+// ── daisyUI class collisions ─────────────────────────────────────────────────────────────────
+// buildCss bundles daisyUI 5 into EVERY app (`@plugin "daisyui"`, themes off). Tailwind emits a
+// daisyUI component the moment its class token appears in a scanned template, UNSCOPED — the rule
+// targets the bare class in a `daisyui.*` layer — so a component whose own styles.css targets one
+// of daisyUI's class names gets daisyUI's display/padding/grid on top of what it sets: a scoped
+// `.stat { width: 8px }` still renders as a daisyUI stat block (the status-dot-became-a-blob
+// ticket; the workbench shell hit the same on `dock`/`badge`/`kbd`/`toast`, hence its `wb-*`
+// chrome). buildCss warns per file. The exact class set is read from the installed package (so
+// it is always the version the build just compiled with); the curated bare set below is the
+// documented list + the fallback when the package can't be read.
+
+/** The bare daisyUI 5 component/utility class names — each with its own global rule. Derived
+ *  from daisyui@5.7.28 `components/*.css` + `utilities/*.css` (every bare `.name` selector; parts
+ *  and modifiers are `<name>-*`, e.g. `stat-title`, `btn-sm`). Left out on purpose: `disabled`
+ *  (only a `li.disabled` qualifier under `.menu`) and `prose` (sets `--tw-prose-*` variables, no
+ *  box). Mirrors docs/sprig/styling.md → "Reserved class names" (a test keeps them in sync);
+ *  regenerate both when the daisyUI pin moves — the recipe is in that doc. */
+export const DAISYUI_RESERVED_CLASSES: ReadonlySet<string> = new Set([
+  "alert", "aura", "avatar", "badge", "breadcrumbs", "btn", "cally", "card", "carousel", "chat",
+  "checkbox", "collapse", "countdown", "diff", "divider", "dock", "drawer", "dropdown", "fab",
+  "fieldset", "filter", "footer", "glass", "hero", "indicator", "input", "join", "kbd", "label",
+  "link", "list", "loading", "mask", "megamenu", "menu", "modal", "navbar", "otp", "progress",
+  "radio", "range", "rating", "select", "skeleton", "stack", "stat", "stats", "status", "step",
+  "steps", "swap", "tab", "table", "tabs", "textarea", "timeline", "toast", "toggle", "tooltip",
+  "validator", "vc",
+]);
+
+/** Every class name a stylesheet's SELECTORS target, deduped in first-seen order. Comments and
+ *  declaration bodies are excluded (so `.5rem`, `url(x.org)`, `content: ".btn"` never read as
+ *  classes); nested rules are seen at every level — the text outside the innermost `{…}` bodies is
+ *  harvested, those bodies dropped, and it repeats to a fixpoint. `@layer a.b` names and escaped
+ *  sequences (`sm\:toast`) are removed before matching. Pure; exported for tests. */
+export function selectorClasses(css: string): string[] {
+  const out: string[] = [];
+  let s = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  for (let prev = ""; prev !== s; s = s.replace(/\{[^{}]*\}/g, "")) {
+    prev = s;
+    const level = s.replace(/\{[^{}]*\}/g, " ").replace(/@layer[^{;]*/g, "").replace(/\\./g, " ");
+    for (const [, name] of level.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) {
+      if (!out.includes(name)) out.push(name);
+    }
+  }
+  return out;
+}
+
+/** Tailwind's responsive prefixes surface as bare tokens from `.sm\:toast`-style selectors. */
+const RESPONSIVE_PREFIXES = new Set(["sm", "md", "lg", "xl", "2xl"]);
+
+/** The exact set of class names the INSTALLED daisyUI (in the build's Tailwind cache dir) styles —
+ *  `components/*.css` + `utilities/*.css`, selectors only. Null when the package isn't readable
+ *  there (a pre-first-build cache, a foreign layout); the caller then falls back to
+ *  DAISYUI_RESERVED_CLASSES. Excludes the same qualifier-/variable-only names as the curated set. */
+export async function installedDaisyuiClasses(twDir: string): Promise<Set<string> | null> {
+  const pkg = join(twDir, "node_modules", "daisyui");
+  const classes = new Set<string>();
+  try {
+    for (const sub of ["components", "utilities"]) {
+      for await (const e of Deno.readDir(join(pkg, sub))) {
+        if (!e.isFile || !e.name.endsWith(".css")) continue;
+        for (const c of selectorClasses(await Deno.readTextFile(join(pkg, sub, e.name)))) classes.add(c);
+      }
+    }
+  } catch {
+    return null;
+  }
+  for (const noise of [...RESPONSIVE_PREFIXES, "disabled", "prose"]) classes.delete(noise);
+  return classes.size ? classes : null;
+}
+
+/** The class names `css`'s selectors target that daisyUI ALSO styles globally — the elements where
+ *  daisyUI's rules and the component's scoped rules both land. Exact matches only (`stat`,
+ *  `stat-title`): a name that merely starts like one (`statistic`, or the workbench's `dock-tab`,
+ *  which daisyUI does not define) is not a collision. Pure; exported for tests. */
+export function daisyuiCollisions(css: string, reserved: ReadonlySet<string> = DAISYUI_RESERVED_CLASSES): string[] {
+  return selectorClasses(css).filter((name) => reserved.has(name));
+}
+
 /** Collect each component's styles.css, scope it for view encapsulation, then run
  *  Tailwind (expands @apply + emits utilities scanned from the templates) → app.css. */
 export async function buildCss(srcDir: string, outDir: string): Promise<void> {
   const parts: string[] = [];
+  const sheets: { relDir: string; css: string }[] = [];
   for await (const entry of walk(srcDir, { includeDirs: false, match: [/styles\.css$/] })) {
     const dir = dirname(entry.path);
     const relDir = relative(srcDir, dir).replace(/\\/g, "/");
     const css = await Deno.readTextFile(entry.path);
+    sheets.push({ relDir, css });
     // scope by the component's UNIQUE path (matches mod.ts's componentScopeId) so two
     // same-basename folders never share a scope attr → no cross-folder CSS leak.
     parts.push(`/* ${relDir} (scoped) */\n${scopeCss(css, componentScopeId(relDir))}`);
@@ -393,6 +472,21 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-display, inherit); letter-spaci
   }).output();
   if (!res.success) {
     throw new Error("tailwind css build failed:\n" + new TextDecoder().decode(res.stderr));
+  }
+  // After Tailwind, so the installed daisyUI is on disk even on a first-ever build. Warn, don't
+  // fail: restyling `.card` on purpose to tweak the daisyUI card is legitimate — the warning tells
+  // the author which of the two they're doing.
+  const reserved = (await installedDaisyuiClasses(twDir)) ?? DAISYUI_RESERVED_CLASSES;
+  for (const { relDir, css } of sheets) {
+    const hits = daisyuiCollisions(css, reserved);
+    if (!hits.length) continue;
+    const prefix = (relDir.split("/").pop() || "my").slice(0, 2); // e.g. islands/coms-island → `.co-stat`
+    console.warn(
+      `sprig: ${relDir}/styles.css styles ${hits.map((h) => "." + h).join(", ")} — daisyUI (bundled by ` +
+        `the build) styles the same class name(s) globally, so these rules only override the properties ` +
+        `they set on top of daisyUI's. Unless you mean the daisyUI component, rename with your own prefix ` +
+        `(e.g. .${prefix}-${hits[0]}). See docs/sprig/styling.md → "Reserved class names".`,
+    );
   }
 }
 

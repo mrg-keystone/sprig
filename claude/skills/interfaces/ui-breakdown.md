@@ -35,10 +35,14 @@ spec/ui/breakdown/
   with **no matching endpoint/DTO is a drift error**, listed in the binding and surfaced in
   `index.md` — checkable at breakdown time, not a runtime surprise. `data-model.md` is the
   **legacy fallback**, written only when no contract exists (standalone mock breakdowns).
-- **Tokens are Tailwind v4 `@theme` custom properties** — NOT a `tailwind.config.js`, NOT daisyUI.
-  Build puts them in a `:global(...)` `@theme` block (usually `shell/styles.css`) and styles with
+- **Tokens are Tailwind v4 `@theme` custom properties** — NOT a `tailwind.config.js`, NOT daisyUI
+  *themes*. Build puts them in a `:global(...)` `@theme` block (usually `shell/styles.css`) and styles with
   **Tailwind utilities** + component-scoped `styles.css` (the daisyUI→Tailwind translation already
   happened *here*); `sprig build` runs Tailwind v4 over the templates + CSS. Every theme variant included.
+  **daisyUI *components* ARE in the build** (`@plugin "daisyui"`, themes off) and their rules are
+  document-global, so a spec must not propose a class name daisyUI owns (`stat`, `badge`, `list`,
+  `status`, `card-body`, …) for an element of its own — prefix own classes (`cm-dot`) or name the
+  daisyUI component deliberately. The list: `docs/sprig/styling.md` → "Reserved class names".
 - **Each component spec carries:** classification (`static` | `island` | `page-composition`) +
   the interaction tier (static / island; server writes are **optimistic UI**, realtime where
   needed); anatomy; a props table (1:1 with `fixture.json` controls, `signal: true` for island

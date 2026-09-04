@@ -46,10 +46,11 @@ duration|shade`. Each `cards[]` entry is `{ path, group, viewport, name, subtitl
 every file in `preview/`.
 
 ### `css-variables.json` — the sprig token map
-`prototype` speaks daisyUI; **sprig** (`sprig:build`) does not — its build has no daisyUI plugin, so
-it consumes a **plain** `src/css-variables.json` and compiles it into a global `@theme` (utility
-tokens) + `:root` (the rest) + `[data-theme]` (variants). Derive this twin from `theme.css` so a sprig
-app gets the brand with zero translation. Shape:
+`prototype` speaks daisyUI themes; **sprig** (`sprig:build`) does not — its build loads daisyUI with
+`themes: false` (the *components* stay available, and their class names are reserved globally — see
+`docs/sprig/styling.md` → "Reserved class names"), so it consumes a **plain** `src/css-variables.json`
+and compiles it into a global `@theme` (utility tokens) + `:root` (the rest) + `[data-theme]`
+(variants). Derive this twin from `theme.css` so a sprig app gets the brand with zero translation. Shape:
 
 ```json
 {
