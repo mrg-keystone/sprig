@@ -40,7 +40,7 @@ deno serve -A serve.ts                   # one-origin handler
 | [templates.md](./templates.md) | full template syntax: interpolation, `@if`/`@for`/`@switch`/`@let`, bindings, events, pipes — and the single-quote rule |
 | [islands.md](./islands.md) | `defineComponent`, signals/computed/effect, inputs/outputs/model, triggers, the server+client setup duality |
 | [wiring.md](./wiring.md) | template wiring: `sets:`/`reads:`/`edits:` channels between sibling islands, outlet forwarding, `sprig map`, the wiring lint |
-| [styling.md](./styling.md) | view encapsulation, `:global`, scope ids across SSR/CSS/hydrate, Tailwind `@apply` |
+| [styling.md](./styling.md) | view encapsulation, `:global`, scope ids across SSR/CSS/hydrate, Tailwind `@apply`, **daisyUI reserved class names** (why a scoped `.stat` still renders as a stat block; prefix your own classes) |
 | [data-and-di.md](./data-and-di.md) | `resolve.ts`, `@Injectable` + scope, `inject`, the `Backend` token, `setResponseStatus` for 404s |
 | [routing.md](./routing.md) | `defineRoutes`, `:params`, route guards (302 redirects), the shell `<router-outlet>`, method gating, soft-nav |
 | [cli.md](./cli.md) | `init` / `dev` / `build` / `serve` and the HMR loop |

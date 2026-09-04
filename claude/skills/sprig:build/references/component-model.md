@@ -6,6 +6,26 @@ custom tag other templates compose it with (`components/badge/` → `<badge>`). 
 a `logic.ts` is an **island** (hydrates on the client); a folder with only `template.html`
 is **static** (ships no JS).
 
+## Scoped styles (`styles.css`) — and daisyUI's reserved class names
+
+`styles.css` is view-encapsulated: each rule's key compound gets the component's scope marker, so
+it can only land on this component's own elements. What encapsulation does **not** do is shield
+you from **daisyUI 5, which `sprig build` bundles into every app** (`@plugin "daisyui"`, themes
+off). Tailwind emits a daisyUI component's rules — document-global, on the bare class — the
+moment its class token appears in any template. So a scoped `.stat { width: 8px }` on an element
+of your own still gets daisyUI's `display: inline-grid; padding: 1rem 1.5rem; grid-template-…` on
+top: an 8px dot renders as a 48×32px stat block. Same for parts and modifiers (`stat-value`,
+`card-body`, `btn-sm`).
+
+Rule: **prefix every class you style yourself** (`cm-dot`, `wb-badge`, `<component>-part`) and
+never start one with a daisyUI name (`stat`, `badge`, `status`, `list`, `card`, `label`, `link`,
+`toggle`, `tab`, `table`, `menu`, `input`, `select`, `loading`, `filter`, `stack`, `footer`, `hero`,
+`mask`, `diff`, `collapse`, `step`, `kbd`, `toast`, `dock`, …). `sprig build` / `sprig dev` warn on
+every real collision (`sprig: <dir>/styles.css styles .stat — daisyUI … styles the same class
+name(s) globally`) — treat the warning as red. Want the daisyUI component? Use its own name and
+modifiers on purpose (`btn btn-sm`, `status status-success`) and let the tokens style it. Full
+list + mechanism: `docs/sprig/styling.md` → "Reserved class names".
+
 ## Two ways to write `logic.ts`
 
 **1. A class (preferred for pages + anything with lifecycle/data).** The instance IS the

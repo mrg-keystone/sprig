@@ -35,7 +35,7 @@ your reference material — never read another skill's SKILL.md (orchestrator pl
 **There is exactly one source of truth: `theme.css`.** Everything you emit is a *derived* transform of it — never hand-maintain the same token in two places (that drift is the exact failure this format prevents). Internalize the canonical-vs-derived layout in `references/structure.md` first.
 
 1. **`theme.cdn.css`** — the flattened `[data-theme]` twin that `prototype` pastes inline (no build step).
-2. **`css-variables.json`** — the plain token map a **sprig** app consumes (it compiles to a global `@theme`/`:root`/`[data-theme]`, **no daisyUI**). Variables only.
+2. **`css-variables.json`** — the plain token map a **sprig** app consumes (it compiles to a global `@theme`/`:root`/`[data-theme]`, **no daisyUI themes** — daisyUI components stay in the build, class names reserved). Variables only.
 3. **`manifest.json`** — the token + card index.
 4. **`adherence.oxlintrc.json`** — the token allow-list + lint rules (forbids off-token values in consumer code).
 5. **Docs from `assets/templates/`** — `consume/prototype.md` (how `prototype` applies the brand: the CDN stack + paste `theme.cdn.css` + `data-theme`), `README.md` (the brand bible), and the artifact's own **`SKILL.md`** (so the artifact is itself invokable). Document any brand exception the author flagged (a pale surface, an overused font, overshoot easing) as a known exception in `consume/prototype.md`.

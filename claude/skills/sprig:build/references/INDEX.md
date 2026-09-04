@@ -5,7 +5,7 @@ for an area you're unsure about. Start from `../SKILL.md`.
 
 | File | Covers |
 |---|---|
-| `component-model.md` | Folder-components; `logic.ts` as a class vs `defineComponent({ setup })`; lifecycle hooks (`onServerInit`/`onBrowserInit`/`onServerDestroy`/`onBrowserDestroy`) + the server→client snapshot; signals; **Optimistic UI** (mandatory: snapshot → mutate → call → roll back); dependency injection (`@Injectable`/`inject`/`Backend`); `StateService` persisted state |
+| `component-model.md` | Folder-components; **scoped styles + daisyUI reserved class names** (prefix your own classes — `.stat`/`.badge`/`.status` on your element inherit daisyUI globally); `logic.ts` as a class vs `defineComponent({ setup })`; lifecycle hooks (`onServerInit`/`onBrowserInit`/`onServerDestroy`/`onBrowserDestroy`) + the server→client snapshot; signals; **Optimistic UI** (mandatory: snapshot → mutate → call → roll back); dependency injection (`@Injectable`/`inject`/`Backend`); `StateService` persisted state |
 | `templates.md` | Angular-flavored HTML: `{{ }}` interpolation, `[prop]` inputs, `(event)` handlers, `@if`/`@else`/`@for`/`@empty`, composing child components by selector, `<content>` projection (self-close + fallback; `<ng-content>` alias), `<router-outlet>`, scoped `styles.css` |
 | `routing.md` | `defineRoutes` + `load`; auto-loading a page's `logic.ts`/`resolve.ts` data (no module map); route guards (`guards: [...]` — return the target route to proceed, another route to 302); `createRenderer` + `bootstrap` |
 | `serving.md` | `serveSprig` single-origin composition (the scaffold default: keep backend + UI, in-process `Backend`, `deno serve serve.ts`) + `sprigUi` middleware to mount under an existing host; the `static/` build output |
@@ -23,6 +23,7 @@ for an area you're unsure about. Start from `../SKILL.md`.
 | A user action that writes to the server (optimistic by default) | `component-model.md` (Optimistic UI) |
 | Write template bindings / control flow / projection | `templates.md` |
 | Persist state across navigation | `component-model.md` (StateService) |
+| Style a component; a `.stat`/`.badge`/`.card` of your own renders wrong (daisyUI collision) | `component-model.md` (Scoped styles) |
 | Serve the app / mount in a host framework | `serving.md` |
 | Preview or debug one component alone | `isolate.md` |
 | Share state between sibling islands / shell ↔ pages | `wiring.md` |

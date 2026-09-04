@@ -1,7 +1,7 @@
 {
   "_generated": true,
   "_source": "theme.css",
-  "_note": "DERIVED from theme.css — the plain token map a SPRIG app consumes (copy to its src/css-variables.json). sprig's build compiles this to a global @theme (utility tokens) + :root (the rest) + [data-theme] (variants) with NO daisyUI. RULES: keys are custom properties (--*) or the reserved color-scheme ONLY (the build rejects anything else); DROP daisyUI-plugin params --size-*/--border/--depth/--noise; the default theme carries EVERY token, other themes carry only what changes; `default` is the theme rendered with no data-theme attribute. List every applicable token from theme.css — entries below are illustrative.",
+  "_note": "DERIVED from theme.css — the plain token map a SPRIG app consumes (copy to its src/css-variables.json). sprig's build compiles this to a global @theme (utility tokens) + :root (the rest) + [data-theme] (variants) with NO daisyUI themes (daisyUI components stay available; their class names are reserved — docs/sprig/styling.md). RULES: keys are custom properties (--*) or the reserved color-scheme ONLY (the build rejects anything else); DROP daisyUI-plugin params --size-*/--border/--depth/--noise; the default theme carries EVERY token, other themes carry only what changes; `default` is the theme rendered with no data-theme attribute. List every applicable token from theme.css — entries below are illustrative.",
   "default": "brand-dark",
   "themes": {
     "brand-dark": {
